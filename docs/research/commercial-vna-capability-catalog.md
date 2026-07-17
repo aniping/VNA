@@ -33,14 +33,15 @@ Instrument
 ├─ Channels
 │  ├─ Stimulus & Sweep Plan
 │  ├─ Acquisition & Trigger Policy
-│  ├─ Measurements & Completed Results
+│  ├─ Analysis Traces -> MeasurementSpec / Marker / Limit / Memory
+│  ├─ Completed Network & Trace Snapshots
 │  └─ Applied Calibration / Correction Status
 ├─ Calibration Repository
 │  ├─ Connectors / Cal Kits / Standards
 │  ├─ Calibration Sessions / Standard Acquisitions
 │  └─ Error Terms / Cal Sets / Validity
 ├─ Display Workspace
-│  └─ Diagrams -> Traces -> Markers / Limits / Analysis
+│  └─ Diagrams -> Trace Placements / Marker & Limit Overlays
 ├─ Processing
 │  ├─ Correction / Port Extension / Fixture Operations
 │  └─ Time Domain / Gating / Math / Formatting / Statistics
@@ -62,8 +63,8 @@ Instrument
 - 身份：制造商、型号、序列号、软件版本、驱动版本、单板型号/固件版本；SCPI 提供稳定的 `*IDN?` 结果。
 - 运行状态：启动、初始化、就绪、繁忙、等待触发、扫频中、保持、故障、关机；状态必须可由 Web、SCPI 和诊断接口一致读取。
 - Preset/Reset：区分“测量预置”“恢复用户启动状态”“恢复出厂配置”。`*RST`、UI Preset 和删除持久数据不能隐式等价。
-- State：保存/恢复仪器设置；至少区分仅设置、设置+校准、设置+迹线、设置+校准+迹线/Memory，恢复带静态数据的状态时不得立刻被连续扫频覆盖。
-- 当前上下文：active/selected channel、measurement、trace、diagram、marker 是会话便利状态，不应代替稳定 ID。
+- State：保存/恢复仪器设置；至少区分仅设置、设置+校准、设置+迹线、设置+校准+迹线/Memory。普通 Recall 和异常重启默认恢复到 Hold + RF safe/off，不恢复 RF-on、Continuous/Groups、Armed/WaitingTrigger 或未完成 Operation；显式恢复运行态也必须先安全恢复，再以新的完整 admission Operation 启动。
+- 当前上下文：active/selected channel、measurement、trace、diagram、marker 是协议可观察状态，不应代替稳定 ID。Web 选择是 session-local；SCPI 选择作用域由目标方言决定，可能是全机、每 Channel 共享或连接局部。
 - RF 输出总开关、安全关断、异常重启后的保守默认状态。
 - 配置修订号和变更来源；恢复状态必须经过当前硬件能力校验，并报告缺失端口或不支持参数，而不是静默截断。
 
@@ -82,11 +83,11 @@ CMT 官方说明了 State、State & Cal、State & Trace、All 等保存粒度，
 
 **Core**
 
-- Channel 拥有扫频计划、刺激功率、IFBW、平均、触发策略、所用源端口/路由、测量定义集合和所应用的校准集合。
+- Channel 拥有扫频计划、刺激功率、IFBW、平均、触发策略、所用源端口/路由、AnalysisTrace 集合和 Correction Binding；Live AnalysisTrace 的 MeasurementSpec 表达“测什么”。
 - 多 Channel 创建、复制、删除、重命名、启用/保持；每个 Channel 有独立配置修订号和测量结果代次。
 - 资源仲裁：多个 Channel 共享同一源、接收机或端口时，必须由能力与调度规则决定串行、可并行或拒绝；不能假设商用品内部并发方式。
 - Channel 与 Diagram 不应强绑定。R&S 允许一个 Diagram 显示不同 Channel 的迹线；Keysight 区分 Channel、Measurement 与 Window；CMT 的部分产品则更接近每 Channel 一个窗口。归一化模型应允许跨 Channel 显示，但不强迫首版 UI 暴露全部组合。
-- 删除 Channel 前显式处理其 Measurement、活动扫频和校准引用；历史不可变结果可按保留策略继续存在。
+- 删除 Channel 前显式处理其 AnalysisTrace、活动扫频和校准绑定；历史不可变结果可按保留策略继续存在。
 
 Keysight 的 [Channel Object](https://helpfiles.keysight.com/csg/N52xxB/Programming/COM_Reference/Objects/Channel_Object.htm) 把频率、功率扫频、扫频时间和类型等设置放在 Channel；R&S 手册展示了 Trace、Diagram、Channel 的独立选择与删除行为，见 [ZNB/ZNBT User Manual PDF](https://scdn.rohde-schwarz.com/ur/pws/dl_downloads/pdm/cl_manuals/user_manual/1173_9163_01/ZNB_ZNBT_UserManual_en_72.pdf)。
 
@@ -124,7 +125,7 @@ Keysight 官方列出 Linear、Log、Power、CW Time、Segment 和 Phase 等类�
 - Source：RF on/off、目标功率、端口功率耦合/解耦、功率范围检查；真实输出值和未锁定/未稳幅状态可诊断。
 - Receiver：参考接收路径 `aN` 与测试接收路径 `bN` 的可用性、饱和/过载/无效点状态；通用适配接口交付逐频点复数相量和采集质量，不包含 ADC/IQ 时域处理。
 - IFBW：Channel 默认值；若硬件支持，Segment/port override 通过能力发现开放。驱动返回可选值或 min/max/步进规则。
-- Average：on/off、factor、clear/restart、当前完成计数；至少支持复数扫频平均。平均完成与单次 sweep 完成是不同事件。
+- Average：on/off、factor/window、clear/restart、当前完成计数；至少支持复数平均。策略必须正交声明输入 stage（receiver waves、measured ratio、factory-corrected ratio 或 corrected network）、sample boundary（point、source state 或 logical sweep）和 typed mode（FiniteBatch、SlidingWindow、Cumulative、VendorRunning）。SlidingWindow 使用预留固定 contribution ring 保存逐点复数 contribution/weight/quality，不依赖 A 层 retention；VendorRunning 只有在 Compatibility Profile 冻结 update-kernel/state schema 后才开放。Keysight 公开流程是 ratio（ENA 可含端口/工厂特性修正）→sweep average→用户 error correction；CMT 内部数组资料是 receiver average→ratio→用户 correction，但需按目标固件回归。不能平均显示格式，也不能隐式双重平均。平均完成与单次 sweep 完成是不同事件。
 - Trigger：internal/free-run、manual/bus、external；scope（global/channel）、event（channel/sweep/point/segment）、delay、polarity/edge、等待触发状态、trigger out（若有）。
 - `single`/`INIT` 只表示发起执行；结果读取、Marker 搜索、Limit 判定必须等待绑定的完整执行完成。
 
@@ -138,15 +139,15 @@ Keysight 官方列出 Linear、Log、Power、CW Time、Segment 和 Phase 等类�
 
 - Source/receiver attenuator、receiver leveling、外部参考时钟、外部源、独立源输出、直通接收机、Bias/DC/SMU、Handler I/O；这些参数只在相应硬件路径存在时可见。
 
-### 3.5 Measurement 与多端口/混合模
+### 3.5 Measurement Spec、Analysis Trace 与多端口/混合模
 
 **Core**
 
-- Measurement 是“测什么”的定义，不是显示曲线。至少支持单端 S 参数 `S(out,in)`；端口数由驱动能力决定，不把软件写死为 2 端口。
-- 反射/传输、正向/反向测量；一个 Channel 可包含多个 Measurement，并由采集计划合并所需源端口和接收路径。
+- MeasurementSpec 是“测什么”的值对象，不是显示曲线或独立 CRUD 聚合。至少支持单端 S 参数 `S(out,in)`；端口数由驱动能力决定，不把软件写死为 2 端口。
+- 反射/传输、正向/反向测量；一个 Channel 可包含多个 AnalysisTrace，其 Live Source 内含 MeasurementSpec，并由采集计划合并所需源端口和接收路径。
 - ratioed receiver（例如 `b2/a1`）和 unratioed receiver（例如 `a1`、`b2`）作为高级/诊断测量定义；原始波量不能与经校准 S 参数混称。
-- 测量定义具有稳定 ID、名称、参数类型、源端口、接收端口/波量、要求的校准方法、可用状态。
-- 常用派生量/显示格式：complex、real、imaginary、linear magnitude、log magnitude、phase、unwrapped phase、group delay、SWR、Smith（阻抗/导纳）、polar。格式不改变底层复数 MeasurementResult。
+- AnalysisTrace 具有稳定 ID、名称、Source Spec、处理投影、Marker/Limit/Memory 关系和可用状态；MeasurementSpec 作为值对象随 Trace revision 版本化。
+- 常用派生量/显示格式：complex、real、imaginary、linear magnitude、log magnitude、phase、unwrapped phase、group delay、SWR、Smith（阻抗/导纳）、polar。格式不改变底层复数网络/Trace 输入快照。
 
 Keysight 明确区分预定义 S 参数、任意接收机比值、未比值绝对接收机数据和 balanced measurement，见 [Measurement Parameters](https://helpfiles.keysight.com/csg/N52xxB/S1_Settings/measurement_parameters.htm)。
 
@@ -176,11 +177,11 @@ R&S 和 Keysight 都支持混合模，但拓扑、命名和选件范围不同，
 6. `ProcessedMeasurement`：端口延伸、夹具、混合模、时域/门控、迹线数学等处理结果；
 7. `FormattedTraceData`：LogMag、Phase、Smith 等显示数据；
 8. `AnalysisResult`：Marker、带宽、统计、Limit pass/fail；
-9. `CompletedSweepSnapshot`：一次完整执行原子发布的不可变结果集合。
+9. `CompletedSweepBundle`：一次完整逻辑采集原子发布的 A 层 receiver-observation 集合；`CompletedMeasurementBundle` 是完成 RF/平均/校准处理后的 B 层正式网络结果；从 A/B 惰性物化的 receiver/ratio/corrected/ProcessedNetwork 使用不带 Trace/Marker/Limit revision 的 `MeasurementStageSnapshot`；`AnalysisPublication` 才是逐 Trace 的 C 层求值。Live 路径为 A→B→C 且失败隔离；Frozen/Imported/Derived C 使用 typed `AnalysisInputRefSet` 引用静态、导入或一个/多个上游 C，不伪造 A/B。
 
-预览数据可按点/块流向 Web，但失败、取消或未完成预览不得提升为正式快照。Marker、Limit、保存、SCPI 正式查询默认读取最近一次完整快照，等待命令绑定具体执行实例。
+预览数据可按点/块流向 Web，但失败、取消或未完成预览不得提升为正式快照。Marker/Limit 固定 C 层 publication；Touchstone/网络数据固定 B 或 `MeasurementStageSnapshot(ProcessedNetwork)`；receiver 数据固定 A/B stage；CSV 按 `data_stage` 固定 B/stage/C。非 C 层缺少物化结果时启动/共享 `MaterializeMeasurementStageOperation`，不能伪造 AnalysisTrace。SCPI/保存命令必须显式映射上述 typed result，等待命令绑定具体 Operation/QueryTicket，而不是笼统读取“最近一次扫频”。
 
-每份正式结果至少带：`sweep_id`、channel/measurement ID、配置修订、实际刺激轴、端口/路由、校准集合 ID、处理链版本、点有效性、过载/未锁定/缺失/非数值标志和完成时间。修改当前配置不能追溯性改变历史结果的含义。
+正式结果按层携带最小 provenance：A 含 `sweep_id`、Manifest、Channel/Board、实际刺激轴、端口/路由和采集质量；B 含 `measurement_snapshot_id`、有界 `AverageContributionRef`、平均/CorrectionSet/MatchReport、网络阶段和质量；惰性 stage 含父 A/B refs、requested stage、RF/network graph、axis/topology/Z0/quality；C 含 `analysis_publication_id`、AnalysisInputRefSet、Trace/处理链/Marker/Limit revision 和分析质量。Finite Average 的 contribution 可显式保存受 factor 上限约束的 Sweep IDs；Sliding 保存有界窗口 IDs、固定 contribution ring 的结构共享引用与 accumulator snapshot；Cumulative/VendorRunning 保存 accumulator snapshot ID、generation/count、首末序号范围和滚动强摘要，逐 Sweep 细节只进入有界审计 retention。各层都带软件/schema/Profile revision 与完成时间；非 Live C 不强制携带 sweep 或 CalSet。修改当前配置不能追溯性改变历史结果的含义。
 
 Keysight 的数据访问图明确区分接收机复数数据、比值数据以及后续访问点，见 [Accessing Data](https://helpfiles.keysight.com/csg/N52xxB/Programming/Accessing_Data_Descriptions.htm)；CMT 也在命令树中分开 corrected data、formatted data、calibration measurements 与 coefficients，见 [CMT CALCulate Commands](https://coppermountaintech.com/help-cmtvna/Programming-Manual/calculate.html)。
 
@@ -190,8 +191,8 @@ Keysight 的数据访问图明确区分接收机复数数据、比值数据以�
 
 - `DisplayWorkspace`：浏览器中的整体布局和用户显示状态。
 - `Diagram`：一个绘图区；拥有坐标系、网格、轴、标题、legend、缩放、参考位置、迹线叠放顺序及布局位置。它不拥有采集和校准状态。
-- `Trace`：某个 Measurement/ProcessedResult 的呈现视图；拥有格式、颜色、线型、可见性、scale/div、reference value/position、electrical delay、phase offset 和 smoothing 显示设置。
-- 同一 Measurement 可在多个 Trace/Diagram 中以幅度、相位、Smith 等不同格式显示；删除 Trace/Diagram 不应隐式删除 Measurement 或 CalSet。
+- 厂商 `Trace` 是多义外部术语：Keysight 的显示 Trace 更接近视图，R&S/CMT 的 Trace 还承载 measured quantity、format、Marker 和 Limit。本项目内部使用 `AnalysisTrace(TraceSourceSpec)` 表示可分析对象，使用 `TracePlacement` 表示 Diagram 内的颜色、线型、可见性、scale/div、reference position 和 z-order。
+- 多条 AnalysisTrace 可以包含等价 MeasurementSpec 并以幅度、相位、Smith 等不同设置显示；是否允许一条 AnalysisTrace 同时有多个 Placement 由 Product/Compatibility Profile 限制。删除 Placement、AnalysisTrace、Diagram 和 Channel 是不同核心 Command，厂商删除副作用另行映射。
 - 一个 Diagram 可叠加多个 Trace，但必须检查 X 轴域、单位、坐标类型和结果代次兼容性。Smith/Polar 与 Cartesian 的 overlay 规则要显式。
 - Diagram layout：单图、多图、网格、最大化；active diagram/trace 是 UI 选择，不是所有权。
 - 增量预览与正式快照有视觉状态区别；Web 重连后能用快照+修订恢复，而不是要求重扫。
@@ -207,14 +208,14 @@ Keysight 的数据访问图明确区分接收机复数数据、比值数据以�
 
 **Core**
 
-- Marker 归属于 Trace 的分析上下文并引用一个完整结果代次；至少含 stable ID/number、on/off、stimulus、实际落点、响应值和读数格式。
+- Marker 绑定一个 AnalysisTrace 及其完整结果代次；至少含 stable ID/number、on/off、stimulus、实际落点、响应值和读数格式。Keysight 兼容层以 Measurement 寻址，R&S/CMT 兼容层以 Trace 寻址。
 - normal marker、reference marker、delta marker；delta 明确引用哪个参考 Marker，并同时报告 ΔX/ΔY。
 - discrete（吸附采样点）与 interpolated 模式；插值规则和非法点处理可测试。
 - peak/max/min、next peak、target/transition 搜索；支持峰值 polarity、excursion/threshold 和 search range/domain。
 - search tracking：每次新完整快照后重新搜索，而不是把旧 index 搬到新数组；可暂停并保留最后结果。
 - marker coupling：多个 Trace/Diagram 共享 X 位置时需检查 X 轴兼容性。
 - bandwidth/notch/filter search：至少给出左右交点、带宽、中心频率、Q、插入损耗/峰值；找不到一侧交点时返回结构化“不完整”，不能伪造 0。
-- marker-to 操作：由 Marker 设置 start、stop、center、span、reference level、electrical delay 等，但必须作为正常配置命令进入同一冲突和审计流程。
+- marker-to 操作：由 Marker 设置 start、stop、center、span、reference level、electrical delay 等，但必须作为正常配置命令进入同一冲突和审计流程；刺激范围目标是 Channel，electrical delay 目标是 AnalysisTrace，reference level/position 目标是明确 TracePlacement，多 Placement 歧义不能静默选择。
 - Marker 读数只来自已完成快照；扫频预览上的游标可作为单独 UI cursor，不能冒充正式 Marker 结果。
 
 Keysight 的 Marker 支持带宽搜索，返回 bandwidth、center、Q、loss，见 [Marker SCPI](https://helpfiles.keysight.com/csg/pxivna/Programming/GP-IB_Command_Finder/Calculate/Marker.htm)；CMT 公开了 reference/delta、search domain、peak excursion/polarity、target、tracking、bandwidth、flatness 等命令，见 [CMT CALCulate Commands](https://coppermountaintech.com/help-cmtvna/Programming-Manual/calculate.html)；R&S 手册还区分 normal、delta、fixed、discrete 等 Marker 行为。
@@ -228,7 +229,7 @@ Keysight 的 Marker 支持带宽搜索，返回 bandwidth、center、Q、loss，
 **Core**
 
 - `LimitTest` 与 `LimitLine/Segment` 分离：一个测试包含有序的 upper、lower、single-point/off Segment；每段有起止刺激与起止限值。
-- Limit 绑定 Trace 的格式/单位和结果代次。修改 Trace 格式时必须转换、拒绝或使 Limit 失效，不能继续用旧单位静默判断。
+- Limit 绑定 AnalysisTrace 的 projection/格式/单位和结果代次。修改格式时必须转换、拒绝或使 Limit 失效，不能继续用旧单位静默判断；Diagram 只保存 Limit Line 的 Placement/可见性。
 - 判断基于实际测量点；是否判断插值线段必须固定。Keysight/CMT 基本语义是逐点判断。
 - 输出：整体 pass/fail、失败点数量、失败点刺激和值、对应 upper/lower、最大裕量/最差点；显示开关与测试开关分离。
 - Channel/Instrument 聚合状态：只聚合本次指定执行中的测试，不能让陈旧失败状态污染新批次。
@@ -338,11 +339,20 @@ CMT 官方表格列出 response、full one-port、one-path two-port、full two-p
 - 支持 exact match、interpolated、changed/degraded、disabled、missing、rejected 等 correction status，并在 Trace/Channel/Web/SCPI 一致显示。
 - 插值仅在校准频率覆盖内且轴可合理插值时执行；外推默认拒绝。厂商差异必须保留：Keysight 对普通 S 参数超出校准起止范围通常关闭修正，而 CMT UI 公开 `C!` extrapolation 状态；项目不能静默选择其中一种。
 - 修改 start/stop/points、power、IFBW、attenuator、routing、sweep type 时分别评估 exact/interpolated/degraded/rejected，不能用一个 `calibration_enabled` 布尔值覆盖。
-- 每个 CompletedSweepSnapshot 记录实际应用的 CalSet 和有效性判定。
+- 每个 B 层 `CompletedMeasurementBundle` 记录实际应用的 Correction Set、MatchReport 和源 `CompletedSweepBundle` ID；A 层采集事实不伪装成已应用用户校准。
 
 Keysight 的 [Error Correction and Interpolation](https://helpfiles.keysight.com/csg/N52xxB/S3_Cals/Error_Correction_and_Interpolation.htm) 说明了 full N-port、response、interpolated 和 changed settings 等状态；[CSET Commands](https://helpfiles.keysight.com/csg/N52xxB/Programming/GP-IB_Command_Finder/CSET.htm) 提供 CalSet 属性、误差项和有效性查询。
 
-#### 3.13.5 自动校准与功率校准（HW/Option）
+#### 3.13.5 Calibration Verification / Confidence Check（Pro）
+
+- 校准验证是 solve/apply 之后的独立工作流，不是重新校准、SelfTest 或 Correction Set 状态位。
+- `VerificationPlanRevision` 固定 Correction Set、独立 verification artifact 的 characterization、端口/实际轴、所需 S 参数、tolerance/uncertainty 和算法版本；执行使用正式 B 层测量。
+- 结果是不可变 `CalibrationVerificationResultSnapshot`，给出逐点 residual/margin 和 Pass/Fail/Indeterminate；失败/取消不修改 Correction Set/Binding，Pass 只对该 Plan 和测量系统组合有效。
+- 不得把求解时同源标准件数据冒充独立验证，也不得把 system/confidence check 宣称为单个仪器或标准件认证。
+
+Keysight [System Verification](https://helpfiles.keysight.com/csg/m9485a/support/system_verification.htm) 比较四个 S 参数测量、verification device 工厂数据和 uncertainty limits，并明确 PASS 是 analyzer/cable/adapter 系统级结论而非部件认证；CMT [Confidence Check](https://coppermountaintech.com/help-cmtvna/1-port/confidence-check2.html) 比较当前校准测得的内部衰减器 S 参数与模块内存表征。
+
+#### 3.13.6 自动校准与功率校准（HW/Option）
 
 - ECal/ACM：模块发现、端口映射、模块身份/特性数据、guided steps、失败恢复；没有模块时能力为 unavailable。
 - Source power calibration：功率计、频率/功率范围、loss offset、source correction table。
@@ -375,7 +385,7 @@ CMT 的 `MMEMory` 命令覆盖 state 和 Touchstone，见 [MMEMory Commands](htt
 
 - TCP Socket 上的 SCPI parser：大小写不敏感、长短关键字、层级、数字/单位、字符串、命令串、query、行终止、ASCII 与 IEEE definite-length binary block。
 - 明确的兼容方言。Keysight、R&S、CMT 命令树并不完全相同；首版不能声称三家全兼容。应选定一个主方言或定义项目方言+明确兼容子集，并提供 capability/version query。
-- 每个 TCP 连接有独立 parser context、selected channel/measurement/trace 和 output queue；仪器状态与硬件资源仍是共享的。
+- 每个 TCP 连接有独立 parser、输入输出、响应顺序和连接生命周期；selected channel/measurement/trace 的作用域由 Compatibility Profile 决定，不能硬编码为连接局部。仪器配置、正式数据与硬件资源始终共享。
 - 命令按接收顺序解析；query response 按顺序进入 output queue。未读 response 遇到下一 query 的行为必须固定，并产生 query error，而不是覆盖旧响应。
 - 有限 FIFO error queue：区分 command、execution、device-specific、query error；`SYST:ERR?` 读取并弹出，空队列返回 no error，溢出策略固定。
 - IEEE 488.2 基础：`*IDN?`、`*RST`、`*CLS`、`*OPC`、`*OPC?`、`*WAI`、`*ESE/*ESE?`、`*ESR?`、`*SRE/*SRE?`、`*STB?`、`*TST?`（真实自检范围明确）。
@@ -387,7 +397,7 @@ CMT 说明 SCPI 可经 HiSLIP 或 TCP/IP Socket 发送，见 [CMT Programming](h
 
 **传输限制**
 
-- Raw TCP Socket 没有 GPIB/VISA 的独立 SRQ 控制通道。首版可完整实现寄存器与 `*STB?` polling，但不得宣称通过 raw socket 提供真正异步 SRQ；若未来需要，采用 HiSLIP/VXI-11 或另设事件协议。
+- 基础单连接 raw TCP Profile 只承诺寄存器与 `*STB?` polling。R&S RawSocket 没有 VISA control channel，但 Keysight PNA 公开了可接收 SRQ/Device Clear 的专有第二 TCP control connection；因此 PNA control socket、HiSLIP/VXI-11 或项目事件协议必须作为独立 Transport capability，不能把所有 raw Socket 一概宣称“有 SRQ”或“无 SRQ”。
 
 **Pro**
 
@@ -417,7 +427,7 @@ CMT 已提供内建 Socket server 和无硬件 Demo Mode，见 [Connection Setup
 
 **Core**
 
-- Capability manifest 是驱动适配层的必选输出：端口/源/接收机数量与拓扑、频率/功率范围、支持的 IFBW、最大点数/Segment、可用 sweep/trigger、是否支持 per-segment overrides、校准方法、外设、并行限制。
+- Capability manifest 是驱动适配层的必选输出：端口/源/接收机数量与拓扑、频率/功率范围、支持的 IFBW、最大点数/Segment、可用 sweep/trigger、是否支持 per-segment overrides、可取得的 source/receiver/auxiliary observations、外设、并行限制、Clock/Coherence Domain、timebase lock、同步 trigger/epoch、最大 skew、out-of-band abort 与 RF safe-state 能力。它不直接宣称用户校准方法；最终 `CalibrationMethodCapability` 由 `BoardCapabilities × ProductProfile × CalibrationModule` 推导。未知相干能力不得把多块板合成同一代网络矩阵。
 - 能力值区分 supported、unsupported、temporarily unavailable 和 unknown；配置验证返回具体约束，不靠 UI 隐藏兜底。
 - 启动自检：驱动加载、板卡连接、固件兼容、参考锁定、源/接收路径基本状态、存储和网络；`*TST?` 只报告实际执行过的范围。
 - 在线 health：温度/电压/锁定/过载等仅在板卡上报时存在；通信延迟、丢块、重试、最后成功 sweep、队列深度属于上层通用健康指标。
@@ -443,13 +453,13 @@ Keysight 提供频率、端口、源、接收机、IFBW、点数和选件等 cap
 2. **测量闭环**：多 Channel；linear/log/segment/CW-time/power（按能力）Sweep Plan；source/receiver/IFBW/average/trigger；single/continuous/hold/abort。
 3. **数据闭环**：逐点/分块预览、完整快照、真实刺激轴、质量标志、不可变历史和可追溯处理链。
 4. **参数闭环**：多端口单端 S 参数、ratioed/unratioed receiver、常见复数显示格式和 group delay。
-5. **校准闭环**：connector/kit/standard、guided session、response/full one-port/one-path/full two-port SOLT、标准件采集、误差项、CalSet、应用/插值/失效状态。
+5. **校准闭环**：connector/kit/standard、guided session、response/full one-port/one-path/full two-port SOLT、标准件采集、误差项、CalSet、应用/插值/失效状态，以及使用独立已表征 artifact 的校准验证结果。
 6. **分析闭环**：Diagram/Trace、完整 Marker 搜索与带宽、upper/lower Limit 和报告、Memory/math/hold/smoothing/statistics。
 7. **交互闭环**：Web 全功能操作和实时状态；Socket SCPI、错误/输出队列、IEEE 488.2 状态与完成同步；两者使用同一规则。
 8. **文件闭环**：State、Calibration、Touchstone、CSV、Limit/Segment/Fixture 定义的版本化保存、恢复与错误处理。
 9. **验证闭环**：Mock 可模拟至少一个 2-port DUT、噪声/延迟/触发/故障；端到端测试能证明 Web 与 SCPI 对同一命令得到同一结果代次。
 
-Time Domain/Gating、完整 de-embedding、mixed-mode、TRL/Unknown-Thru、Equation Editor 和高级生产判定属于下一层专业扩展，但核心数据模型、处理链和文件格式必须从首版起允许它们加入，而无需推翻 Channel、MeasurementResult、CalSet 或 Trace 的身份模型。
+Time Domain/Gating、完整 de-embedding、mixed-mode、TRL/Unknown-Thru、Equation Editor 和高级生产判定属于下一层专业扩展，但核心数据模型、处理链和文件格式必须从首版起允许它们加入，而无需推翻 Channel、CompletedMeasurementBundle、Correction Set 或 AnalysisTrace 的身份模型。
 
 ## 5. 明确不作为基础能力冒充的高端项目
 
