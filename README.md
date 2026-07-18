@@ -37,7 +37,7 @@ cmake --build --preset mingw-debug
 ctest --preset mingw-debug
 ```
 
-测试全程使用虚拟时间，不依赖 wall-clock sleep。`BUILD_TESTING=ON` 时，CMake 按固定版本 `v1.17.0` 获取 GoogleTest，并通过 `gtest_discover_tests()` 注册独立测试用例；生产/RTOS 配置设置 `BUILD_TESTING=OFF` 后不会获取或链接 GoogleTest。
+测试全程使用虚拟时间，不依赖 wall-clock sleep。`BUILD_TESTING=ON` 时，CMake 从仓库内 `vna/3rdparty/packages/googletest-v1.17.0.zip` 解压固定版本 GoogleTest，并通过 `gtest_discover_tests()` 注册独立测试用例，不需要构建机访问外网；生产/RTOS 配置设置 `BUILD_TESTING=OFF` 后不会解压、构建或链接 GoogleTest。
 
 ## 源码组织
 

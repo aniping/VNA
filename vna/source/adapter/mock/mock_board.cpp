@@ -247,6 +247,7 @@ namespace {
 constexpr BoardSessionId kMockSessionId{1U};
 
 struct PendingPrepare final {
+    // begin_prepare() 接受后，Mock 独占保存全部 move-only 输入直到 due_at。
     PrepareCallId call{};
     SweepIntent intent{};
     PrepareAuthorization authorization;
@@ -255,6 +256,7 @@ struct PendingPrepare final {
 };
 
 struct PendingRun final {
+    // 场景在接受 Run 时复制，测试随后修改全局场景不会改变已排队执行。
     BoardRunId run{};
     RunGeneration generation{};
     PreparedStartToken prepared;
@@ -272,11 +274,12 @@ public:
     MockBoardSession(MockCapabilityProfile profile, MockScenario scenario) noexcept
         : profile_(profile), scenario_(scenario) {
         rebuild_capabilities();
+        initial_capabilities_ = capabilities_;
     }
 
     BoardExecutionPort& execution() noexcept override { return *this; }
     const CapabilitySnapshot& initial_capabilities() const noexcept override {
-        return capabilities_;
+        return initial_capabilities_;
     }
 
     CapabilitySnapshot capabilities() const noexcept override { return capabilities_; }
@@ -286,6 +289,7 @@ public:
         SweepIntent intent,
         PrepareAuthorization&& authorization,
         PrepareSinkRegistration&& sink) noexcept override {
+        // 所有同步拒绝分支都必须返还 intent、授权和 sink，且绝不安排回调。
         if (scenario_.prepare_behavior == MockPrepareBehavior::Reject) {
             ++observations_.rejected_prepare_calls;
             return PrepareRejected{
@@ -332,6 +336,7 @@ public:
                     std::move(intent), std::move(authorization), std::move(sink)}};
         }
 
+        // 接受只登记待办；即使 delay 为 0，也要等测试显式 advance() 才回调。
         ++observations_.accepted_prepare_calls;
         pending_prepare_.emplace(PendingPrepare{
             call,
@@ -350,6 +355,7 @@ public:
         RunDeliveryGrant&& delivery,
         BoardRunSinkRegistration&& sink) noexcept override {
         auto reject = [&](BoardErrc code) mutable -> RunSubmission {
+            // Run 拒绝与 Prepare 相同：调用者重新取得所有 move-only 输入的所有权。
             ++observations_.rejected_run_calls;
             return RunRejected{
                 BoardError{code},
@@ -385,6 +391,7 @@ public:
             return reject(BoardErrc::AuthorizationMismatch);
         }
 
+        // 捕获当前场景，保证一旦接受，输出波形和质量标记就不再被配置修改影响。
         ++observations_.accepted_run_calls;
         pending_run_.emplace(PendingRun{
             run,
@@ -400,6 +407,7 @@ public:
 
     void load_profile(MockCapabilityProfile profile) noexcept override {
         profile_ = profile;
+        ++capabilities_.capability_revision;
         rebuild_capabilities();
     }
 
@@ -407,6 +415,7 @@ public:
 
     void advance(VirtualDuration delta) noexcept override {
         now_ += delta;
+        // 虚拟时钟取代 sleep/线程：测试对异步事件发生时刻拥有完全控制权。
         if (pending_prepare_.has_value() && pending_prepare_->due_at <= now_) {
             complete_prepare();
         }
@@ -426,6 +435,7 @@ private:
             return;
         }
 
+        // 先从会话摘除待办再回调，允许 sink 在回调中安全地提交下一次 Prepare。
         auto pending = std::move(*pending_prepare_);
         pending_prepare_.reset();
         const auto prepared_id = PreparedExecutionId{next_prepared_id_++};
@@ -444,6 +454,7 @@ private:
             pending.intent.point_count,
             pending.intent.start_hz,
             pending.intent.stop_hz};
+        // 清单摘要把后续 PreparedStartToken/StartAuthorization 绑定到本次 Prepare。
         PrepareTerminal terminal = PrepareSucceeded{PreparedExecution{
             PreparedStartToken{capabilities_.session_id, prepared_id, manifest_digest},
             PreparedManifestLease{std::move(manifest)}}};
@@ -456,6 +467,7 @@ private:
             return;
         }
 
+        // 与 Prepare 相同，回调前先清空 pending，保证回调重入不会观察到 Busy。
         auto pending = std::move(*pending_run_);
         pending_run_.reset();
         auto& sink = pending.sink.sink();
@@ -485,6 +497,7 @@ private:
 
         RunTerminalKind terminal_kind = RunTerminalKind::Completed;
         std::uint32_t delivered_chunks = 1U;
+        // A 波未被上层接受时停止交付，B 波不会越过已经触发的背压/协议错误。
         if (incident_disposition == ChunkIngressDisposition::Accepted) {
             ReceiverObservationChunk response{
                 manifest_id,
@@ -507,6 +520,7 @@ private:
             terminal_kind = RunTerminalKind::Failed;
         }
 
+        // 先注销交付许可再发唯一终态；终态之后本 Run 不再持有交付预算。
         pending.delivery.retire();
         ++observations_.run_terminal_callbacks;
         sink.on_terminal(BoardRunTerminal{
@@ -514,19 +528,27 @@ private:
     }
 
     void rebuild_capabilities() noexcept {
+        const auto capability_revision =
+            capabilities_.capability_revision == 0U
+                ? 1U
+                : capabilities_.capability_revision;
+        const auto digest = core::StrongDigest{
+            0xB04DCAFE00000000ULL ^ capability_revision ^
+            (static_cast<std::uint64_t>(profile_.maximum_points) << 32U)};
         capabilities_ = CapabilitySnapshot{
             BoardContractVersion{1U, 0U},
             kMockSessionId,
             1U,
+            capability_revision,
             1U,
             1U,
-            1U,
-            core::StrongDigest{0xB04DCAFEU},
+            digest,
             profile_.maximum_points};
     }
 
     MockCapabilityProfile profile_{};
     MockScenario scenario_{};
+    CapabilitySnapshot initial_capabilities_{};
     CapabilitySnapshot capabilities_{};
     MockObservationSnapshot observations_{};
     VirtualDuration now_{0U};
@@ -546,10 +568,12 @@ core::Result<MockOpenedBoard, BoardError> make_opened_mock(
 
     try {
         auto owner = std::make_unique<MockBoardSession>(profile, scenario);
+        // control 是对 owner 所持同一对象的非 owning 视图，其寿命由 OpenedBoard 限定。
         auto* control = static_cast<MockBoardControl*>(owner.get());
         return core::Result<MockOpenedBoard, BoardError>::success(
             MockOpenedBoard{OpenedBoard{std::move(owner)}, control});
     } catch (const std::bad_alloc&) {
+        // 异常只在适配器内部消化，BoardPort 边界统一返回类型化错误。
         return core::Result<MockOpenedBoard, BoardError>::failure(
             BoardError{BoardErrc::ResourceExhausted});
     } catch (...) {

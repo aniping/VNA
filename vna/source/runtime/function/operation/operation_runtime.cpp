@@ -21,6 +21,7 @@ RuntimeCompletionRegistration& RuntimeCompletionRegistration::operator=(
 }
 
 RuntimeCompletionSink* RuntimeCompletionRegistration::take_sink() noexcept {
+    // 派发成功后由运行时持有回调注册权；源注册立即失效，避免重复派发。
     auto* sink = sink_;
     sink_ = nullptr;
     return sink;
@@ -55,6 +56,7 @@ ReservedWorkDispatch& ReservedWorkDispatch::operator=(
 }
 
 ReservedWorkDispatch::~ReservedWorkDispatch() {
+    // 预留和派发之间的任意提前返回都通过 RAII 自动归还固定槽位。
     release();
 }
 
@@ -88,6 +90,7 @@ core::Result<ReservedWorkDispatch, RuntimeError> OperationRuntime::reserve_work(
             continue;
         }
 
+        // generation 防止已经析构的旧凭证误释放后来复用同一索引的新槽位。
         slot.state = SlotState::Reserved;
         slot.generation = next_generation_++;
         slot.work_id = work;
@@ -116,6 +119,8 @@ core::Result<DispatchReceipt, RuntimeError> OperationRuntime::dispatch(
             RuntimeError{RuntimeErrc::InvalidPermit});
     }
 
+    // 这里只转移注册权并入队。execute() 必须由后续 run_one() 显式驱动，
+    // 从而保证调用者在 dispatch() 返回前不会收到完成回调。
     slot.state = SlotState::Queued;
     slot.work = &work;
     slot.completion = completion.take_sink();
@@ -135,6 +140,7 @@ bool OperationRuntime::run_one() noexcept {
         slot.state = SlotState::Running;
         const auto work_id = slot.work_id;
         const auto terminal = slot.work->execute();
+        // 回调期间保留 Running 状态，使重入查询看到真实状态；回调返回后才释放槽位。
         slot.completion->on_runtime_terminal(work_id, terminal);
         slot = Slot{};
         ++completed_;

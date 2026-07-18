@@ -30,6 +30,7 @@ LifecycleTerminalReservation& LifecycleTerminalReservation::operator=(
 }
 
 LifecycleTerminalReservation::~LifecycleTerminalReservation() {
+    // 未安装为可见生命周期的预留自动回滚，覆盖所有提前返回路径。
     release();
 }
 
@@ -57,6 +58,7 @@ InstrumentStore::reserve_lifecycle_terminal() noexcept {
             continue;
         }
 
+        // generation 把凭证绑定到本次占用，避免旧凭证释放复用后的同一槽位。
         slot.slot_state = SlotState::Reserved;
         slot.generation = next_generation_++;
         return core::Result<LifecycleTerminalReservation, StoreError>::success(
@@ -71,6 +73,7 @@ AcceptedCommitResult InstrumentStore::commit_accepted(
     OperationId operation,
     LifecycleTerminalReservation&& reservation) noexcept {
     const auto reject = [&](StoreErrc code) -> AcceptedCommitResult {
+        // 初始提交失败不能吞掉调用者预留的终态容量，必须原样返还凭证。
         return RejectedAcceptedCommit{
             StoreError{code}, std::move(reservation)};
     };
@@ -96,6 +99,8 @@ AcceptedCommitResult InstrumentStore::commit_accepted(
         return reject(StoreErrc::InvalidReservation);
     }
 
+    // 从 Reserved 直接转换为 Visible，使 Accepted 状态与终态容量成为同一槽位，
+    // 不存在“外部看见 Accepted，但内部没有空间记录最终结果”的窗口。
     slot.slot_state = SlotState::Visible;
     slot.operation = OperationSnapshot{
         operation, OperationState::Accepted, ++revision_};
@@ -114,6 +119,7 @@ core::Result<TerminalCommitReceipt, StoreError> InstrumentStore::commit_terminal
         }
 
         if (slot.operation.state != OperationState::Accepted) {
+            // 终态提交具备幂等读取语义：不覆盖首个终态，也不递增修订号。
             return core::Result<TerminalCommitReceipt, StoreError>::success(
                 TerminalCommitReceipt{
                     operation,
@@ -126,6 +132,7 @@ core::Result<TerminalCommitReceipt, StoreError> InstrumentStore::commit_terminal
                 StoreError{StoreErrc::InvalidOperation});
         }
 
+        // 可见槽位早在 Accepted 之前已经预留，因此该转换不再申请任何容量。
         slot.operation.state = terminal_state;
         slot.operation.revision = ++revision_;
         return core::Result<TerminalCommitReceipt, StoreError>::success(

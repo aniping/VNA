@@ -156,6 +156,29 @@ TEST(BoardAdapterContract, StalePrepareAuthorizationIsRejectedWithoutSideEffects
     VNA_REQUIRE(sink.terminal_count == 0U);
 }
 
+TEST(BoardAdapterContract, CapabilityChangePreservesInitialSnapshotAndAdvancesRevision) {
+    using namespace vna::board;
+
+    MockBoardProvider provider{
+        MockCapabilityProfile{201U},
+        MockScenario{MockPrepareBehavior::Succeed, 1U}};
+    auto opened_result = provider.open_controlled(
+        BoardOpenRequest{1U, BoardContractVersion{1U, 0U}});
+    VNA_REQUIRE(opened_result.has_value());
+    auto opened = std::move(opened_result).take_value();
+    VNA_REQUIRE(opened.control != nullptr);
+
+    const auto initial = opened.board.initial_capabilities();
+    opened.control->load_profile(MockCapabilityProfile{401U});
+    const auto current = opened.board.execution().capabilities();
+
+    VNA_REQUIRE(initial.maximum_points == 201U);
+    VNA_REQUIRE(opened.board.initial_capabilities().maximum_points == 201U);
+    VNA_REQUIRE(current.maximum_points == 401U);
+    VNA_REQUIRE(current.capability_revision == initial.capability_revision + 1U);
+    VNA_REQUIRE(current.digest != initial.digest);
+}
+
 TEST(BoardAdapterContract, InvalidSweepIntentIsRejectedBeforePrepareIsAccepted) {
     using namespace vna::board;
 
