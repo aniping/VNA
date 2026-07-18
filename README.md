@@ -4,11 +4,12 @@
 
 ## 当前状态
 
-候选整体架构 v0.1 与 176 项商用功能矩阵已经完成官方证据归类，但还不是冻结产品规格，也尚未开始业务代码实现。下一阶段只关闭真正的兼容目标、算法/计量黄金数据、真实单板契约、目标 SDK/容量和少量产品范围；不再要求用户凭感觉确认通用技术模型。
+候选整体架构 v0.1、端到端数据流/生命周期契约与 176 项商用功能矩阵已经完成基线，其中商用功能已完成官方证据归类；但它们还不是冻结产品规格，也尚未开始业务代码实现。下一阶段只关闭真正的兼容目标、算法/计量黄金数据、真实单板契约、目标 SDK/容量和少量产品范围；不再要求用户凭感觉确认通用技术模型。
 
 ## 设计文档
 
 - [整体系统架构](docs/design/system-architecture.md)
+- [端到端数据流与生命周期契约](docs/design/data-flow.md)
 - [商用功能逐项对齐矩阵](docs/design/feature-alignment-matrix.md)
 - [商用 VNA 功能能力目录](docs/research/commercial-vna-capability-catalog.md)
 - [商用 VNA 外部行为基线](docs/research/commercial-vna-behavior-baseline.md)
