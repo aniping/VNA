@@ -12,3 +12,17 @@
 - 数据结构中的字段若不能从名称直接确定单位、坐标、索引范围或语义，必须为字段补充注释。
 - 修改行为时必须同步检查并更新相关注释，禁止保留与实现不一致的过期描述。
 - 不为简单赋值、机械转发或能由代码直接读出的语句添加逐行复述式注释；注释应解释契约和原因，而不是翻译代码。
+
+## Agent skills
+
+### Issue tracker
+
+规格与工单使用仓库内 `.scratch/` 本地 Markdown 跟踪。详见 `docs/agents/issue-tracker.md`。
+
+### Triage labels
+
+使用默认五类标签。详见 `docs/agents/triage-labels.md`。
+
+### Domain docs
+
+采用单上下文布局：根 `CONTEXT.md` 与 `docs/adr/`。详见 `docs/agents/domain.md`。
