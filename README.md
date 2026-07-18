@@ -37,7 +37,20 @@ cmake --build --preset mingw-debug
 ctest --preset mingw-debug
 ```
 
-测试全程使用虚拟时间，不依赖 wall-clock sleep；当前不需要第三方库。
+测试全程使用虚拟时间，不依赖 wall-clock sleep。`BUILD_TESTING=ON` 时，CMake 按固定版本 `v1.17.0` 获取 GoogleTest，并通过 `gtest_discover_tests()` 注册独立测试用例；生产/RTOS 配置设置 `BUILD_TESTING=OFF` 后不会获取或链接 GoogleTest。
+
+## 源码组织
+
+工程采用 Piccolo 风格的运行时主干：根 CMake 只组合 `vna`，`vna/CMakeLists.txt` 再组合三方库、Runtime、Board Adapter 和测试。当前实现位于：
+
+- `vna/source/runtime/core`：基础类型；
+- `vna/source/runtime/platform`：平台与 Board seam；
+- `vna/source/runtime/resource`：权威事实存储；
+- `vna/source/runtime/function`：Operation 与 Instrument 工作流；
+- `vna/source/adapter`：Mock 及未来真实单板 Adapter；
+- `vna/source/test`：GoogleTest contract/integration 测试。
+
+项目自有头文件统一使用 `.h`，实现文件使用 `.cpp`；文件加入现有 Runtime target 时必须在对应 `CMakeLists.txt` 中显式列出，不使用递归 glob 自动收集源码。
 
 ## 设计文档
 
