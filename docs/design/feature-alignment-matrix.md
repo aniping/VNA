@@ -135,4 +135,4 @@
 9. **SCPI 与 IEEE 488.2**：主方言、parser、会话、队列、状态寄存器、完成同步和数据阶段。
 10. **State、文件、诊断、安全与平台**：保存恢复、Touchstone/CSV、自检、日志、权限、TLS、依赖和容量。
 
-上述十组的官方证据审查已经完成。后续不再按概念逐个提问，而是按四个闭合包推进：Compatibility Profile、算法/计量黄金集、Board Adapter 契约、AArch64 平台准入；用户只需对本节 10 项产品取舍和首个兼容目标作批量决定，未明确回复时保留推荐默认但不冒充已批准。
+上述十组的官方证据审查已经完成。后续不再按概念逐个提问，而是按四个闭合包推进：Compatibility Profile、算法/计量黄金集、[Board Adapter 契约](board-adapter-contract.md)、AArch64 平台准入；通用跨层规则已经进入[Interface 契约基线](interface-contracts.md)。Board 文档目前仍是候选契约，只有底软签字、Real HIL 和双工具链门禁通过后才关闭真实单板状态。用户只需对本节 10 项产品取舍和首个兼容目标作批量决定，未明确回复时保留推荐默认但不冒充已批准。

@@ -4,9 +4,9 @@
 
 ## 架构层与数据阶段
 
-项目统一使用 [六层职责模型](docs/design/layered-architecture.md)：L1 协议 Adapter、L2 仪器应用、L3 Operation Runtime、L4 领域执行、L5 权威事实、L6 资源 Adapter 与平台。层表示职责和依赖方向，不要求每个调用机械穿过全部层；`Instrument Kernel` 是控制主干，L3 调度 L4，只有 L2 可以通过 `DomainCommitBundle` 让 L5 的事实原子可见。
+项目统一使用 [六层职责模型](docs/design/layered-architecture.md)：L1 协议 Adapter、L2 仪器应用、L3 Operation Runtime、L4 领域执行、L5 权威事实、L6 资源 Adapter 与平台。层表示职责和依赖方向，不要求每个调用机械穿过全部层；`Instrument Kernel` 是控制主干，L3 调度 L4，只有 L2 可以通过 `DomainCommitBundle` 让 L5 的事实原子可见。方法、accepted/terminal、lease 与错误的共同规则见[跨层 Interface 契约](docs/design/interface-contracts.md)。
 
-A/B/Stage/C 是 L5 中的正式**数据阶段**，不是四个软件层。Marker/Limit 定义在 L2、求值在 L4、结果随 C 存入 L5、最后由浏览器呈现；Diagram 只组织 C 的显示引用，不参与测量判定。`BoardPort` 是 L4 Acquisition 拥有的硬件 seam，Real/Mock/Replay 是它的 L6 Adapter；每块板向上暴露一个 `BoardSession` Interface，不能把单板差异带入 Channel、Trace、Calibration 或 Diagram 语义。
+A/B/Stage/C 是 L5 中的正式**数据阶段**，不是四个软件层。Marker/Limit 定义在 L2、求值在 L4、结果随 C 存入 L5、最后由浏览器呈现；Diagram 只组织 C 的显示引用，不参与测量判定。`BoardPort` 是 L4 Acquisition 拥有的硬件 seam，Real/Mock/Replay 是它的 L6 Adapter；每块板通过同一 `OpenedBoard` 暴露 Execution、Safety、Maintenance 三个权限分面，字段级规则见 [Board Adapter 契约](docs/design/board-adapter-contract.md)，不能把单板差异带入 Channel、Trace、Calibration 或 Diagram 语义。
 
 ## 采集
 
@@ -29,7 +29,7 @@ Board Adapter 将一块接收机观测唯一移动给 Acquisition Ingress 的所
 与数值同路传播的 validity、quality flags、有界指标及其实际 granularity。不同层可以是 Sweep、receiver、path、point 或 matrix-element 粒度；ratio、平均、校准、矩阵变换和 Trace 节点按版本化 quality transform 产生下一层质量，不能用日志附言或一个全局 `valid` 布尔值代替。
 
 **准备执行清单（Prepared Execution Manifest）**：
-Sweep Compiler 先从请求生成 `SweepIntent` 与保守资源声明；Resource Arbiter 依据当前 ResourceGraph topology epoch 做保守预准入，再允许 Board Adapter `prepare` 形成不可变实际执行事实。Manifest 包含量化轴、功率、IFBW、路由、source state、资源和内存界限；校准匹配、精确资源/处理容量预留和预准入 token 到 `ExecutionLease` 的升级只能使用它，升级成功后才可 `start`，不能用未量化请求值替代。
+L2 的纯 `SweepAdmissionPlanner` 先从同一授权 Catalog cut 生成 `SweepIntent`、typed refs 与保守资源声明；第一次 Runtime dispatch 前，L2 已取得 acquisition/必达后继的 `ReservedWorkDispatch{WorkId, WorkDispatchPermit, RuntimeCompletionRegistration}`、purpose-specific frozen pins、输出与新 A join reservation，以及 stateful ResourceArbiter 全有或全无签发的 `PreAdmissionLease`、逐板 prepare/run call/sink 容量和 `ExactFinalizationCapability`。Board Adapter `prepare` 才形成包含量化轴、功率、IFBW、路由、source state、精确资源和采集界限的不可变实际事实。L4 只能用 Manifest 校验并在已有 envelope 内本地消费 finalization capability，无新分配地收窄成 exact `AcquisitionRunResourceSet + StartAuthorization`，成功后才可 `start`；不能在 L4 反向申请新容量、换板，也不能用未量化请求值替代。
 
 **逻辑扫频（Logical Sweep）**：
 为产生一个完整测量结果而必须原子完成的全部采集动作。完整双端口 S 参数测量通常包含正向、反向及板卡误差模型要求的辅助观测；任何必要动作失败都不发布部分网络结果。
@@ -44,7 +44,7 @@ Sweep Compiler 先从请求生成 `SweepIntent` 与保守资源声明；Resource
 B 层快照对平均输入的有界来源证明。Finite Average 可保存受 factor 上限约束的显式 `source_sweep_ids`；Sliding Average 保存有界窗口 ID、固定 contribution ring 的不可变结构共享引用与 accumulator snapshot；Cumulative/VendorRunning Average 保存 `average_accumulator_snapshot_id`、generation/count、首末输入序号范围和滚动强摘要，详细逐 Sweep 审计另受有界保留策略约束。任何持续运行模式都不得让 B 层元数据随时间无界增长。
 
 **单板适配器（Board Adapter）**：
-隔离公司底软或 Mock 实现的唯一硬件 seam。它负责报告能力、准备和执行逻辑扫描、上送运行 phase/接收机观测、提供跨线程 abort 与 RF safe-state 过渡及健康信息，但不实现用户校准、Marker、Limit、Diagram 或协议业务。
+隔离公司底软或 Mock 实现的唯一硬件 seam。它负责报告能力、准备和执行逻辑扫描、上送运行 phase/接收机观测、提供跨线程 abort 与 RF safe-state 过渡及健康信息，但不实现用户校准、Marker、Limit、Diagram 或协议业务。候选 Interface 采用显式 `prepare → actual Manifest admission → start`，并把普通执行、RF 安全与维护恢复分成三个权限分面。
 
 **单板能力描述（Board Capabilities）**：
 单板可执行频率、功率、IFBW、点数、端口路由、触发、接收机拓扑、波量定义、质量标志、并发资源、abort SLA、RF safe/off，以及 Clock/Coherence Domain、timebase lock、同步 trigger/epoch 与最大 skew 的版本化事实。上层根据它验证和编译扫描，不根据板卡型号散布条件分支；未知相干能力不得把多块板的数据合成同一代 S-matrix、mixed-mode 或校准 bundle。
@@ -127,25 +127,28 @@ Diagram 对 Analysis Trace 的显示关联，只包含可见性、颜色、线�
 扫频、平均序列、测量阶段物化、校准/校准验证、迹线重算、保存恢复、导出和诊断等异步工作的统一可等待生命周期。原生 `SweepOperation` 在 B 层 Measurement 发布后完成；`MaterializeMeasurementStageOperation`、`EvaluateTraceOperation`、`AverageSequenceOperation` 有各自终态。Web 事件和 SCPI `*OPC?` 等同步机制按 Compatibility Profile 等待明确 Operation/fence，而不是读取全局忙碌布尔值。
 
 **执行上下文（Execution Context）**：
-所有 Measurement Pipeline 求值、Calibration solve/verification、Persistence 和 Diagnostics 长操作入口必须显式接收 `ExecutionContext{stop_token, monotonic_deadline, BudgetHandle, ProgressSink}`。可协作计算在有界间隔检查取消和 deadline；不可中断的第三方/OS 调用只能进入隔离 worker/lane，超时后由可见 Drain Operation 继续持有容量、输入 lease 和临时资源，不能因父 Operation 先返回终态就提前复用。
+所有 Measurement Pipeline 求值、Calibration solve/verification、Persistence 和 Diagnostics 长操作入口必须显式接收 `ExecutionContext{stop, deadline, budget, progress}`。可协作计算在有界间隔检查取消和 deadline；不可中断的第三方/OS 调用只能进入隔离 worker/lane，超时后由可见 Drain Operation 继续持有容量、输入 lease 和临时资源，不能因父 Operation 先返回终态就提前复用。
 
 **操作输入租约集合（Operation Input Lease Set / Pinned Input Set）**：
-Control Executor 在派发计算前一次性 pin 住全部 typed parent snapshots、共享 Buffer 与所需元数据的 RAII 集合。Worker 或 Drain 在真实 terminal 前拥有它，防止多输入计算读到一半时某个父 payload 被 retention 回收；产生正式 publication 的 Board/Processing/Calibration worker 只能返回 `PublicationCandidateBatch`，不能借此直接发布 Catalog、更新 Head 或发送 Event。Persistence/Diagnostics 则返回各自 deep Module 定义的 Result，由 Control Executor 决定是否转换为领域 candidate。
+Control Executor 在提交 Accepted/Pending 并派发计算前，先从 Runtime 取得同时预留 queue/worker 与可靠 completion slot 的 `ReservedWorkDispatch{WorkId, WorkDispatchPermit, RuntimeCompletionRegistration}`，再一次性 pin 全部 typed parent snapshots、共享 Buffer 与所需元数据，取得 output/临时资源 reservation，并从 Store 为将要可见的 Operation/Ticket/Drain 取得 `LifecycleTerminalReservationSet`；Query Pending admission 还为每个 caller 独立取得 `PendingResultPinReservation`。任何一步或初始 commit 失败都释放完整 owner，不留幽灵 Operation/Ticket，也不 dispatch。Worker 或 Drain 在真实 terminal 前拥有执行侧 move-only 能力，Store 则保留 lifecycle terminal/pin reservation，防止多输入计算读到一半时父 payload 被回收或终态无容量可写；产生正式 publication 的 Acquisition/Processing/Calibration worker 通过 `Succeeded | Failed | Draining` typed terminal 返回，只有 Succeeded 分支携带 `PublicationCandidateBatch`，不能借此直接发布 Catalog、更新 Head 或发送 Event。Persistence/Diagnostics 使用同样的 terminal/ownership 规则返回各自有类型结果。
+
+**必达后继所有权（Required Continuation Ownership）**：
+非 A-only Sweep 在 RF start 前将 Store 依赖/输出/新 A join reservation 与 Runtime `ReservedWorkDispatch` 聚合为 `AcquisitionContinuationOwner`。A commit 前 L2 把它拆成 `ContinuationStoreJoinOwner` 与 `ContinuationRuntimeEscrow`：只有前者进入 `DomainCommitBundle`，后者和 `PreviewFinalizationOwnerSet` 留在 L2；Store 成功返回 `ContinuationStoreHandoff` 后，L2 再与 escrow 组合派发。A-only 使用 `AuthorizedAOnlyCompletionOwner`，不创建空 handoff。
 
 **发布候选批与候选提交租约（Publication Candidate Batch / Candidate Commit Lease）**：
-产生正式 publication 的 Board/Processing/Calibration worker 对冻结输入计算后返回的唯一候选载体，包含待发布的 snapshot graph、输出 reservation 和校验信息。批从 worker return 起到 commit 或 abort 终止始终持有 `CandidateCommitLease`，保证候选 payload、父引用和预算不会落入无人拥有的间隙；它不是已发布事实，任何查询或事件都不得提前观察。
+产生正式 publication 的 Acquisition/Processing/Calibration worker 在 `Succeeded` typed terminal 中返回的唯一候选载体，包含待发布的 snapshot graph、输出 reservation 和校验信息；Failed 不带 candidate，Draining 转交完整 owner。批从 worker return 起到 commit 或 abort 终止始终持有 `CandidateCommitLease`，保证候选 payload、父引用和预算不会落入无人拥有的间隙；它不是已发布事实，任何查询或事件都不得提前观察。
 
 **领域提交批（Domain Commit Bundle）**：
-Control Executor 把可选的 `PublicationCandidateBatch`、有类型的 `DomainCatalogPatchSet` 与 Head、Operation/fence、Instrument Status Register、SCPI Session State、WaitRegistry、QueryTicket/ResultPin、EventJournal 和 retention patches 组合成一次提交，由 `DomainCommitCoordinator` 持 `DomainCommitPermit` 全有或全无地生效。Domain Catalog patch 覆盖 Instrument/Channel/Calibration/Analysis/Display 等小型可变 revision，不得退化成任意 key/value。典型提交包括 B + accumulator snapshot + `ChannelAverageHead` + `ChannelMeasurementHead`，CorrectionSet publication + CalibrationSession terminal，或可提升的当前 Live C closure + `TraceAnalysisHead`；只读取既有结果时可没有候选批，但 direct Ready admission 或 Pending→Ready 都必须在同一次提交中取得对应 `ResultPinLease`。失败时不得留下可见 snapshot、半更新领域 revision、已推进 Head、未锁存的 status、丢失的 waiter wakeup、Ready ticket 或孤立 Event。
+Control Executor 把可选的 `PublicationCandidateBatch`、有类型的 `DomainCatalogPatchSet` 与 Head、Operation/fence、Instrument Status Register、SCPI Session State、WaitRegistry、QueryTicket/ResultPin、EventJournal 和 retention patches 组合成一次提交，通过公开 `InstrumentStore::commit` 持 `DomainCommitPermit` 全有或全无地生效；Measurement Data Store 与 Domain Commit Coordinator 只是 Store 的内部实现。A commit 可携 Store-only `ContinuationStoreJoinRequestSet`，但 bundle/result 不得包含或透传 `ReservedWorkDispatch`、`RuntimeCompletionRegistration` 或 Preview owner。Domain Catalog patch 覆盖 Instrument/Channel/Calibration/Analysis/Display 等小型可变 revision，不得退化成任意 key/value。典型提交包括 B + accumulator snapshot + `ChannelAverageHead` + `ChannelMeasurementHead`，CorrectionSet publication + CalibrationSession terminal，或可提升的当前 Live C closure + `TraceAnalysisHead`。direct Ready 在创建 Ticket 的同一 commit 中取得精确 `ResultPinLease`；Pending→Ready 只转换该 caller 在 admission 时已安装的 `PendingResultPinReservation`，一个 waiter 的 quota/cancel 不得影响共享 publication 或其他 waiter。publication commit 失败时不得留下可见 snapshot、半更新领域 revision、已推进 Head、未锁存的 status、丢失的 waiter wakeup、Ready ticket 或孤立 Event；已有可见 lifecycle 必须用其预留 terminal capacity reconcile 或 state-only commit Failed，只有 Store integrity fault 才 fail-stop。
 
 **结果闭包租约（Result Closure Lease）**：
-QueryTicket Ready 时由 `ResultPinLease` 保活的自包含结果闭包，例如 C publication 连同 Trace/Marker/Limit children、axis、quality 及结构共享 Buffer，而不是只 pin 一个顶层 ID。`open_read` 在 Ticket Ready→Reading 时将它原子转换为 `ReaderLease`，传输 terminal 再与 Reading→Consumed/Failed 同批释放；Event 不持有该租约，祖先 payload 可以按 retention 回收，但最小 tombstone/digest/provenance 保留。
+QueryTicket Ready 时由 `ResultPinLease` 保活的自包含结果闭包，例如 C publication 连同 Trace/Marker/Limit children、axis、quality 及结构共享 Buffer，或已提交的 Blob result，而不是只 pin 一个顶层 ID。`ResultPinLease` 始终留在 Store；L2 `open_read` 只提供授权，Store `open_result` 在 Ticket Ready→Reading 时将它原子转换为只封装在 opaque snapshot/blob `QueryReadHandle` 内的 `ReaderLease`，传输 terminal 再与 Reading→Consumed/Failed/Abandoned 同批释放；Event 不持有该租约，祖先 payload 可以按 retention 回收，但最小 tombstone/digest/provenance 保留。
 
 **测量与分析头（Measurement / Analysis Head）**：
 Catalog 中选择“最近尝试”和“last-good 正式结果”的小型可变记录。`ChannelMeasurementHead` 与 `TraceAnalysisHead` 在失败时更新 attempt/status，但不改写不可变 B/C。`ChannelAverageHead{generation, current_accumulator_snapshot_id, count, complete, revision}` 是下一次平均贡献选择权威 accumulator 的唯一入口；每次接受贡献的 B、accumulator snapshot、`ChannelAverageHead` 和 `ChannelMeasurementHead` 必须在同一个 `DomainCommitBundle` 切换。只有匹配 expected current-input token 的 Live C 可以 compare-and-set 提升 `TraceAnalysisHead`；历史 B/Stage exact query 默认只返回 C，不倒退 Head。stale 是 Head、当前配置和 last-good 之间的关系，不是历史 Snapshot 被原地修改。
 
 **正式数据权威（Formal Data Authority）**：
-Measurement Data Store 与 SnapshotCatalog 共同持有 A/B/Stage/C、Calibration Observation、质量平面、父闭包和 retention 事实。Operation 只表示工作，Event 只提示 commit，QueryTicket 只表示调用者的访问能力；任何一者都不能替代正式数据权威。
+L5 `InstrumentStore` 通过内部 Measurement Data Store/SnapshotCatalog 持有 A/B/Stage/C、Calibration Observation、Blob result、质量平面、父闭包和 retention 事实。Operation 只表示工作，Event 只提示 commit，QueryTicket 只表示调用者的访问能力；任何一者都不能替代正式数据权威。
 
 **恢复激活策略（Recall Activation Policy）**：
 State Recall 的 RF/运行态边界。默认 `RestoreInHoldSafeOff`：只原子恢复已验证配置和静态结果，所有 Channel 保持 Hold、RF safe/off，不恢复 Continuous/Groups/Armed/WaitingTrigger 或未完成 Operation。`ExplicitRestoreRunState` 需要额外授权，仍先恢复到安全 Hold，再以新的完整 admission Operation 启动；异常重启永远使用安全默认，普通 State 文件不能携带可绕过授权的 auto-run 能力。

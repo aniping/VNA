@@ -2,7 +2,7 @@
 
 > 状态：候选架构 v0.1，176 项商用功能已完成官方证据归类，但兼容 Profile、算法/计量黄金数据、真实单板契约、公司 SDK/容量和少量产品范围尚未闭合，因此不得视为冻结或批准。
 
-> 首次阅读请先看 [VNA 分层架构与跨层流动](layered-architecture.md)。本文在该六层地图之上展开完整领域模型、Module Interface、线程/内存与功能语义，不再让读者从实现节点反推分层。
+> 首次阅读请先看 [VNA 分层架构与跨层流动](layered-architecture.md)。方法级 accepted/terminal、lease 与错误规则见[跨层 Interface 契约](interface-contracts.md)，单板 seam 见 [Board Adapter 契约](board-adapter-contract.md)。本文在该六层地图之上展开完整领域模型、Module Interface、线程/内存与功能语义，不再让读者从实现节点反推分层。
 
 ## 1. 目标、证据与约束
 
@@ -91,21 +91,24 @@ flowchart LR
     Persistence -.->|"typed result + terminal"| Runtime
     Diagnostics -.->|"typed result + terminal"| Runtime
     Runtime -.->|"typed completion"| Control
-    Control --> DataStore["L5 Measurement Data Store：pin / read"]
-    Control --> Commit["L5 DomainCommitCoordinator：all-or-nothing"]
+    Control --> Store["L5 InstrumentStore：唯一公开 transaction boundary"]
+    Store --> DataStore["internal Measurement Data Store"]
+    Store --> Commit["internal Domain Commit Coordinator"]
     Commit --> DataStore
-    Acquisition --> BoardPort["L6 BoardPort seam：BoardSession Interface"]
+    Acquisition --> BoardPort["L6 BoardPort seam：OpenedBoard Execution/Safety/Maintenance"]
     BoardPort --> Real["L6 Real Board Adapter"]
     BoardPort --> Mock["L6 Mock Board Adapter"]
     BoardPort --> Replay["L6 Replay Board Adapter"]
     Real --> Bottom["Company board software"]
     Commit --> Events["L5 EventJournal"]
     Commit --> Wait["L5 Status、Fence、WaitRegistry"]
-    Events -->|"经 Kernel watch Interface 读取"| Web
+    Events --> Feed["L5 InstrumentStore EventFeed"]
+    Feed --> Watch["L2 ACL/filter/access-revision Watch 投影"]
+    Watch -->|"授权 mailbox"| Web
     Wait -->|"经 Kernel wait/status Interface 读取"| SCPI
 ```
 
-图中的 L5→L1 回程箭头表示已授权的数据流，不表示 L5 反向依赖协议层：Web Dispatcher 通过 Kernel 的 `watch` Interface 读取 EventJournal；SCPI Adapter 通过 Kernel 的 wait/status Interface 消费 WaitReadyQueue 和状态事实。Web 和 SCPI 是 Transport Adapter，不是第二套应用。`httplib::Request`、JSON DOM、SCPI 字符串、Socket 句柄、厂商底软结构体和 Eigen 类型都不得穿过 Instrument Kernel 的 Interface。
+图中的 L5→L2→L1 回程箭头表示已授权的数据流，不表示 L5 反向依赖协议层：Kernel 通过 `InstrumentStore::begin_event_feed` 建立 replay-cut→live feed，再进行 ACL/filter/access-revision 投影；Web Dispatcher 只编码授权 Watch mailbox，不读取 EventJournal。SCPI Adapter 通过 Kernel 的 wait/status Interface 消费 WaitReadyQueue 和状态事实。Web 和 SCPI 是 Transport Adapter，不是第二套应用。`httplib::Request`、JSON DOM、SCPI 字符串、Socket 句柄、厂商底软结构体和 Eigen 类型都不得穿过 Instrument Kernel 的 Interface。
 
 ## 5. 完整领域模型
 
@@ -170,7 +173,7 @@ Instrument [instrument_revision]
 │  ├─ BoardRecoveryOperation
 │  └─ DrainOperation
 ├─ QueryTicketCatalog
-│  └─ Pending -> Ready -> Reading -> Consumed|Failed；Pending/Ready -> Expired|Cancelled|Failed
+│  └─ Pending -> Ready -> Reading -> Consumed|Failed|Abandoned；Pending/Ready -> Expired|Cancelled|Failed
 └─ SnapshotCatalog
    ├─ CompletedSweepBundle*
    ├─ CompletedMeasurementBundle*
@@ -258,19 +261,21 @@ flowchart LR
 ```mermaid
 flowchart TD
     Command["Typed Command"] --> Revision["ChannelRevision + CapabilityRevision"]
-    Revision --> Compiler["Sweep Compiler"]
-    Compiler --> Intent["Provisional SweepIntent<br/>observation plan + requested values"]
-    Intent --> PreAdmission["Resource Arbiter.pre_admit<br/>conservative claim + topology epoch"]
+    Revision --> Compiler["L2 SweepAdmissionPlanner<br/>pure, bounded, no side effects"]
+    Compiler --> Intent["SweepAdmissionPlan<br/>FrozenSweepJob + observation plan + claims + typed refs"]
+    Intent --> ReserveEnvelope["Runtime reserve_work + InstrumentStore pin/output<br/>acquisition + required continuation capacity"]
+    ReserveEnvelope --> PreAdmission["L2 stateful ResourceArbiter.try_pre_admit<br/>all-or-none claim + topology epoch"]
     PreAdmission --> Prepare["Board Adapter.prepare<br/>no RF / reversible staging only"]
     Prepare --> Manifest["Prepared Execution Manifest<br/>actual values + exact resources + acquisition bounds"]
     Manifest --> Validate["Correction/capability validation"]
-    Validate --> Reserve["ProcessingReservationPlan<br/>snapshot/graph memory + measurement-processing budget"]
-    Reserve --> ExecutionLease["upgrade to ExecutionLease"]
-    ExecutionLease --> Adapter["Board Adapter.start → RunHandle"]
+    Validate --> Finalize["local exact finalization<br/>narrow existing envelope; no new allocation"]
+    Finalize --> RunResources["L4 AcquisitionRunResourceSet<br/>retains every upper-layer owner"]
+    RunResources -->|"derive only StartAuthorization + RunDeliveryGrant"| Adapter["Board Adapter.start → RunHandle"]
     Adapter --> Ingress["Acquisition Ingress<br/>move-only AcquisitionChunkLease"]
     Ingress --> Builder["Network Observation Builder<br/>sole long-lived chunk owner"]
     Builder -. "bounded ChunkReadView or independent tile" .-> Preview["Preview-capable Processing Subgraph"]
-    Preview --> WebPreview["Provisional formatted preview"]
+    Preview --> PreviewHub["authorized bounded PreviewHub"]
+    PreviewHub --> WebPreview["Provisional formatted preview"]
     Builder --> Sweep["CompletedSweepBundle<br/>complete logical acquisition"]
     Sweep --> RfGraph["Profile-validated RF processing graph<br/>ratio + factory correction + averaging + user error correction"]
     RfGraph --> CmtFlow["CMT internal-array profile<br/>receiver-wave average → ratio → user correction"]
@@ -291,11 +296,15 @@ flowchart TD
     Trace --> Publish
 ```
 
-顺序是强约束：Compiler 先产生 requested intent、observation plan 和覆盖最坏情况的保守资源声明；Resource Arbiter 取得短期 `PreAdmissionLease` 与 topology/capability epoch 后，`BoardAdapter::prepare` 才把量化后的实际轴、路由、功率、精确资源和**采集侧**内存界限写入不可变 `PreparedExecutionManifest`。prepare 不得启动 RF、采集数据或提交持久板卡配置；若厂商 SDK 必须做板内 staging，只能在 PreAdmissionLease 内执行可回滚动作，并由 RAII Prepared handle 在失败时恢复。Correction/capability validation 之后，Processing Planner 根据实际 Manifest、处理图和并发 pin 生成独立 `ProcessingReservationPlan`，同时预留 B 层 MeasurementProcessing/Publishing 的 queue、worker budget 与完成上界；lazy/后台分析不得消费这份保留容量。采集与处理两类预留都成功后再把 pre-admission 原子升级为 `ExecutionLease` 并调用 `start`。Manifest 若超出保守声明、epoch 变化、验证或 reservation 失败，必须释放/回滚后重新 admission，绝不能带着过期 prepare 结果启动 RF。
+顺序是强约束：L2 `SweepAdmissionPlanner` 从同一授权 Catalog cut 的冻结 Channel/Profile/Capability/Topology input 纯计算 `SweepAdmissionPlan`，产生 requested intent、observation plan、typed refs、Runtime claims 和覆盖最坏情况的 conservative claim；它不创建 Operation/lease、不调用 Board，也不在 Control Executor 上展开逐点大数组。第一次 Runtime dispatch 前，L2 先从 Runtime 分别取得 acquisition 与 purpose-specific 必达后继的 `ReservedWorkDispatch{WorkId, WorkDispatchPermit, RuntimeCompletionRegistration}`，再由 InstrumentStore 原子 pin 冻结依赖、预留输出与新 A join 的 pin/closure/quota slot，最后由**有状态** ResourceArbiter 按 canonical resource order/topology epoch 为单板或多板全有或全无地 `try_pre_admit`，同时保留逐板 prepare/run Adapter call/worker/queue slot 与 sink registrations，并封装 `ExactFinalizationCapability`。普通测量保活旧 accumulator、CorrectionSet、B graph/Profile 并预留 B MeasurementPublication；校准 Observation 保活 Session/Method/Standard 与独立 average closure且排除用户 Correction/DUT B；Verification 保活目标 Correction 与比较预算；只有授权 raw/diagnostic workflow 可 A-only。Store join owner 与 Runtime escrow 聚合成 `AcquisitionContinuationOwner`，再连同 Preview publisher 组成 move-only `PendingSweepAdmission/AcquisitionLeaseSet`，全部成功后才提交 Operation 并 dispatch；任何前置失败按统一逆序释放且不留下幽灵 Operation。L4 调用 `BoardExecutionPort::begin_prepare` 得到 actual Manifest 后，只能在该保守 envelope 内本地消费 finalization capability，做 Correction/capability validation 和无新分配的 exact finalization，收窄成 `AcquisitionRunResourceSet + StartAuthorization`；不得回调 L2/L5/Runtime 另取容量、换板或减少必要 observation。prepare 不得启动 RF、采集或持久提交；SDK staging 通过显式 discard terminal 收尾。Manifest 超界、epoch 变化或无法在 envelope 内成形时必须 discard 并失败；`StartAuthorization` 只证明 exact reservation ID/digest 仍有效，不携带 L4/L5 ownership，然后才可 `begin_run`。lazy Stage/C 仍是后续独立 admission；Continuous 每轮也重新取得 cut/plan/admission，父 Operation 不永久占用未来轮次资源。
+
+上述 Store join owner + Runtime escrow 的聚合只适用于非 A-only variant；受策略授权的 raw/diagnostic A-only 使用 `AuthorizedAOnlyCompletionOwner`，不预留也不生成空的 Store/Runtime 后继 handoff。
+
+所有这些 execution owner 齐备后，L2 还必须为即将可见的 SweepOperation 取得 `LifecycleTerminalReservationSet`，并与 Accepted fact 同批安装进 Store；该初始 commit 失败则释放完整 `PendingSweepAdmission`、不返回 OperationId且绝不 dispatch。reservation 在 Operation 可见期间留在 L5，保证之后 A/B publication commit 失败也能以 state-only commit 落到 Failed/AlreadyTerminal；普通资源错误不能让 Operation 永久停在 Publishing。
 
 Adapter 每个 chunk 的 move-only `AcquisitionChunkLease` 只移动到有界 Acquisition Ingress，Network Observation Builder 是提交前的唯一长期拥有者。若底软 buffer 在回调返回后立即复用，Real Adapter 必须在边界复制一次到项目 BufferPool；只有底软 ABI 明确允许生命周期转移时才可包装原 buffer。Preview 只得到 Builder 生命周期内的有界只读 `ChunkReadView`，或独立复制/派生的 `PreviewTile`；Preview 队列满时丢 tile，不能阻塞 Builder 或延长 driver buffer 生命周期。最后一个 chunk 与唯一 terminal 建立 happens-before；terminal 后回调按 BoardRunId/generation 拒绝。账本闭合时，seal 后的只读 Buffer 随 A candidate 和 `CandidateCommitLease` 转交；提交成功后由 A/Data Store 拥有，只有失败/取消才归还未发布 Buffer，任何仍被 A 引用的内存都不得被 pool 复用。
 
-Builder 为每个 BoardRun 维护 `SweepCompletionLedger`：它从该板 Manifest 展开 expected observation map，记录 `LogicalSweepId + BoardRunId + run_generation`、source-state/receiver/path/point coverage、chunk sequence 范围、重复/缺失、实际轴、terminal/readback 与质量汇总。A 的 `PublicationCandidateBatch` 用 `BoardRunEvidence[]` 把每个 ledger 与各自 `manifest_id/board_run_id/run_generation` 绑定；只有全部 ledger 闭合且 required observations 相容时才交给 Control Executor 形成原子提交，不能用“收到 terminal”代替完整性证明。
+Builder 为每个 BoardRun 维护 `SweepCompletionLedger`：它从该板 Manifest 展开 expected observation map，记录 `LogicalSweepId + BoardRunId + run_generation`、source-state/receiver/path/point coverage、chunk sequence 范围、重复/缺失、实际轴、terminal/readback 与质量汇总。A 的 `PublicationCandidateBatch` 用 `BoardRunEvidence[]` 把每个 ledger 与各自 `manifest_id/board_run_id/run_generation` 绑定；只有全部 ledger 闭合且 required observations 相容时，Builder 才向同层 `AcquisitionEngine` 返回 sealed A candidate + ledger。Engine 把自己从 `AcquisitionLeaseSet` 保留的 continuation/Preview owner 与 Builder 结果组装成 `AcquisitionTerminal` 交给 L3 Runtime，再由预留 registration 投递 `RuntimeWorkCompletion` 给 L2 Control Executor 形成原子提交；Builder 不拥有这些跨层 owner，也不能用“收到 terminal”代替完整性证明。
 
 下列只是 Core Compatibility Profile 的候选默认图，不是跨板卡、跨误差模型和跨厂商都成立的唯一 RF 顺序：
 
@@ -321,7 +330,7 @@ Processing Graph 的类型约束：
 - Complex Data/Memory Math 可以在 formatting 前执行；Derived Quantity/Formatting、Smoothing、Hold 和 Statistics 是独立节点，各自声明输入类型、比较 metric、跨 Sweep 状态及 Compatibility Profile 位置。
 - 每个节点声明输入/输出 stage、axis/domain、reference plane、port topology、Z0/wave definition、revision、内存需求、validity dependency、quality transform、conditioning metric 和是否 preview-capable。
 
-Preview 不能从原始 a/b 直接画到浏览器。它运行同一 Processing Graph 中可流式执行的子图，至少形成当前 Measurement 和 format 的暂态结果；需要完整 forward/reverse bundle、完整轴或跨点上下文的 correction、group delay、time-domain、statistics 等节点尚不可用时，UI 必须显示明确的 provisional stage，或继续显示 last-good 正式结果。Preview generation 在失败/取消时整体丢弃，不进入 SnapshotCatalog、Average、校准、Marker、Limit、保存或 SCPI data query。
+Preview 不能从原始 a/b 直接画到浏览器。它运行同一 Processing Graph 中可流式执行的子图，至少形成当前 Measurement 和 format 的暂态结果；需要完整 forward/reverse bundle、完整轴或跨点上下文的 correction、group delay、time-domain、statistics 等节点尚不可用时，UI 必须显示明确的 provisional stage，或继续显示 last-good 正式结果。L4 Acquisition 只在 typed terminal 中归还 `PreviewFinalizationOwnerSet`；B/C 工作期间它由 L3 Runtime escrow 持有而不传入 MeasurementPipeline。L2 在目标 A/B/已独立 admission 的 exact C 正式 commit 成功后发送 `SupersededByFormalResult`，或在失败事实 commit 后发送 Discarded/Failed。C-target owner 在 B commit 后才尝试有界 exact-C admission；失败时按冻结 policy 以 B ref、`FormalUnavailable` 或 Discarded 立即终结，不无限等待 C。Preview 不进入 SnapshotCatalog、Average、校准、Marker、Limit、保存或 SCPI data query。
 
 ### 6.1 正式快照的最小溯源信息
 
@@ -399,7 +408,7 @@ AnalysisInputRefSet
 
 在 Hold 或 last-good 数据上修改 format、Math、Memory、Smoothing、Marker 或 Limit 时，系统直接启动有界的 `EvaluateTraceOperation`，不要求硬件重扫。连续扫频的后台 Live Trace 可以 latest-wins 并合并过期分析任务；显式查询某个确切 B/Stage 的 Operation 则冻结该输入、不可与其他代次合并。Derived/Frozen/Imported Trace 按各自冻结的输入集合调度。系统只发布相互兼容的 `analysis_input_ref_set_hash + trace_revision + marker/limit_revision` 组合；删除 Diagram 不影响这条分析链。正式 Marker/Limit query 会 pin 已有 C 层发布；若目标 revision 尚未求值，则在 query deadline 内启动对应 `EvaluateTraceOperation`，不会默认等待未来 Sweep。Web 分开发送 `measurement.completed`、`analysis.published` 和 `average.completed`，不得用一个含糊的 completed 事件覆盖三层。
 
-一份 C 层发布采用私有 `PublicationCandidateBatch` 原子构造：EvaluateTraceOperation 先预分配 `analysis_publication_id`，在尚不可见的 batch 中生成 TraceEvaluationSnapshot、MarkerEvaluationSnapshot、LimitTestResultSnapshot 及其双向 ID 引用，验证 typed input、revision 与引用闭包后，连同 Operation/QueryTicket patch、事件和 retention delta 组成一个 `DomainCommitBundle` 提交。只有后台当前 Live 求值可附带 `HeadPromotionPolicy::RequireCurrent{trace_revision, source_binding_revision, input_generation}` 和 compare-and-set `TraceAnalysisHead` patch；针对历史 B/Stage 的 exact query 使用 `HeadPromotionPolicy::None`，发布 C 并使自己的 Ticket Ready，但不倒退 Head。Marker 的 `Invalid/Incomplete` 和 Limit 的 `Indeterminate` 是成功求值的有类型领域结果，可以进入该 batch；只有 evaluator 内部失败、输入闭包不一致、资源失败或 commit 失败才使整批新 C 不可见。last-good publication 保留；可提升的当前 Live 失败才更新相应 Head attempt/status 并让 UI 显示 stale/失败原因。不得让查询观察到只有 publication 没有 Limit result，或反向引用尚不存在的短暂状态。
+一份 C 层发布采用私有 `PublicationCandidateBatch` 原子构造：EvaluateTrace worker 使用预分配的 `analysis_publication_id`，在尚不可见的 batch 中生成 TraceEvaluationSnapshot、MarkerEvaluationSnapshot、LimitTestResultSnapshot 及其双向 ID 引用，验证 typed input、revision 与引用闭包后，只经 L3 返回 `ProcessingSucceeded(batch)`。L2 Control Executor 再校验 terminal 与 expected cut，把 batch 连同 Operation/QueryTicket patch、事件和 retention delta 组装成 `DomainCommitBundle`，通过 InstrumentStore 原子提交；worker 不能直接调用 Store。只有后台当前 Live 求值可请求 `HeadPromotionPolicy::RequireCurrent{trace_revision, source_binding_revision, input_generation}`，Control Executor 才生成 compare-and-set `TraceAnalysisHead` patch；针对历史 B/Stage 的 exact query 使用 `HeadPromotionPolicy::None`，发布 C 并使自己的 Ticket Ready，但不倒退 Head。Marker 的 `Invalid/Incomplete` 和 Limit 的 `Indeterminate` 是成功求值的有类型领域结果，可以进入该 batch；只有 evaluator 内部失败、输入闭包不一致、资源失败或 commit 失败才使整批新 C 不可见。last-good publication 保留；可提升的当前 Live 失败才更新相应 Head attempt/status 并让 UI 显示 stale/失败原因。不得让查询观察到只有 publication 没有 Limit result，或反向引用尚不存在的短暂状态。
 
 不可变 Snapshot 与“当前/last-good 选择”分开：`ChannelMeasurementHead{last_good_b, latest_attempt, status, revision}`、`ChannelAverageHead{generation,current_accumulator_snapshot_id,count,complete,revision}` 和 `TraceAnalysisHead{last_good_c, latest_attempted_input, status, revision}` 是 Control Executor 唯一更新的小型权威记录。Head patch 必须携带 expected revision/current-input token；历史 exact query 默认没有 Head patch，若用户要查看旧结果则显式切换 `DiagramFrameRefSet` 或 Trace Source。当前 last-good/average closure 是受 ProductProfile 上限约束的 retention root；运行期 `DiagramFrameRefSet` 只含软引用，不无限 pin 历史。失败只更新 Head/status/diagnostic，不改写历史 B/C。stale 是 Head、当前配置和最新 attempt 的关系，不是给旧 Snapshot 原地打补丁。
 
@@ -412,27 +421,59 @@ AnalysisInputRefSet
 这是 Web、SCPI 和内部自动操作唯一调用的核心 Module：
 
 ```cpp
-SubmitResult submit(const CommandEnvelope& command);
-QueryAdmission admit(const QueryEnvelope& query);
-QueryTicketStatus inspect(QueryTicketId ticket,
-                          const QueryAccessContext& access) const;
-QueryReadHandle open_read(QueryTicketId ticket,
-                          const QueryAccessContext& access);
-CancelResult cancel_query(QueryTicketId ticket,
-                          const QueryAccessContext& access);
-InitialViewSnapshot initial_view(const InitialViewRequest& request) const;
-WatchHandle watch(const WatchRequest& request, EventSink& sink);
+SubmitResult submit(CommandEnvelope&& command,
+                    const RequestContext& request) noexcept;
+QueryAdmission admit(QueryEnvelope&& query,
+                     const RequestContext& request) noexcept;
+Result<QueryTicketView, QueryError> inspect(
+    QueryTicketId ticket,
+    const QueryAccessContext& access) const noexcept;
+Result<QueryReadHandle, QueryError> open_read(
+    QueryTicketId ticket,
+    const QueryAccessContext& access) noexcept;
+FinishReadResult finish_read(QueryReadHandle&& handle,
+                             ReadTerminal terminal) noexcept;
+CancelQueryResult cancel_query(
+    QueryTicketId ticket,
+    const QueryAccessContext& access) noexcept;
+Result<InitialViewSnapshot, ViewError> initial_view(
+    const InitialViewRequest& request) const noexcept;
+WatchSubmission begin_watch(const WatchRequest& request,
+                             WatchSinkRegistration&& sink) noexcept;
+StopWatchResult stop_watch(WatchId watch,
+                           const WatchAccessContext& access) noexcept;
+PreviewSubmission begin_preview(const PreviewRequest& request,
+                                const PreviewAccessContext& access,
+                                PreviewSinkRegistration&& sink) noexcept;
+StopPreviewResult stop_preview(PreviewSubscriptionId subscription,
+                               const PreviewAccessContext& access) noexcept;
+BlobWriteAdmission begin_blob_write(
+    UploadIntent&& intent,
+    const RequestContext& request,
+    BlobWriteCompletionRegistration&& completion) noexcept;
+BlobChunkWriteResult write_blob_chunk(
+    BlobWriteHandle& handle,
+    BlobChunkLease&& chunk) noexcept;
+BlobWriteFinishResult finish_blob_write(
+    BlobWriteHandle&& handle,
+    BlobWriteTerminal terminal) noexcept;
 ```
 
 它隐藏跨对象不变量、revision、Control Policy、Operation 生命周期、审计和事件发布。`submit` 对长操作只返回 Operation ID，不在网络线程中等待扫频。`admit` 在 Control Executor 上按 session/profile 解析目标并冻结 profile、对象 revision、typed data stage、父快照和 ticket deadline：已有物化结果且能原子取得覆盖完整 `ResultClosure` 的 `ResultPinLease` 时返回 `Ready(QueryTicket)`；需要从 A/B 父结果生成 `ReceiverObservation/MeasuredReceiverQuantity/MeasuredRatio/RawNetworkObservation/CorrectedNetwork/ProcessedNetwork` 等非 C 层 stage 时，提交或加入 `MaterializeMeasurementStageOperation`；只有需要 AnalysisTrace pipeline/projection/Marker/Limit revision 的 C 层结果才提交或加入 `EvaluateTraceOperation`。两类 Operation 都有独立有界 single-flight、预算和 provenance，非 Trace query 不得伪造 AnalysisTrace。Adapter 只观察 Ticket 绑定的具体 Operation，不等待未来 Sweep；完成后先用纯 `inspect` 查看 ticket，再调用一次性 `open_read` 把 Ready pin 原子转换为已物化不可变 Buffer 的 `ReaderLease`。`open_read` 只修改 QueryTicket/lease 资源状态，不改领域配置或结果；回调不在模型锁内执行。
 
-`QueryTicketCatalog` 使 HTTP 202 与资源生命周期解耦。Ticket 状态为 `Pending → Ready → Reading → Consumed`，并可从 Pending/Ready 进入 `Expired/Cancelled/Failed`；它冻结 owner/actor/session、授权摘要、Profile revision、目标 typed refs、独立 waiter deadline/TTL 和可选 shared OperationId（MaterializeMeasurementStage 或 EvaluateTrace）。`Pending → Ready` 必须在同一领域 commit 中取得强保活 `ResultPinLease`，并计入全局及每 actor/session 的 pin bytes/数量；该 lease 覆盖 publication、Trace/Marker/Limit children、axis/quality 及全部结构共享 Buffer 的自包含 `ResultClosure`，不是只保活一个顶层 ID。无法取得时 Ticket 进入 `Failed(ResourceExhausted)`，绝不发布一个可能悬空的 Ready。`open_read` 原子消费 Ready capability并把该 closure pin 转成 `ReaderLease`，不是先释放再申请；传输完成/断线后释放。Ready 的 TTL、显式 cancel、session/access 失效或 Failed 均释放 ResultPinLease，失败重试重新申请 Ticket，不能复用已 Consumed capability。HTTP 202 正常结束只 detach 当前请求，**不**等于取消 Ticket；客户端用鉴权后的 inspect、一次性 open_read 或显式 cancel 继续。全局及每 actor/session 的 Pending/Ready/Reading 数和 pin bytes 都有硬上限。每个 Ticket 的等待 deadline 只移除自身 waiter；共享 materialize/evaluate Operation 使用独立的执行 deadline/cost policy，绝不继承第一个 waiter 的短 deadline，后来加入者也不能无限延长它。已物化 child 的 closure 自包含时允许祖先 payload 按 retention 回收，但保留 tombstone/digest/provenance；需要重算而祖先 payload 已过期时明确返回 `PayloadExpired/Gone`。
+`QueryTicketCatalog` 使 HTTP 202 与资源生命周期解耦。Ticket 主路径为 `Pending → Ready → Reading → Consumed | Failed | Abandoned`，并可从 Pending/Ready 进入 `Expired/Cancelled/Failed`；它冻结 owner/actor/session、授权摘要、Profile revision、目标 typed refs、独立 waiter deadline/TTL 和可选 shared OperationId（MaterializeMeasurementStage 或 EvaluateTrace）。需要 materialize/evaluate 的每个 caller 在加入 single-flight 前，先按 `{actor, session, target, output-claim upper bound}` 独立取得并随 Pending commit 安装 `PendingResultPinReservation`；配额不足时同步拒绝且不创建 Ticket。共享 publication 完成时，同一领域 commit 只把当前 cut 上仍为 Pending 的 reservation 转换为精确 `ResultPinLease` 并释放上界余量，因此普通 pin 容量不会在 worker terminal 后重新竞争；单个 caller 的 cancel、TTL、access revocation 或 quota failure 也不能回滚共享 publication 或其他 Ticket。实际 `ResultClosure` 超出冻结 claim、candidate validation/write failure 等 publication 错误会使该 bundle 全败，Control Executor 随即用已安装的 lifecycle terminal reservation 将相关可见 Ticket state-only 提交为 `Failed(mapped error)`，或确认其已被并发终结。精确 lease 覆盖 publication、Trace/Marker/Limit children、axis/quality 及全部结构共享 Buffer 的自包含 `ResultClosure`，不是只保活一个顶层 ID；ResultPin 与 Ready Ticket 始终共同保存在 Store。`open_read` 只携带绑定 ticket/actor/profile revision 的授权，Store 再原子执行 Ready→Reading 和 ResultPin→ReaderLease，不把 pin 先交给 L2 临时保存。传输完成、断线、timeout 或 codec failure 必须显式 `finish_read`，由 Store 同批完成 Reading→Consumed/Failed/Abandoned 与 lease 释放；析构不冒充终态。Ready 的 TTL、显式 cancel、session/access 失效或 Failed 均释放 ResultPinLease，失败重试重新申请 Ticket，不能复用已 Consumed capability。HTTP 202 正常结束只 detach 当前请求，**不**等于取消 Ticket；客户端用鉴权后的 inspect、一次性 open_read 或显式 cancel 继续。全局及每 actor/session 的 Pending/Ready/Reading 数和 pin bytes 都有硬上限。每个 Ticket 的等待 deadline 只移除自身 waiter；共享 materialize/evaluate Operation 使用独立的执行 deadline/cost policy，绝不继承第一个 waiter 的短 deadline，后来加入者也不能无限延长它。已物化 child 的 closure 自包含时允许祖先 payload 按 retention 回收，但保留 tombstone/digest/provenance；需要重算而祖先 payload 已过期时明确返回 `PayloadExpired/Gone`。
 
-已有物化结果的 direct Ready admission 服从同一规则：创建 Ready Ticket 与取得 `ResultPinLease` 必须在一个 `DomainCommitBundle` 中成功，不能把快速路径放到提交边界之外。
+已有物化结果的 direct Ready admission 服从同一规则：先预留 Ticket lifecycle terminal capacity，再在一个 `DomainCommitBundle` 中安装 reservation、创建 Ready Ticket并取得精确 `ResultPinLease`；任一步失败都同步 Rejected且无 Ticket，不能把快速路径放到提交边界之外。
 
-`open_read` 的领域提交同时完成 Ready→Reading 与 ResultPin→ReaderLease；Binary Transfer Lane 在完成、断线或 timeout 时把 ReaderLease 随 terminal 交回，由另一个有界提交同时完成 Reading→Consumed/Failed 与 lease 释放，不能先释放 Buffer 再补写 Ticket 终态。
+`open_read` 通过 Store `open_result(ticket, authorization, permit)` 原子完成 Ready→Reading 与 ResultPin→ReaderLease；Binary Transfer Lane 始终持有完整 `QueryReadHandle`，在完成、断线或 timeout 时把该 handle 连同 `ReadTerminal` 移回 L2，再由 Store `finish_result` 同批完成 Reading→Consumed/Failed/Abandoned 与 lease 释放并返回 `ReadFinishReceipt`。不得从 handle 拆出 ReaderLease 单独交还，也不能先释放 Buffer 再补写 Ticket 终态。
+
+Preview 与 Blob 不是把协议对象塞进核心的例外。Preview 通过 access-revision 绑定的 `PreviewSinkRegistration` 消费有界 Hub mailbox；L4 Acquisition 只持 Operation/generation 绑定的 `AuthorizedPreviewPublisher`，队满可丢并报告 gap，权限变化立即终止该 consumer。publisher 终结能力以 `PreviewFinalizationOwnerSet` 随 Acquisition typed terminal 回到 L2；A commit 后 B-target 与依赖该 B 的 C-target 都进入 `RuntimeHeldPreviewEscrow`，由 L3 跨 MeasurementPipeline 调用持有并附加到 Runtime terminal/Drain，不传入 L4。只有 L2 可按目标正式 commit receipt 发送 Superseded/Unavailable/Discarded/Failed，Drain 则整体接管。大文件上传先通过 credit-based `BlobWriteHandle` 在 Binary Transfer Lane 形成 owner/purpose/TTL/digest 绑定的 `StagedBlobRef`，后续 Import/Recall Command 只携带该有界 ref；下载统一使用 snapshot/blob variant 的 `QueryReadHandle` 与同一 `finish_read`，不另暴露路径、FD 或 `BlobReadHandle`。完整 terminal/Drain 规则见[跨层 Interface 契约](interface-contracts.md)。
 
 初次加载不能采用“先任意 GET、再从当前时刻订阅”的两步窗口。`initial_view` 在同一个授权 Catalog cut 上返回业务状态与 `InitialViewSnapshot{catalog_revision,event_cursor,boot_id,event_epoch}`；随后 `watch` 必须携带这四项和 filter/access，从 `event_cursor + 1` 开始重放并继续实时投递。注册期间新提交的事件仍按 sequence 重放，重放与实时交叠按 sequence 去重；Watch 的内部 cursor 会跨过无权查看或被 filter 排除的 sequence 而不暴露内容，客户端只把 Dispatcher/Journal 发出的显式 gap marker 当作缺口，不能把正常的可见序号跳跃误判为数据丢失。若 boot/epoch 不同、cursor 超出 retention 或收到显式 gap，Watch 不猜测缺失状态，而是返回 `ResnapshotRequired`，客户端重新调用 initial_view。由此 Snapshot 与 Watch 之间不存在永久漏事件窗口。
+
+`WatchSinkRegistration` 是 move-only 的内部 mailbox/dispatcher 生命周期能力，不是跨异步周期保存的裸 `EventSink&`。Accepted 后即使 Socket 断线，Kernel 仍持有 registration 直到 stop/gap/shutdown 的唯一 Watch terminal；网络对象只负责消费 registration 中的有界投影。Rejected 则归还 registration 且零 callback。
+
+Kernel 不直接摸 EventJournal 私有对象。每个 Watch admission 通过 `InstrumentStore::begin_event_feed` 以 `EventFeedPermit` 原子建立 replay cut → live feed，取得 move-only `EventFeedControlHandle`；Store 内层 registration 交付有序 Event/gap/feed terminal，Kernel 再做 ACL/filter 投影并驱动外层 Watch registration。`stop_event_feed` 移入 handle 并返回 `StopAccepted | AlreadyTerminal | StopRejected<ReclaimedEventFeedControlHandle>`；Accepted 不代表 feed terminal，Rejected 不得吞掉 control。只有内外两层都闭合后才能释放 registration。
 
 `WatchRequest` 注册时按当前策略校验；Session 过期立即关闭，角色、对象 ACL 或其他 access-set **任何扩大或缩小**都关闭当前 Watch 并返回 `ResnapshotRequired`，客户端重新获取包含新可见对象集的授权快照后再订阅。不能只在降权时断开，也不能在升权后从旧 InitialViewSnapshot 继续接收引用未知对象的增量事件。每 actor/session 的 watcher 与投递队列有硬上限，诊断、审计、其他用户 Operation 等敏感事件使用单独权限。EventFilter 只能收窄已授权范围，不能凭可猜 ID 扩权；gap/resync 也必须重新执行相同授权。
 
@@ -442,121 +483,139 @@ Control Executor 仍是领域状态唯一写者，但入口不是单个无界 FI
 
 #### L3 Operation Runtime
 
-`OperationRuntime` 是 Instrument Kernel 内部使用的调度 Module，不是第二个领域核心。它只接收已经冻结的 `FrozenWorkItem + permits`，在固定容量的 Acquisition/Processing/Solver/Persistence/Diagnostics lane 上执行预算、deadline、取消、进度、真实 terminal 与 Drain/Quarantine 所有权转交，再把 typed completion 交回 Control Executor。它不得解释 Command、读取 current selection、修改 Catalog/Head/Ticket 或发布 Event；这些规则保证增加新 worker lane 不会产生第二个状态写者。详细有界 lane 与背压见 §12。
+`OperationRuntime` 是 Instrument Kernel 内部使用的调度 Module，不是第二个领域核心。它先用同步有界的 `reserve_work(WorkAdmissionClaim)` 同时预留固定 Acquisition/Processing/Solver/Persistence/Diagnostics lane/queue 与可靠 completion slot，返回 move-only `ReservedWorkDispatch{WorkId, WorkDispatchPermit, RuntimeCompletionRegistration}`；L2 保留 WorkId 映射，随后取得 Store input/output 和其他资源，全部成功后才提交 Operation/Pending，并把 permit 纳入 WorkPermitSet、单独 move registration 给 `dispatch(FrozenWorkItem, WorkPermitSet, RuntimeCompletionRegistration)`。dispatch 不再因普通队列或 completion 容量拒绝。Runtime 执行预算、deadline、取消、进度、真实 terminal 与 Drain/Quarantine 所有权转交，再把 typed completion 交回 Control Executor。它不得解释 Command、读取 current selection、修改 Catalog/Head/Ticket 或发布 Event；这些规则保证增加新 worker lane 不会产生第二个状态写者。详细有界 lane 与背压见 §12。
 
 ### 7.2 Acquisition Module
 
 ```cpp
-StartResult start(const SweepExecutionRequest& request);
-CancelResult cancel(OperationId operation);
+AcquisitionTerminal run(FrozenSweepJob&& job,
+                         AcquisitionLeaseSet&& leases,
+                         ExecutionContext& context) noexcept;
 ```
 
-实现内部隐藏 Sweep 编译/量化、ResourceGraph 仲裁、连续扫频公平调度、Trigger、Average、取消、超时、Receiver chunk 校验、预览和正式 Snapshot Builder。
+`AcquisitionLeaseSet` 已在 dispatch 前持有 purpose-specific `AcquisitionContinuationOwner`（非 A-only 内含 StoreJoinOwner + RuntimeEscrow；A-only 只有 `AuthorizedAOnlyCompletionOwner`）、`PreAdmissionLease`、保守 A/ingress/required-continuation capacity、逐板预留的 prepare/run Adapter call slot 与 sink registrations、`AuthorizedPreviewPublisher` 和只能收窄该 envelope 的 `ExactFinalizationCapability`。L2 `SweepAdmissionPlanner` 已完成 requested intent/observation 编译，stateful ResourceArbiter 已完成全有或全无 pre-admission并签发 finalization capability；L4 实现只隐藏 actual Manifest validation/finalization、Composite Coordinator、Board prepare/start、Trigger、取消、超时、Receiver chunk 校验、预览 producer 和正式 Snapshot Builder。异步 Operation、lane 和 stop 由 L3 Runtime 管理；本 Interface 只在真实 worker terminal 返回 A candidate 或 typed failure/drain，不能直接修改 Operation/Catalog，也不能在 prepare 后反向申请新容量。
 
 ### 7.3 Board Adapter seam
 
-Composition root 通过 `BoardAdapterFactory::open(BoardOpenRequest)` 完成发现、Interface 版本协商和底软打开，返回 RAII `BoardSession`；Session 析构关闭资源。下面是 BoardSession 的逻辑 Interface：
+Composition root 通过 `BoardProvider::discover/open` 完成发现、Interface 版本协商和底软打开，返回绑定同一 `BoardSessionId + session_epoch` 的 `OpenedBoard`。候选 Interface 采用显式 `prepare → actual Manifest admission → start`，但按权限拆成 Execution、Safety、Maintenance 三个分面；完整字段和合同测试见 [Board Adapter 契约](board-adapter-contract.md)。逻辑表面如下：
 
 ```cpp
-CapabilityDescriptor describe() const;
-PrepareResult prepare(BoardCallId call,
-                      const SweepIntent& intent,
-                      const PrepareAuthorization& admission);
-AbortResult request_prepare_abort(BoardCallId call,
-                                  const AbortRequest& request);
-BoardRunHandle start(PreparedSweep&& sweep,
-                     const StartAuthorization& execution,
-                     BoardRunSink& sink);
-AbortResult request_abort(BoardRunId run,
-                          const AbortRequest& request);
-SafetyRequestResult request_safe_state(BoardSafetyCallId call,
-                                       const SafeStateRequest& request,
-                                       BoardSafetySink& sink);
-KillRequestResult request_emergency_kill(BoardSafetyCallId call,
-                                         const EmergencyKillRequest& request);
-HealthResult health() const;
-RecoveryResult recover(const RecoveryRequest& request);
+class OpenedBoard {
+public:
+    BoardExecutionPort& execution() noexcept;
+    BoardSafetyPort& safety() noexcept;
+    BoardMaintenancePort& maintenance() noexcept;
+private:
+    OwnedBoardSession owner_; // 保证移动后分面引用仍稳定
+};
+
+class BoardExecutionPort {
+public:
+    CapabilitySnapshot capabilities() const noexcept;
+    PrepareSubmission begin_prepare(PrepareCallId,
+                                    SweepIntent,
+                                    PrepareAuthorization&&,
+                                    PrepareSinkRegistration&&) noexcept;
+    RequestReceipt request_prepare_abort(PrepareCallId,
+                                         const AbortRequest&) noexcept;
+    DiscardSubmission begin_discard_prepared(PreparedStartToken&&,
+                                               const DiscardPreparedRequest&) noexcept;
+    RunSubmission begin_run(BoardRunId,
+                            RunGeneration,
+                            PreparedStartToken&&,
+                            StartAuthorization&&,
+                            RunDeliveryGrant&&,
+                            BoardRunSinkRegistration&&) noexcept;
+    RequestReceipt request_abort(BoardRunId,
+                                 RunGeneration,
+                                 const AbortRequest&) noexcept;
+};
+
+class BoardSafetyPort {
+public:
+    SafetySubmission begin_safe_state(... ) noexcept;
+    KillSubmission begin_emergency_kill(... ) noexcept;
+};
+
+class BoardMaintenancePort {
+public:
+    HealthSnapshot cached_health() const noexcept;
+    HealthSubmission begin_health_probe(... ) noexcept;
+    RecoverySubmission begin_recovery(... ) noexcept;
+    Result<RejoinResult, BoardError> rejoin(... ) noexcept;
+    CloseSubmission begin_close(..., CloseAuthorization&&, ... ) noexcept;
+};
 ```
 
-Interface 保持在逻辑扫频层，不暴露寄存器、DMA、ADC/IQ、厂商结构体、线程句柄、Eigen、JSON 或 Socket。`PrepareAuthorization` 是绑定 conservative claim 与 topology epoch 的短期 opaque token；`StartAuthorization` 只由成功升级后的 ExecutionLease 产生，绑定 Prepared handle/manifest/epoch 且只能消费一次。Acquisition Module 在派发 `prepare` 前先注册稳定 `BoardCallId`，所以尚未产生 Prepared handle 或 `BoardRunId` 时也能从独立控制路径调用 `request_prepare_abort`。`start` 在 Adapter 校验授权并注册稳定 `BoardRunId` 后返回；阻塞式底软调用由 Adapter 放到专属 Board Worker，回调式底软则在内部转换为统一事件。`request_prepare_abort`、`request_abort`、`request_safe_state` 和 `request_emergency_kill` 的直接返回都只表示请求 accepted/rejected/already-terminal，绝不表示 worker、RF 或 Board 已停止/安全。prepare terminal 仅由原 job return 产生；run terminal 仅由 `BoardRunSink` 的唯一 terminal event 产生；safe-state terminal 仅由匹配 `BoardSafetyCallId` 的 `BoardSafetySink` 唯一 terminal 产生，并携带 RFOff/Safe readback、可信度和时间。正常成功时，ExecutionLease/Buffer/resource 只有在 run terminal 且声明的 post-run RF/resource state 已确认后释放；cancel/timeout/fault 时还必须确认 safe-state/readback，或把所有权原子转交给显式 Drain/Quarantine lease。早到 request result 不得触发复用。Adapter 不能反向调用 Instrument Kernel。
+Interface 保持在逻辑扫频层，不暴露寄存器、DMA、ADC/IQ、厂商结构体、线程句柄、Eigen、JSON 或 Socket。`PrepareAuthorization` 是从 L4 仍持有的 `PreAdmissionLease` 派生、绑定 conservative claim 与 topology/capability/operational epoch 的短期 opaque proof；`StartAuthorization` 绑定 `PreparedExecutionId + manifest digest + operational epoch + reservation attestations` 且只能消费一次，但同样不拥有 L4/L5 的 processing/output reservation。Acquisition Module 在派发 `begin_prepare` 前使用首次 admission 已预留的 `PrepareCallId`、Adapter call/worker/queue slot 和 `PrepareSinkRegistration`，所以尚未产生 Prepared token 或 `BoardRunId` 时也能从独立控制路径调用 `request_prepare_abort`。prepare 成功 terminal 返回可分别持有的 `PreparedStartToken + PreparedManifestLease`；purpose-specific 必达后继、A/ingress Buffer、worker/queue、prepare/run call/sink 和多板最坏情况已在首次 dispatch 前保守预留。L4 收到 actual Manifest 后只能完成 Correction match、可选多板 actual compatibility gate，并在既有 envelope 内无新分配地收窄出 `AcquisitionRunResourceSet`；它持有 Builder/ingress/continuation owner，仅向 L6 移交一个 producer `RunDeliveryGrant`，然后才调用 `begin_run`。普通测量的 continuation 是 B，校准/验证使用各自 closure，授权 raw/diagnostic 才是 A-only；Stage/C 之后独立 admission，不由 Board start token 担保。阻塞式底软调用由 Adapter 放到专属 Board Worker，回调式底软则在内部转换为统一事件。合法 pre-admission 的 `begin_prepare/begin_run` 不得因普通队列/池容量 Rejected；同步 Rejected 只允许 stale epoch/digest/capability 或契约错误，并必须零 callback 且完整归还 move-only 输入。Accepted 后必须恰好一个 matching terminal。abort/safe/kill 的直接返回只表示请求 accepted/rejected/already-terminal，绝不表示 worker、RF 或 Board 已停止/安全。正常成功时，`AcquisitionRunResourceSet`/Buffer/resource 只有在 run terminal 且声明的 post-run RF/resource state 已确认后释放或转入 candidate/下一工作 permit；cancel/timeout/fault 时还必须确认 safe-state/readback，或把完整 owner 原子转交给显式 Drain/Quarantine lease。早到 request result 不得触发复用。Adapter 不能反向调用 Instrument Kernel。
 
-`BoardRunSink` 接受带 `AcquisitionChunkLease` 的 move-only chunk、单调 sequence，以及 `Starting/Armed/WaitingTrigger/Acquiring/Draining` phase event 和唯一 terminal event；`Preparing` 发生在 `start` 之前，不属于 BoardRunSink。phase 是否由底软直接观测或由 Adapter 推导必须标在 capability 中。该 lease 只移动到 Acquisition Ingress，Builder 是唯一长期拥有者；Preview 只能获得有界 `ChunkReadView` 或独立 `PreviewTile`。正式 chunk 不得静默丢弃：Manifest/reservation 必须覆盖声明的最大在途量；意外 ingress/pool overflow 在无法按已声明能力背压时使 run 失败并走 abort/drain，只有 Preview tile 可以丢。Adapter 在 terminal 后不得再写，同一 generation 只能完成一次；最后 chunk happens-before terminal。Sink/Adapter 契约固定回调线程、底软 buffer 是否可转移、不可转移时的一次 BufferPool copy、最大块、背压和取消后的迟到事件处理。
+`BoardRunSink` 接受带 `AcquisitionChunkLease` 的 move-only chunk、单调 sequence，以及 `Starting/Armed/WaitingTrigger/Acquiring/Draining` phase event 和唯一 terminal event；`Preparing` 发生在 `begin_run` 之前，不属于 BoardRunSink。phase 是否由底软直接观测或由 Adapter 推导必须标在 capability 中。该 lease 只移动到 Acquisition Ingress，Builder 是唯一长期拥有者；Preview 只能获得有界 `ChunkReadView` 或独立 `PreviewTile`。正式 chunk 不得静默丢弃：Manifest/reservation 必须覆盖声明的最大在途量；意外 ingress/pool overflow 在无法按已声明能力背压时使 run 失败并走 abort/drain，只有 Preview tile 可以丢。Adapter 在 terminal 后不得再写，同一 generation 只能完成一次；最后 chunk happens-before terminal。Sink/Adapter 契约固定回调线程、底软 buffer 是否可转移、不可转移时的一次 BufferPool copy、最大块、背压和取消后的迟到事件处理。
 
-`prepare` 只能在 Kernel 提供的 `PreAdmissionLease`/epoch 内调用，必须返回 `PreparedSweep + PreparedExecutionManifest`，其中包含量化后的实际参数、精确资源声明、采集侧 buffer/chunk 上限、警告和拒绝原因，但不得启动 RF、采集或持久提交硬件配置。生产 Real Adapter 的首选准入条件是 prepare 为可证明有界的纯计算；若 SDK 确实需要可能阻塞的板内 staging，则必须在独立的有界 Prepare Worker 上执行，支持 `BoardCallId` 定向 abort、唯一 terminal 和回滚。`request_prepare_abort` 的 AbortResult 只表示请求 accepted/rejected，绝不代表 prepare 已停止；受监控的同一个 prepare job 只有在 `prepare(BoardCallId, ...)` 返回/抛错并被 Adapter 转成 Result 时才产生唯一 terminal。prepare 超时且 worker 不能 join 时，该 job、剩余工作及 PreAdmissionLease 必须原子转交给显式子 DrainOperation/Quarantine lease，直到原 job return 才释放；BoardSession 不再接受新工作且不得通过不断补建 worker 假装恢复容量。只有该 worker 终止并完成回滚，或关闭并重建底软 Session、safe-state 与 health 全部验证后，资源才重新可用。Prepared handle 只在 lease 有效期内使用；`start` 同时校验并消费匹配的 `ExecutionLease + PreparedHandle + epoch`，防止 prepare/start 间 TOCTOU。Capability 还必须声明 prepare/abort 上界、out-of-band abort、最大 run-abort latency、可观测 phase、外触发等待行为和 `RFOff/Safe` 过渡能力。Cancel、timeout、fault 和 shutdown 都进入相应 abort → drain/safe-state → terminal/quarantine 路径；若底软不能在 deadline 内停止或无法证明 RF safe/off，Operation 失败且 Board 隔离，只有 recover + health + safe-state 验证后才能重用。迟到回调通过 generation token 丢弃，不能污染下一次 Sweep。
+`begin_prepare` 只接收 L4 从仍持有的 `PreAdmissionLease`/epoch 派生的 `PrepareAuthorization`，不接收、消费或保存 lease 本身；成功 terminal 必须交付 `PreparedStartToken + PreparedManifestLease`。Manifest 包含量化后的实际参数、精确资源声明、采集侧 buffer/chunk 上限、警告和拒绝原因，但 prepare 不得启动 RF、采集或持久提交硬件配置。生产 Real Adapter 的首选准入条件是 prepare 为可证明有界的纯计算；若 SDK 确实需要可能阻塞的板内 staging，则必须在首次 admission 已预留的独立有界 Prepare Worker/call slot 上执行，支持 `PrepareCallId` 定向 abort、唯一 terminal 和回滚。`request_prepare_abort` 的 RequestReceipt 只表示请求 accepted/rejected，绝不代表 prepare 已停止；受监控的同一个 prepare job 只有在原 SDK job 真实返回并由 Adapter 转成 Prepare terminal 时才完成。prepare 超时且 worker 不能 join 时，该 job、剩余工作及仍由 L4 持有的完整 admission owner 必须原子转交给显式子 DrainOperation/Quarantine lease，直到原 job return 才释放；OpenedBoard 不再接受新工作且不得通过不断补建 worker 假装恢复容量。只有该 worker 终止并完成回滚，或关闭并重建底软 Session、safe-state 与 health 全部验证后，资源才重新可用。`PreparedStartToken` 只在 Manifest lease 有效期内使用；`begin_run` 校验并消费匹配的 `PreparedStartToken + StartAuthorization + RunDeliveryGrant + manifest digest + epoch`，而 `AcquisitionRunResourceSet` 继续由 L4 持有，防止 prepare/start 间 TOCTOU 且不把上层 owner 移入 L6。未启动的 token 必须经 `begin_discard_prepared` 显式回滚；析构不承担外部清理。Capability 还必须声明 prepare/abort 上界、out-of-band abort、最大 run-abort latency、可观测 phase、外触发等待行为和 `RFOff/Safe` 过渡能力。Cancel、timeout、fault 和 shutdown 都进入相应 abort → drain/safe-state → terminal/quarantine 路径；若底软不能在 deadline 内停止或无法证明 RF safe/off，Operation 失败且 Board 隔离，只有 recover + health + safe-state 验证后才能重用。迟到回调通过 generation token 丢弃，不能污染下一次 Sweep。
 
-“Board 被隔离”只阻止软件再次调度，不能证明物理 RF 已关闭。每块板必须预留不与 Acquisition/Prepare/Recovery worker 共用的 `BoardSafetyLane`；`request_safe_state(BoardSafetyCallId, deadline, ...)` 在该 lane 执行 RF-off 与 readback，并通过 BoardSafetySink 唯一终态报告。若底软调用阻塞，安全 call、lane 和相关资源转入 Drain/Quarantine，不能补建线程假装恢复；与该 lane 也物理独立的 interlock/kill path 仍可接受幂等 `request_emergency_kill`。任何可发射 RF 的 Real Adapter 进入生产 ProductProfile 前，必须对这两级路径、RFOff/Safe readback 及故障注入验收。Abort/timeout 后若 readback 在 deadline 内确认 RF safe，进入 `FaultSafe`，可经受控 recover；若无法确认或 SafetyLane 卡死，进入锁存的 `FaultUnsafeRf`：禁止全部新 RF Operation 和普通 recover，Web/SCPI/诊断持续给出高优先级告警，立即尝试独立 kill/interlock，并要求授权人员执行物理断电/隔离及独立 safe-state 验证后才能清除。没有独立安全路径或人工隔离方案的板卡只能进入明确标识的受监护工程 Profile，禁止无人值守和远程 RF 发射，不能冒充生产能力。
+“Board 被隔离”只阻止软件再次调度，不能证明物理 RF 已关闭。每块板必须预留不与 Acquisition/Prepare/Recovery worker 共用的 `BoardSafetyLane`；`BoardSafetyPort::begin_safe_state` 在该 lane 执行 RF-off 与 readback，并通过 BoardSafetySink 唯一终态报告。若底软调用阻塞，安全 call、lane 和相关资源转入 Drain/Quarantine，不能补建线程假装恢复；与该 lane 也物理独立的 interlock/kill path 仍可通过 `begin_emergency_kill` 接受幂等请求。任何可发射 RF 的 Real Adapter 进入生产 ProductProfile 前，必须对这两级路径、RFOff/Safe readback 及故障注入验收。Abort/timeout 后若 readback 在 deadline 内确认 RF safe，进入 `FaultSafe`，可经受控 recover；若无法确认或 SafetyLane 卡死，进入锁存的 `FaultUnsafeRf`：禁止全部新 RF Operation 和普通 recover，Web/SCPI/诊断持续给出高优先级告警，立即尝试独立 kill/interlock，并要求授权人员执行物理断电/隔离及独立 safe-state 验证后才能清除。没有独立安全路径或人工隔离方案的板卡只能进入明确标识的受监护工程 Profile，禁止无人值守和远程 RF 发射，不能冒充生产能力。
 
-恢复不是直接调用一个同步 `recover()` 后清除隔离标志。授权的 `BoardRecoveryOperation` 在独立有界 Recovery/Acquisition lane 中执行 `Reopening → Reinitializing → VerifyingSafeState → VerifyingHealth → Rejoining`，拥有 deadline、进度和唯一 terminal；Adapter `recover()` 只是其中一个硬件步骤。只有 Session 重建、safe-state/RF readback 和 health/capability revision 三项全部成功，Control Executor 才原子更新 ResourceGraph 并重新 admission。任何阶段阻塞/失败继续 Quarantined，剩余 worker 转 DrainOperation；`FaultUnsafeRf` 还必须先满足人工/物理清除政策，不能由普通 remote recover 绕过。
+恢复不是直接调用一个同步 `recover()` 后清除隔离标志。授权的 `BoardRecoveryOperation` 在独立有界 Recovery/Acquisition lane 中执行 `Reopening → Reinitializing → VerifyingSafeState → VerifyingHealth → Rejoining`，拥有 deadline、进度和唯一 terminal；`BoardMaintenancePort::begin_recovery` 只是其中一个硬件步骤。Recovery terminal 成功后仍处于 `AwaitingRejoin`；只有 Session 重建、safe-state/RF readback 和 health/capability revision 三项全部成功并消费 `RejoinAuthorization`，Control Executor 才原子更新 ResourceGraph 并重新 admission。任何阶段阻塞/失败继续 Quarantined，剩余 worker 转 DrainOperation；`FaultUnsafeRf` 还必须先满足人工/物理清除政策，不能由普通 remote recover 绕过。`OwnedBoardSession` 的析构也不是 close/abort/safe-state；正常关闭必须先执行有终态的 Maintenance close 流程。
 
 ### 7.4 Measurement Pipeline
 
 ```cpp
 struct ExecutionContext {
-    StopToken stop_token;                 // project C++17 token
-    MonotonicDeadline monotonic_deadline;
+    StopToken stop;                       // project C++17 token
+    MonotonicDeadline deadline;
     BudgetHandle budget;
     ProgressSink& progress;
 };
 
-PublicationCandidateBatch run(const FrozenProcessingJob& job,
-                              PinnedInputSet&& inputs,
-                              OutputReservation&& output,
-                              ExecutionContext& context);
+ProcessingTerminal run(FrozenProcessingJob&& job,
+                       PinnedInputSet&& inputs,
+                       OutputReservation&& output,
+                       ExecutionContext& context) noexcept;
 ```
 
-`FrozenProcessingJob` 是 `BuildMeasurement | MaterializeStage | EvaluateAnalysis` 的有类型变体。Control Executor 在派发前通过 Measurement Data Store 原子取得全部父数据的 `PinnedInputSet` 与 output reservation；worker 只返回尚不可见的 `PublicationCandidateBatch`，不能修改 Catalog、更新 Head 或发布 Event。batch 可以一次携带相互依赖的多个 Snapshot/Publication candidate（例如 B 与 AverageAccumulatorSnapshot，或 C 与 Marker/Limit children），并从 worker return 起持有覆盖全部输出 Buffer 和输入闭包的 move-only `CandidateCommitLease`；该 lease 只能在 `DomainCommitCoordinator` 成功提交后转换为 Catalog/Head retention roots，或在显式 abort 后释放，禁止在 worker-return→commit 间出现无所有者窗口。`ExecutionContext` 携带项目 C++17 自有的 `StopToken`、`MonotonicDeadline`、`BudgetHandle` 和有界 `ProgressSink`；不依赖 C++20 `std::stop_token`。Pipeline 隐藏 Receiver Wave 提取、校准修正、Eigen3 运算、时域/门控、去嵌、Math、格式化、Marker、Statistics 和 Limit。Eigen 类型不穿出 Interface；外部使用项目自有的只读 Buffer/View、Axis、Unit 和 Quality 类型。可协作算法必须在声明的有界工作粒度检查 stop/deadline/budget，ProgressSink 只能限速发布且不得反压 worker；不可中断的第三方计算只能进入隔离 lane，并把 PinnedInputSet、output reservation 与容量一起转给 Drain/Quarantine，直到真实 terminal。
+`FrozenProcessingJob` 是 `BuildMeasurement | MaterializeStage | EvaluateAnalysis` 的有类型变体。Control Executor 在派发前通过 InstrumentStore 原子取得全部父数据的 `PinnedInputSet` 与 output reservation；worker 返回 `ProcessingSucceeded | ProcessingFailed | ProcessingDraining`，不能修改 Catalog、更新 Head 或发布 Event。Succeeded 中的 batch 可以一次携带相互依赖的多个 Snapshot/Publication candidate（例如 B 与 AverageAccumulatorSnapshot，或 C 与 Marker/Limit children），并从 worker return 起持有覆盖全部输出 Buffer 和输入闭包的 move-only `CandidateCommitLease`；Failed 必须证明资源已终止，Draining 则把完整 owner 交给 Runtime。candidate lease 只能在 `InstrumentStore::commit` 成功后转换为 Catalog/Head retention roots，或在显式 abort 后释放，禁止在 worker-return→commit 间出现无所有者窗口。`ExecutionContext` 携带项目 C++17 自有的 `StopToken`、`MonotonicDeadline`、`BudgetHandle` 和有界 `ProgressSink`；不依赖 C++20 `std::stop_token`。Pipeline 隐藏 Receiver Wave 提取、校准修正、Eigen3 运算、时域/门控、去嵌、Math、格式化、Marker、Statistics 和 Limit。Eigen 类型不穿出 Interface；外部使用项目自有的只读 Buffer/View、Axis、Unit 和 Quality 类型。可协作算法必须在声明的有界工作粒度检查 stop/deadline/budget，ProgressSink 只能限速发布且不得反压 worker；不可中断的第三方计算只能进入隔离 lane，并把 PinnedInputSet、output reservation 与容量一起转给 Drain/Quarantine，直到真实 terminal。
 
 ### 7.5 Calibration Module
 
 ```cpp
-PublicationCandidateBatch solve(const FrozenCalibrationProblem& problem,
-                                PinnedInputSet&& observations,
-                                OutputReservation&& output,
-                                ExecutionContext& context);
-MatchReport match(const CorrectionSet& correction,
-                  const PreparedExecutionManifestSet& execution) const;
+CalibrationTerminal run(FrozenCalibrationJob&& job,
+                        PinnedInputSet&& observations,
+                        OutputReservation&& output,
+                        ExecutionContext& context) noexcept;
+Result<CorrectionMatchReport, CalibrationError> match(
+    const CorrectionSetView& correction,
+    const PreparedExecutionManifestSet& execution) const noexcept;
 ```
 
 `PreparedExecutionManifestSet` 是按冻结 logical board role 排序的非空集合，包含逐板 Manifest、identity/capability、route/path 条件和可选 coherence metadata；默认单板时长度为 1。`match` 必须产生逐板结论与聚合结论，不能只拿第一块板代表整个组合执行。
 
-该 Module 隐藏标准件模型、误差方程、数值稳定性、插值和适用性判定。Calibration Session 的可变流程归 Instrument Kernel；Session 已接受的 `CalibrationObservationSnapshot` 是 retention root，直到 solve/abort 终态和冻结的保留策略完成交接。Control Executor 在求解前一次性 pin 全部 observation 并取得输出 reservation；Solver 只返回持有 `CandidateCommitLease`、内含 CorrectionSet candidate 的不可见 `PublicationCandidateBatch`，不能发布或覆盖现有 Set；Control Executor 验证后才把该批、CalibrationSession `DomainCatalogPatchSet`、Operation/Event/retention patches 装入 `DomainCommitBundle`。求解和 match 尽量保持纯计算，使用合成误差网络和商用标准数据进行黄金测试。可协作 solver 遵循同一 ExecutionContext；无法检查取消/期限的第三方 solver 只能在预留的 Solver Lane 执行并在超时/取消时把 observations、输出 reservation、预算和 lane ownership 转交显式 DrainOperation，父终态不能提前释放。
+该 Module 隐藏标准件模型、误差方程、数值稳定性、插值和适用性判定。Calibration Session 的可变流程归 Instrument Kernel；Session 已接受的 `CalibrationObservationSnapshot` 是 retention root，直到 solve/abort 终态和冻结的保留策略完成交接。Control Executor 在求解前一次性 pin 全部 observation 并取得输出 reservation；Solver 返回 `CalibrationSucceeded | CalibrationFailed | CalibrationDraining`，只有 Succeeded 携带持有 `CandidateCommitLease`、内含 CorrectionSet candidate 的不可见 `PublicationCandidateBatch`，不能发布或覆盖现有 Set；Control Executor 验证后才把该批、CalibrationSession `DomainCatalogPatchSet`、Operation/Event/retention patches 装入 `DomainCommitBundle`。求解和 match 尽量保持纯计算，使用合成误差网络和商用标准数据进行黄金测试。可协作 solver 遵循同一 ExecutionContext；无法检查取消/期限的第三方 solver 只能在预留的 Solver Lane 执行，并通过 Draining 分支把 observations、输出 reservation、预算和 lane ownership 转交显式 DrainOperation，父终态不能提前释放。
 
 ### 7.6 Persistence Module
 
 ```cpp
-LoadResult load(const LoadRequest& request,
-                ExecutionContext& context);
-CommitResult commit(const AtomicStateBatch& batch,
-                    ExecutionContext& context);
-ExportResult write_export(const ExportRequest& request,
-                          const TypedSnapshotLeaseSet& inputs,
-                          ExecutionContext& context);
-BlobReadHandle open_blob(BlobId id,
-                         const BlobReadPermit& permit) const;
+PersistenceTerminal run(FrozenPersistenceJob&& job,
+                        TypedSnapshotLeaseSet&& inputs,
+                        PersistenceOutputReservation&& output,
+                        ExecutionContext& context) noexcept;
 ```
 
-它负责 schema/version、校验和、原子替换、崩溃恢复、配额和迁移。大文件读取、staging validation、migration、export 和 flush 在有界 Persistence Worker 中检查 ExecutionContext；write_export 在整个生成/flush/rename 期间持有确切 A/B/MeasurementStage/C typed input 的 `TypedSnapshotLeaseSet`，其语义是面向导出的 PinnedInputSet，不能在导出中途切到新 Sweep。`BlobReadHandle` 内部持有 `BlobReadLease`，防止慢流式读取期间 blob 被回收；调用者仍看不到路径或文件描述符。最终 rename/catalog commit 是短暂有硬上界的 `Finalizing` 原子区，进入后不响应 cancel；若文件系统调用无法中断，worker、BudgetHandle、临时文件配额和输入 lease 转入 Drain，真实返回前不得复用。目标文件系统 Adapter 与内存 Adapter 运行同一契约测试；调用者不接触路径和临时文件。
+`FrozenPersistenceJob` 是 ValidateStagedImport/Load/StateCommit/Export 等有类型变体；空输入也传入正式 empty lease set。它负责 schema/version、校验和、原子替换、崩溃恢复、配额和迁移。上传的大字节已经由 Kernel BlobWrite Interface 在 Binary Transfer lane 形成 actor/session/purpose/digest/TTL 绑定的 `StagedBlobRef`，Persistence job 只消费经 L2 再验证的 ref，不接收 Socket、路径或无界 Command payload。大文件 staging validation、migration、export 和 flush 在有界 Persistence Worker 中检查 ExecutionContext；Export 在整个生成/flush/rename 期间拥有确切 A/B/MeasurementStage/C typed input 的 `TypedSnapshotLeaseSet`，不能在导出中途切到新 Sweep。Succeeded 只返回待 L2 验证并提交的 `BlobResultRef` candidate；提交后由 QueryTicket 选择它，`open_read` 返回 opaque snapshot/blob variant `QueryReadHandle`，慢流式读取的内部 `BlobReadLease` 不穿出 Store/File Implementation。最终 rename/catalog commit 是短暂有硬上界的 `Finalizing` 原子区，进入后不响应 cancel；若文件系统调用无法中断，`PersistenceDraining` 把 worker、BudgetHandle、临时/output reservation、输入 lease 和 completion owner 整体转给 Runtime Drain，真实返回前不得复用。目标文件系统 Adapter 与内存 Adapter 运行同一契约测试；调用者不接触路径和临时文件。
 
 ### 7.7 Diagnostics Module
 
 ```cpp
-SelfTestResult run_self_test(const SelfTestRequest& request,
-                             ExecutionContext& context);
-DiagnosticBundleResult build_bundle(const DiagnosticBundleRequest& request,
-                                    const TypedSnapshotLeaseSet& inputs,
-                                    ExecutionContext& context);
+DiagnosticsTerminal run(FrozenDiagnosticsJob&& job,
+                        TypedSnapshotLeaseSet&& inputs,
+                        DiagnosticsOutputReservation&& output,
+                        ExecutionContext& context) noexcept;
 ```
 
-Diagnostics Module 只计算测试步骤、聚合已授权 Catalog/快照并生成脱敏结果；需要独占 Board/RF 的步骤由 Instrument Kernel 编排成 SelfTestOperation 和子 Sweep/Board Operation，模块不得绕过 ResourceGraph。大诊断包在有界 Diagnostics Worker 上持有输入 lease 和预算，按 stop/deadline 取消；不可中断 OS/压缩调用转 Drain。`ProgressSink` 只发布有界进度，不把日志或包内容塞进 EventJournal。
+Diagnostics Module 只计算测试步骤、聚合已授权 Catalog/快照并生成脱敏结果；需要独占 Board/RF 的步骤由 Instrument Kernel 编排成 SelfTestOperation 和子 Sweep/Board Operation，模块不得绕过 ResourceGraph。大诊断包在有界 Diagnostics Worker 上拥有输入 lease、output reservation 和预算，按 stop/deadline 取消；不可中断 OS/压缩调用通过 `DiagnosticsDraining` 把完整 owner 转给 Runtime Drain。`ProgressSink` 只发布有界进度，不把日志或包内容塞进 EventJournal。
 
-### 7.8 Measurement Data Store Module
+### 7.8 Instrument Store Module
 
 ```cpp
-PinnedInputSet pin_inputs(const TypedInputRefSet& refs,
-                          InputPinPermit&& permit);
-QueryReadHandle open_result(ResultPinLease&& result,
-                            ReaderPermit&& permit);
-
 struct DomainCommitBundle {
     PublicationCandidateBatch publications; // may be empty for a state-only commit
     DomainCatalogPatchSet domain;
@@ -567,18 +626,57 @@ struct DomainCommitBundle {
     WaitRegistryPatchSet wait_registry;
     QueryTicketPatchSet query_tickets;
     ResultPinRequestSet result_pins;
+    LifecycleTerminalReservationInstallSet lifecycle_terminals;
+    PendingResultPinReservationInstallSet pending_result_pins;
+    ContinuationStoreJoinRequestSet acquisition_continuations;
     EventRecordBatch events;
     RetentionDeltaSet retention;
 };
 
-CommitReceipt DomainCommitCoordinator::commit(
-    DomainCommitBundle&& bundle,
-    DomainCommitPermit&& permit);
+class InstrumentStore {
+public:
+    Result<CatalogCut, StoreError> read_catalog(
+        const CatalogReadRequest& request,
+        const CatalogReadPermit& permit) const noexcept;
+    Result<PinnedInputSet, StoreError> pin_inputs(
+        const TypedInputRefSet& refs,
+        InputPinPermit&& permit) noexcept;
+    Result<OutputReservation, StoreError> reserve_outputs(
+        const OutputClaim& claim,
+        OutputReservePermit&& permit) noexcept;
+    Result<LifecycleTerminalReservationSet, StoreError>
+    reserve_lifecycle_terminals(
+        const LifecycleTerminalClaimSet& claims,
+        LifecycleTerminalReservePermit&& permit) noexcept;
+    Result<PendingResultPinReservation, StoreError>
+    reserve_pending_result_pin(
+        const PendingResultPinClaim& claim,
+        ResultPinReservePermit&& permit) noexcept;
+    CommitResult commit(DomainCommitBundle&& bundle,
+                        DomainCommitPermit&& permit) noexcept;
+    OpenResultReadResult open_result(
+        QueryTicketId ticket,
+        QueryReadAuthorization&& authorization,
+        ReaderPermit&& permit) noexcept;
+    ReadFinishReceipt finish_result(
+        QueryReadHandle&& handle,
+        ReadTerminal terminal) noexcept;
+    EventFeedSubmission begin_event_feed(
+        const EventFeedRequest& request,
+        EventFeedPermit&& permit,
+        EventFeedRegistration&& registration) noexcept;
+    StopEventFeedResult stop_event_feed(
+        EventFeedControlHandle&& control) noexcept;
+};
 ```
 
-Measurement Data Store 是 Snapshot graph、不可变 Buffer、typed parent closure、QualityPlane、retention、tombstone 和 pin 配额的 deep Module；`DomainCommitCoordinator` 是它与 Instrument/Channel/Calibration/Analysis/Display 等领域 Catalog revision、Head、Operation/fence、Instrument Status Register、SCPI Session State、WaitRegistry、QueryTicket/ResultPin 和 EventJournal 之间唯一的原子可见性边界。`DomainCatalogPatchSet` 只接受这些领域的有类型 revision patch，不能退化成无 schema 的 key/value 更新。只有 Control Executor 可以取得 permit：产生正式 publication 的 Board/Processing/Calibration worker 只返回 `PublicationCandidateBatch`；Persistence/Diagnostics worker 返回各自 Interface 定义的 Result，由 Control Executor 验证并按需转成领域 candidate；两类 worker 都不能自行发布。Web/SCPI 只能经 QueryReadHandle 读取，不能拿内部 Buffer 指针。`pin_inputs` 必须对全部 typed refs 原子成功或完全失败，避免多输入计算只保活半套父数据。
+`InstrumentStore` 是 L2 唯一依赖的公开 transaction boundary。其 Implementation 内部可以拆分 Measurement Data Store（Snapshot graph、不可变 Buffer、typed parent closure、QualityPlane、retention、tombstone、pin quota）和 Domain Commit Coordinator（Catalog/Head/Operation/Status/Wait/Ticket/Event 原子提交），但这两个内部对象不分别暴露给 Control Executor，也不再造只转发 facade。`DomainCatalogPatchSet` 只接受有类型 revision patch，不能退化成无 schema 的 key/value 更新。只有 Control Executor 可以取得 permit：产生正式 publication 的 Acquisition/Processing/Calibration worker 只在 Succeeded terminal 中返回 `PublicationCandidateBatch`；Persistence/Diagnostics worker 返回各自 typed terminal，由 Control Executor 验证并按需转成领域 candidate；两类 worker 都不能自行发布。Web/SCPI 只能经 QueryReadHandle 读取，不能拿内部 Buffer 指针。`pin_inputs` 必须对全部 typed refs 原子成功或完全失败，避免多输入计算只保活半套父数据。
 
-`DomainCommitCoordinator::commit` 对 bundle 全部成功或完全失败，并在成功时消费 `CandidateCommitLease`：B + AverageAccumulatorSnapshot + 两个 Channel Head + Operation/fence/status/wait predicate/event、CorrectionSet publication + CalibrationSession domain revision + Operation/Event、可提升的当前 Live C closure + TraceAnalysisHead + event，以及 `QueryTicket (direct Ready admission | Pending→Ready) + ResultPinLease` 都分别由一个 bundle 原子生效。Result pin 的配额检查与取得在 commit 内完成，不能先把 Ticket 标成 Ready 再补 pin；失败时 candidate 仍不可见，domain/lease/retention delta 按唯一 abort 路径保持旧 revision 或释放。EventJournal 只保存软引用，不取得 data pin。由此内存池、结构共享、磁盘后端和 retention 策略可以在不改变 Instrument Kernel、Pipeline 或 Transport Interface 的情况下替换。
+任何异步 Operation、Pending Query 或 Drain 在首次可见前，L2 都先调用 `reserve_lifecycle_terminals`，并把返回 reservation 随初始 `DomainCommitBundle` 安装到 L5 lifecycle；可能 Draining 的 work claim 同时覆盖至多一个预分配 child Drain fact/terminal slot，handoff 时安装，未使用则在父 terminal 释放。初始 commit 失败不产生可见对象，L2 释放完整 admission owner 且不 dispatch。后续 publication commit 全败时，该 reservation 仍在旧 revision 中有效：Control Executor 必须 reconcile 已由 cancel/timeout 提交的终态，或在同一有界 turn 内提交不带 candidate 的 state-only Failed bundle，同批更新 Status、Wait/Fence 和失败 Event。普通 quota/revision/队列错误不能留下 Pending/Publishing；若 Store 完整性损坏到预留终态也无法提交，Instrument fail-stop 并阻断新工作。
+
+`CommitResult` 的成功分支携带 `CommitReceipt + ContinuationStoreHandoffSet`。A commit 前，L2 把完整 continuation 拆成 Store-owned `ContinuationStoreJoinOwner` 与始终留在 commit 外的 `ContinuationRuntimeEscrow{ReservedWorkDispatch}`；前者包含 RF start 前按保守 A closure 上界取得的 `ContinuationJoinReservation`。同一 Store 事务先安装 A，再使用该 reservation 把新 A 与已保活的 purpose-specific inputs 合并为完整 `PinnedInputSet`，不再申请普通 pin/bytes/closure/quota 容量，并只返回 Store handoff。L2 再将它与 Runtime escrow 组合后派发 BuildMeasurement 或 Calibration Observation/Verification；A-only 不创建空 handoff。失败时 Store 消费 candidate/Store owner，L2 恰好一次释放 escrow并终结 Preview，随后以 SweepOperation 已安装的 terminal reservation 提交 Failed，且不发布 A。这仍保证 A 可见与新 A+parents 闭包转换原子，却不让 L5 接收/透传 `WorkDispatchPermit`、`RuntimeCompletionRegistration` 或 Preview owner。
+
+`InstrumentStore::commit` 对 bundle 全部成功或完全失败，并在成功时消费 `CandidateCommitLease`：B + AverageAccumulatorSnapshot + 两个 Channel Head + Operation/fence/status/wait predicate/event、CorrectionSet publication + CalibrationSession domain revision + Operation/Event、可提升的当前 Live C closure + TraceAnalysisHead + event，以及 `QueryTicket (direct Ready admission | Pending→Ready) + ResultPinLease` 都分别由一个 bundle 原子生效。direct Ready 的精确 pin 配额在 commit 内检查；Pending Query 已在 join 前按 caller/target/output-claim 上界安装 `PendingResultPinReservation`，completion bundle 只转换同一 cut 上仍有效 Ticket 的 reservation 并退还余量。一个 Ticket 的 quota/cancel/TTL 不回滚共享 publication 或其他 waiter。publication commit 失败时 candidate 仍不可见，domain/lease/retention delta 按唯一 abort 路径保持旧 revision 或释放，并按上一段强制 terminalize 已有 lifecycle。EventJournal 只保存软引用，不取得 data pin。由此内存池、结构共享、磁盘后端和 retention 策略可以在不改变 Instrument Kernel、Pipeline 或 Transport Interface 的情况下替换。
 
 ## 8. BoardCapabilities、资源图和 MOCK
 
@@ -605,7 +703,7 @@ Measurement Data Store 是 Snapshot graph、不可变 Buffer、typed parent clos
 
 Source、Receiver、Route、Trigger line、Clock/Coherence domain、共享总线和 Board 独占状态构成资源图。能力未声明可并行时默认串行；独立资源允许并行。项目默认不变量是一个 LogicalSweep/校准采集绑定一个 BoardSession；若某 ProductProfile 显式允许跨板组成同一 S-matrix、mixed-mode 或 Calibration bundle，Compiler 必须证明所有参与板属于同一 CoherenceDomain、共享或锁定 timebase、同步 trigger/epoch、实际轴兼容且 skew 在能力上界内，否则在 prepare/start 前拒绝。不同 coherence domain 仍可运行独立 Channel，但结果不能被标成同代相干矩阵。Continuous Channel 每完成一轮必须让出调度机会，避免 Single、校准或 SCPI 请求饥饿；校准采集可以申请独占租约。
 
-可选跨板执行只能由 Acquisition Module 内的 `CompositeSweepCoordinator` 编排，不能让某个 Board Adapter 代表多块板。Coordinator 为每块板分别持有 Prepared Manifest、ExecutionLease、BoardRunId 和 Buffer/安全所有权；全组 admission 成功后才 start，任一成员失败则 fan-out abort/safe-state，并等待 all-terminal barrier。只有全部 terminal 后再次验证 actual axis、coverage、trigger epoch、timebase lock 与 skew，才允许发布一个绑定同一 `LogicalSweepId` 的 `CompletedSweepBundle`，其 `BoardRunEvidence[] {manifest_id, board_run_id, run_generation, completion_ledger}` 逐板保留证据且父 Manifest 集合完整；否则完全不发布组合 A。公司底软能力未签核前该 Product capability 关闭。
+可选跨板执行只能由 Acquisition Module 内的 `CompositeSweepCoordinator` 编排，不能让某个 Board Adapter 代表多块板。Coordinator 持有全组 `AcquisitionRunResourceSet`，其中逐板绑定 Prepared Manifest、board execution sublease、BoardRunId、Buffer/安全所有权；全组 conservative admission 与 local exact finalization 成功后才 start，任一成员失败则 fan-out abort/safe-state，并等待 all-terminal barrier。只有全部 terminal 后再次验证 actual axis、coverage、trigger epoch、timebase lock 与 skew，才允许发布一个绑定同一 `LogicalSweepId` 的 `CompletedSweepBundle`，其 `BoardRunEvidence[] {manifest_id, board_run_id, run_generation, completion_ledger}` 逐板保留证据且父 Manifest 集合完整；否则完全不发布组合 A。公司底软能力未签核前该 Product capability 关闭。
 
 ### 8.3 MOCK 不是理想曲线桩
 
@@ -730,8 +828,10 @@ stateDiagram-v2
     Queued --> Running
     Running --> Finalizing
     Finalizing --> Completed
+    Accepted --> Failed: internal dispatch contract/runtime fault
     Accepted --> Cancelled
     Accepted --> TimedOut
+    Queued --> Failed: pre-run scheduler failure
     Queued --> Cancelled
     Queued --> TimedOut
     Running --> Cancelling
@@ -748,7 +848,7 @@ stateDiagram-v2
 
 `Accepted/Queued` 尚未派发工作时可以直接 Cancelled/TimedOut；一旦派发，只有在 worker 已停止且全部 lease 已释放，或剩余不可中断工作与资源已原子转交给可见的子 `DrainOperation`/Quarantine lease 后，父 Operation 才能进入唯一终态。转交不等于容量释放：子 drain 终止前队列、内存、Board 或 Solver Lane 继续计入占用。不可取消的 Finalizing 原子区必须短且有硬上界；期间收到 cancel/deadline 只审计，最终按提交事实进入 Completed 或 Failed。任何终态都不得掩盖仍锁存的 `FaultUnsafeRf`，后者继续作为独立 Instrument/Board 健康状态阻断 RF。
 
-Sweep phase 使用 `Compiling / PreAdmitting / Preparing / Reserving / Starting / Armed / WaitingTrigger / Acquiring / MeasurementProcessing / MeasurementPublishing`；其中 Starting/Armed/WaitingTrigger/Acquiring 来自 `start` 后的 BoardRun phase event，不能由 UI 猜测，Preparing 则属于 pre-start `BoardCallId`。A/B 派生 stage 使用独立 `MaterializeMeasurementStageOperation` 的 `ResolvingInputs / Materializing / Publishing`；Trace 分析使用 `EvaluateTraceOperation` 的 `Evaluating / Publishing`，两者都不混进 Sweep phase。Calibration 父 Operation 使用 `WaitingStandard / AcquiringStep / Solving / Publishing`；Calibration Verification 使用 `WaitingVerificationStandard / Acquiring / Comparing / Publishing`；不可中断 solver/compare 转交后的 `Draining` 只属于显式子 DrainOperation。文件操作使用 `Reading / Validating / Writing / Committing`，诊断包使用 `Collecting / Redacting / Packaging / Committing`。因此文件 Recall 不会被错误地迫使经历 Armed/Acquiring。
+Operation commit 前的不可见 `AdmissionAttemptPhase` 使用 `Planning / ReservingRuntimeAndStore / PreAdmitting`；任一失败只返回 admission rejection，不创建 SweepOperation。可见 SweepOperation 从 `Queued / Preparing / FinalizingAdmission / Starting / Armed / WaitingTrigger / Acquiring / MeasurementProcessing / MeasurementPublishing` 开始，其中 `FinalizingAdmission` 只按 actual Manifest 在既有 envelope 内收窄、零新分配。Starting/Armed/WaitingTrigger/Acquiring 来自 `start` 后的 BoardRun phase event，不能由 UI 猜测，Preparing 则属于 pre-start `PrepareCallId`。Accepted 后的 Board/worker failure、publication commit failure、cancel/deadline 或 dispatch contract/runtime fault 都通过已安装 terminal reservation 进入 Failed/Cancelled/TimedOut/Drain handoff，不再叫 admission 失败，也不能停在中间 phase。A/B 派生 stage 使用独立 `MaterializeMeasurementStageOperation` 的 `ResolvingInputs / Materializing / Publishing`；Trace 分析使用 `EvaluateTraceOperation` 的 `Evaluating / Publishing`，两者都不混进 Sweep phase。Calibration 父 Operation 使用 `WaitingStandard / AcquiringStep / Solving / Publishing`；Calibration Verification 使用 `WaitingVerificationStandard / Acquiring / Comparing / Publishing`；不可中断 solver/compare 转交后的 `Draining` 只属于显式子 DrainOperation。文件操作使用 `Reading / Validating / Writing / Committing`，诊断包使用 `Collecting / Redacting / Packaging / Committing`。因此文件 Recall 不会被错误地迫使经历 Armed/Acquiring。
 
 Continuous/Groups 使用父子 Operation：`ContinuousRun` 或 `GroupRun` 表达模式生命周期，每一轮完整逻辑扫描都是独立 `SweepOperation`，拥有自己的逐板 PreparedExecutionManifest set、A 层 `CompletedSweepBundle/BoardRunEvidence[]`、B 层 `CompletedMeasurementBundle` 和终态；默认单板时集合长度为 1。父 Operation 只负责调度、累计计数和 Hold/Cancel；Average 需要时再建立有 factor 终点的 `AverageSequenceOperation`。网络数据查询和 Live Trace 分析 pin 具体 B 层 measurement snapshot；Frozen/Imported/Derived Trace pin typed `AnalysisInputRefSet`，C 层分析另有子 Operation。SCPI fence 默认不等待一个永不主动结束的 ContinuousRun，除非目标方言的命令明确把该父 Operation 纳入 pending 集合。
 
@@ -821,22 +921,24 @@ SCPI 对客户端保持同步协议语义，但实现不得让 session worker �
 - SCPI acceptor + 有界 session worker/event loop + WaitRegistry/预留容量 WaitReadyQueue + 独立 control dispatch/transfer lane；同步等待以挂起/恢复状态机实现，不占住 worker，terminal commit 直接就绪而不依赖 Event；
 - 有界 Persistence Worker：所有 load/recall/import/export/write/flush 带 ExecutionContext、文件/输入 lease 与临时空间预算；卡死调用转 Drain；
 - 有界 Diagnostics Worker + 独立 Watchdog：SelfTest/诊断包带 ExecutionContext 和输入 lease；Watchdog/OOB kill 不依赖 Diagnostics Worker；
-- Event Dispatcher 不执行慢网络写，也不拥有正式事实；它从权威 EventJournal 按 sequence 投递引用。
+- Event Dispatcher 不执行慢网络写，也不拥有正式事实；它只从 L2 持有的授权 Watch mailbox 按 sequence 取得已投影引用，不直读 EventJournal。
 
 内存规则：
 
-- PreAdmissionLease 先冻结保守资源声明和 topology epoch；Board `prepare` 只给出 actual axis、精确硬件资源和采集 buffer bounds。随后 Processing Planner 另算 Snapshot/处理图/并发 pin 的内存，以及 B 层 MeasurementPublication queue/worker budget；全部写入 `ProcessingReservationPlan`。两类预留都成功并升级为 ExecutionLease 后才允许 RF `start`，否则回滚 Prepared handle。Continuous Run 的每轮也必须重新满足这份预算，不能靠已经启动的父 Operation 越过 admission。
+- 第一次 dispatch 前先取得 acquisition/必达后继的 `ReservedWorkDispatch{WorkId, WorkDispatchPermit, RuntimeCompletionRegistration}`、purpose-specific frozen pins、`LifecycleTerminalReservationSet`、PreAdmissionLease、`PreReservedBoardCallSet`，以及按 Intent/Profile/Capability 上界保守预留的 A Builder/ingress/required-continuation capacity，并装入初始 admission owner；只有 Accepted commit 成功后 terminal reservation 进入 L5、execution owner 才可 dispatch。Board `prepare` 只给出 actual axis、精确硬件资源和采集 bounds；L4 随后只能在既有 envelope 内消费 `ExactFinalizationCapability`，无新分配地收窄成 `AcquisitionRunResourceSet`，并保留首次准入时已聚合的 `AcquisitionContinuationOwner`。`StartAuthorization` 只绑定 exact reservation 的 ID/digest，不把 ownership 移给 L6；Board 只取得 `RunDeliveryGrant` producer capability。Manifest 超界或 finalization 失败就显式 discard 并等待 terminal。Continuous 每轮也必须重新取得这套预算，不能靠父 Operation 越过 admission。
 - Receiver chunk 来自固定 Buffer Pool，禁止逐点动态分配。
 - 正式快照使用只读共享 Buffer；派生阶段按需物化并共享未改变的数据，避免“不可变”退化成每层整数组复制。
-- 每 Channel 仅保留 ProductProfile 规定数量的正式快照；被 `PinnedInputSet`、`TypedSnapshotLeaseSet`、`CandidateCommitLease`/待提交 candidate、`ResultPinLease`、`ReaderLease`、当前 `ChannelMeasurementHead`/`ChannelAverageHead`/`TraceAnalysisHead`，或活动 CalibrationSession 已接受 Observation 闭包引用的数据不回收。新 Query 若无法在 global/per-actor/session pin bytes 上限内取得 publication、children 与共享 Buffer 的 closure pin，则 Ticket 明确 Failed(ResourceExhausted)，不能先 Ready 后悬空。Graph-aware retention 只在 child closure 自包含且没有重算/平均/校准等生命周期承诺仍依赖祖先 payload 时回收祖先 Buffer，并始终保留父 tombstone/digest/provenance。
-- 每次领域提交都由 `DomainCommitCoordinator` 消费一个 `DomainCommitBundle`，把 candidate publication、typed `DomainCatalogPatchSet`、Head patch、Snapshot/Operation terminal、QueryTicket/ResultPin、retention delta、权威 `StatusRegisterCatalog`/`ScpiSessionStateCatalog`/WaitRegistry predicate 和对应 sequence 全部原子写入 Catalog + 固定容量 `EventJournal`；任一校验或资源步骤失败则整包不可见。瞬时 0→1→0 fault 的 Event bit 在这里锁存，Operation completion fence 在这里满足。WaitRegistry 按 completion key 维护已预留 slot 的 waiter bucket，terminal commit 只需将整桶幂等 splice 到 WaitReadyQueue，不逐个等待网络。Control Executor 只做严格有界的内存提交，不等待 Dispatcher 或客户端。Dispatcher 以 cursor 读取只含 metadata/typed IDs 的软引用，不取得 data pin；Journal retention 淘汰或 per-client 队列满时记录最小可见 sequence gap，断开/通知客户端 resync。Event 到达时 payload 可能已过 retention，后续 Query 可以明确返回 `PayloadExpired/Gone`。正式**事实**不丢，事件投递可以显式 gap；任何客户端都不得反压 Control/SafetyIngress，SCPI status/fence/wakeup 也不得依赖 Journal retention。
+- 每 Channel 仅保留 ProductProfile 规定数量的正式快照；被 `PinnedInputSet`、`TypedSnapshotLeaseSet`、`CandidateCommitLease`/待提交 candidate、`PendingResultPinReservation`、`ResultPinLease`、`ReaderLease`、当前 Head 或活动 CalibrationSession Observation 闭包引用的数据不回收。direct Ready 若无法取得精确 closure pin则同步 Rejected 且无 Ticket；Pending caller 在 join 前按上界独立预留，失败不加入 shared Operation，Ready 时只转换仍有效 reservation。Graph-aware retention 只在 child closure 自包含且无重算/平均/校准承诺依赖祖先 payload 时回收祖先 Buffer，并始终保留父 tombstone/digest/provenance。
+- 每次领域提交都通过公开 `InstrumentStore::commit` 消费一个 `DomainCommitBundle`；内部 Coordinator 把 candidate、typed domain/Head/Operation/Ticket/ResultPin/Status/Wait/Event/retention 全部原子写入 Catalog + 固定容量 `EventJournal`，任一校验或资源步骤失败则整包不可见。若该 bundle 对应已有 lifecycle，Control Executor 必须立即使用已安装 terminal reservation reconcile 或 state-only commit Failed；预留终态仍失败意味着 Store integrity fault 和 Instrument fail-stop。WaitRegistry 的预留 bucket/ready slot 使 terminal commit 只做有界幂等 splice；Control Executor 不等待 Dispatcher/客户端。L2 经 EventFeed 做 ACL 投影，L1 只编码授权 mailbox；Journal gap 不影响正式事实、SCPI status/fence/wakeup，也不取得 data pin。
 - Preview 按 `channel_id + logical_sweep_id` 合并/抽稀；与正式 EventJournal 分开，可丢并显式 gap。
 - SCPI binary block 和 HTTP binary response 从快照流式输出，设置连接级字节上限、write timeout 和最大 pin 时间。
 - 记录队列高水位、Buffer Pool 使用量、preview gap、处理耗时和慢客户端滞后。
 
-惰性求值分成两个有界单航班注册表。`MeasurementStageKey` 至少包含 canonical ordered A/B root refs、requested stage、完整 RF/network graph revision、Correction/BoardExecution/Analysis Profile revision、axis/topology/Z0 schema；它不含另一个 stage parent、AnalysisTrace、Marker 或 Limit，并共享 `MaterializeMeasurementStageOperation`。`TraceEvaluationKey` 至少包含 `analysis_input_ref_set_hash + analysis_trace_revision + pipeline_revision + projection_revision + marker_revision + limit_revision + AnalysisProfileRevision + requested_stage`；Live 输入的 canonical value 包含 `measurement_snapshot_id` 或明确 `MeasurementStageInput`，Derived 输入包含有序 upstream publication 与 generation policy，Hold/ensemble 输入还包含 `accumulator_snapshot_id + clear_generation + input_generation_vector`，并共享 `EvaluateTraceOperation`。两种索引命中后都比较完整 canonical typed value，hash 只作提示。Control Executor 在提交前先预留该 key 所需处理内存和 lane capacity，并对全部父 refs 原子取得 `PinnedInputSet`；同一完整 key 的并发 Query 不重复计算和占用峰值内存。Pending Ticket 持 waiter + admission reservation 引用；Pending→Ready 的同一 commit 必须取得并登记完整 `ResultClosure` 的 `ResultPinLease`，受 TTL 以及 global/per-actor/session pin count/bytes 配额约束；open_read 再原子转换为 ReaderLease。HTTP 202 transport detach 不改变 Ticket；显式 cancel、session/access 失效、ticket waiter deadline/Ready TTL 或 Failed 释放相应 waiter/reservation/ResultPinLease，Reading 的 write/pin timeout 则终结 Ticket 并释放 ReaderLease。任何单个 Ticket 终结都不能擅自取消其他调用者共享的 Operation。最后一个 waiter 消失后，孤儿 materialize/evaluate 任务按自身冻结的执行 deadline/cost policy 继续完成或进入 Cancelling/Draining；无论哪种都在真实 terminal 前保持 PinnedInputSet 与 reservation，不能提前向 admission 报告容量已释放。
+惰性求值分成两个有界单航班注册表。`MeasurementStageKey` 至少包含 canonical ordered A/B root refs、requested stage、完整 RF/network graph revision、Correction/BoardExecution/Analysis Profile revision、axis/topology/Z0 schema；它不含另一个 stage parent、AnalysisTrace、Marker 或 Limit，并共享 `MaterializeMeasurementStageOperation`。`TraceEvaluationKey` 至少包含 `analysis_input_ref_set_hash + analysis_trace_revision + pipeline_revision + projection_revision + marker_revision + limit_revision + AnalysisProfileRevision + requested_stage`；Live 输入的 canonical value 包含 `measurement_snapshot_id` 或明确 `MeasurementStageInput`，Derived 输入包含有序 upstream publication 与 generation policy，Hold/ensemble 输入还包含 `accumulator_snapshot_id + clear_generation + input_generation_vector`，并共享 `EvaluateTraceOperation`。两种索引命中后都比较完整 canonical typed value，hash 只作提示。Control Executor 在提交前先预留该 key 所需处理内存和 lane capacity，并对全部父 refs 原子取得 `PinnedInputSet`；同一完整 key 的并发 Query 不重复计算和占用峰值内存。每个 Pending Ticket 独立持有 waiter 与 admission 时已计入 global/per-actor/session 配额的 `PendingResultPinReservation`；Pending→Ready 的同一 commit 只把仍有效 reservation 转换并登记为覆盖完整 `ResultClosure` 的精确 `ResultPinLease`，不在 worker terminal 后重新申请普通 pin capacity；`open_read` 再原子转换为 ReaderLease。HTTP 202 transport detach 不改变 Ticket；显式 cancel、session/access 失效、ticket waiter deadline/Ready TTL 或 Failed 只释放该 Ticket 的 waiter/reservation/ResultPinLease，Reading 的 write/pin timeout 则终结该 Ticket 并释放 ReaderLease。任何单个 Ticket 终结都不能擅自取消其他调用者共享的 Operation。最后一个 waiter 消失后，孤儿 materialize/evaluate 任务按自身冻结的执行 deadline/cost policy 继续完成或进入 Cancelling/Draining；无论哪种都在真实 terminal 前保持 PinnedInputSet 与 execution/output reservation，不能提前向 admission 报告容量已释放。
 
 命中已经物化 closure 的 direct Ready admission 不进入 single-flight，但仍必须在同一个 commit 中创建 Ready Ticket、检查 pin 配额并取得 `ResultPinLease`；它与 Pending→Ready 的 retention 保证完全相同。
+
+这里 Pending→Ready 的“取得”是把 Ticket admission 时已计费的 `PendingResultPinReservation` 转成精确 `ResultPinLease`，不是在共享 worker terminal 后重新竞争普通 pin pool。每个 waiter 的 reservation 独立绑定 actor/session/target/上界；cancel、deadline、TTL 或 access revocation 只释放自己的 reservation。Control Executor 在唯一写者顺序下从 completion cut 排除已终止 Ticket，所以单个 waiter 的 revision race 不会使共享 candidate 或其他 Ticket 的 Ready 转换失败。
 
 所有 timeout、deadline、lease expiry、waiter TTL、abort SLA 和调度上界使用 `PlatformClock::monotonic_now()`，并携带当前 `boot_id`；UTC wall clock 只用于显示/审计，同时记录可信度、同步源和 clock-step 事件。持久包不得跨 reboot 直接复用 monotonic tick：boot_id 不同的待执行 deadline 按各对象政策立即过期或基于明确 duration 重新 admission。生产 PlatformClock 与 Mock VirtualClock 共享同一契约；NTP/人工校时前后跳不能改变安全 deadline，tick wrap/整数溢出必须使用饱和检查。
 
@@ -854,9 +956,9 @@ SCPI 对客户端保持同步协议语义，但实现不得让 session worker �
 - Trace Memory 和按策略选择的正式结果历史；
 - 网络/用户配置与测量 State 分开保存。
 
-`StatePackage` 提供显式 inclusion profile：`SettingsOnly`、`StateAndCalibration`、`StateAndTraceMemory`、`All`，未指定时默认 `SettingsOnly`；包含 Calibration 的 Profile 还显式声明 CalSet 是 reference 还是 embedded blob。Manifest 同时记录保存时的 Product/BoardExecution/Analysis/File Profile revision 和所需 compatibility constraints；Recall 先在 staging 区完成读取、schema/CRC、引用、Profile migration/compatibility 和当前 BoardCapabilities 验证，再一次性 commit。SCPI selection/profile、网络账号、凭据和密钥不作为普通测量 State 偷带恢复。任一步失败保持原仪器状态。
+`StatePackage` 提供显式 inclusion profile：`SettingsOnly`、`StateAndCalibration`、`StateAndTraceMemory`、`All`，未指定时默认 `SettingsOnly`；包含 Calibration 的 Profile 还显式声明 CalSet 是 reference 还是 embedded blob。Manifest 同时记录保存时的 Product/BoardExecution/Analysis/File Profile revision 和所需 compatibility constraints；Recall 上传先由 BlobWrite Interface 形成 `StagedBlobRef`，再在 Persistence staging 中完成读取、schema/CRC、引用、Profile migration/compatibility 和当前 BoardCapabilities 验证，最后一次性 commit。SCPI selection/profile、网络账号、凭据和密钥不作为普通测量 State 偷带恢复。任一步失败保持原仪器状态。
 
-State/启动恢复必须显式携带 `RecallActivationPolicy = RestoreInHoldSafeOff | ExplicitRestoreRunState`，默认且普通权限唯一允许前者：配置 commit 后所有 Channel 为 Hold、RF safe/off，不恢复 Continuous/Groups、Armed/WaitingTrigger、未完成 Operation 或 RF-on；frozen/static Trace 也保持 Hold。`ExplicitRestoreRunState` 不是在 commit 中直接发射 RF，而是需要额外授权和单独审计：先同样恢复到 HoldSafeOff，再对目标 Channel 重新做当前 safe-state/readback、capability/Profile 校验、Compiler→pre-admission→prepare→reservation→ExecutionLease，最后提交一个全新的 Sweep/Continuous Operation；启动失败时保留已恢复配置但仍 HoldSafeOff。异常重启永远采用 HoldSafeOff；无人值守 auto-run 只能由普通 State 外的签名部署政策、硬件 interlock 与启动前安全验收启用，不能由用户 State 文件偷偷恢复。
+State/启动恢复必须显式携带 `RecallActivationPolicy = RestoreInHoldSafeOff | ExplicitRestoreRunState`，默认且普通权限唯一允许前者：配置 commit 后所有 Channel 为 Hold、RF safe/off，不恢复 Continuous/Groups、Armed/WaitingTrigger、未完成 Operation 或 RF-on；frozen/static Trace 也保持 Hold。`ExplicitRestoreRunState` 不是在 commit 中直接发射 RF，而是需要额外授权和单独审计：先同样恢复到 HoldSafeOff，再对目标 Channel 重新做当前 safe-state/readback、capability/Profile 校验，执行 `SweepAdmissionPlanner → Runtime/Store conservative reservation → ResourceArbiter pre-admission → new Operation dispatch → Board prepare → local exact finalization → start`；启动失败时保留已恢复配置但仍 HoldSafeOff。异常重启永远采用 HoldSafeOff；无人值守 auto-run 只能由普通 State 外的签名部署政策、硬件 interlock 与启动前安全验收启用，不能由用户 State 文件偷偷恢复。
 
 `MeasurementPreset`、`*RST`、用户启动 State、`FactoryReset` 和“删除持久数据”是不同 Command，必须用所有权/删除矩阵明确各自影响；FactoryReset 也不能未经明确授权删除计量或工厂校准数据。
 
@@ -924,8 +1026,8 @@ Interface 就是主要测试表面，不以“每个类都有单测”宣布完�
 13. **控制面饱和**：填满 NormalIngress、Web data lane 和 SCPI 普通会话后，授权 `ABORt`/Cancel、health 与 out-of-band safe-state 仍在规定上界内执行；重复安全请求不扩张队列，普通请求随后恢复公平进展。
 14. **SCPI 等待饱和**：填满 WaitRegistry/WaitReadyQueue 预留和慢传输 lane 后，第二连接的 `ABORt`/status/health 仍在规定上界内处理；超额 query 得到稳定错误，Operation 完成后原 Session 按序恢复，重复 terminal/timeout/cancel 只恢复一次。
 15. **事件投递停滞**：暂停 Dispatcher、填满 per-client queue 并跨越 Journal retention，Cancel/terminal 仍能提交；客户端观察显式 gap，重连后由权威 Snapshot/Operation Catalog 恢复一致状态。
-16. **QueryTicket 生命周期**：HTTP 202 返回并断开后 Ticket 仍可 inspect/open_read；Pending→Ready 与 direct Ready admission 都先取得 ResultPinLease，open_read 无缝转换 ReaderLease；显式 cancel、会话失效、Ready TTL、Reading 断线各自只释放正确 lease，global/per-actor/session pin count/bytes 不泄漏，首个 waiter 超时不杀共享求值。
-17. **处理池饱和**：填满 interactive/background lazy evaluation 后，已取得 ExecutionLease 的 Sweep 仍携带冻结的 ExecutionContext，在预算上界内完成 B 层发布；stop/deadline 故障注入不会在 worker terminal/Drain transfer 前释放 BudgetHandle，后台任务通过配额最终前进，Continuous 每轮重新 admission。
+16. **QueryTicket 生命周期**：HTTP 202 返回并断开后 Ticket 仍可 inspect/open_read；direct Ready 同批取得精确 ResultPinLease，Pending caller 在 join 前各自安装 `PendingResultPinReservation` 并在 Ready 转换，open_read 再无缝转 ReaderLease；显式 cancel、会话失效、Ready TTL、Reading 断线各自只释放正确 reservation/lease，首个 waiter 超时不杀共享求值。
+17. **处理池饱和**：填满 interactive/background lazy evaluation 后，已取得完整 `PendingSweepAdmission/AcquisitionRunResourceSet` 的 Sweep 仍携带冻结的 ExecutionContext，在预算上界内完成 B 层发布；stop/deadline 故障注入不会在 worker terminal/Drain transfer 前释放 BudgetHandle，后台任务通过配额最终前进，Continuous 每轮重新 admission。
 18. **SCPI 锁存跨 gap**：暂停 Dispatcher 并让 EventJournal cursor 被淘汰期间注入瞬时 fault、完成 Operation；挂起 fence 仍由 WaitReadyQueue 立即恢复，重连后的 `*STB?`、Session `*ESR?` read-clear 与 Instrument Questionable Event 从权威 Catalog 正确读取。
 19. **时钟与重启**：UTC 前跳/后跳不改变 monotonic cancel/timeout；测试 tick wrap/overflow、boot_id 改变和持久 deadline 的过期/重建政策。
 20. **协议因果与安全抢占**：同一 Session `配置;INIT;ABORt` 保持顺序，另一 Session 的 ABORt 可越过无关 Normal queue；watchdog/interlock 不等待任何协议 predecessor。
@@ -933,9 +1035,9 @@ Interface 就是主要测试表面，不以“每个类都有单测”宣布完�
 22. **恢复 Operation**：Quarantined Board 的 reopen/reinitialize/safe-state/health 任一步失败都不回 ResourceGraph；卡死恢复转 Drain，FaultUnsafeRf 不能被普通远程恢复清除。
 23. **C 层批发布**：在 Trace/Marker/Limit 各构造点和 Catalog commit 注入失败，只观察旧 publication 或完整新 batch，绝不出现半套双向引用。
 24. **输入 identity 碰撞**：构造相同索引 hash 但不同 typed refs、不同 Derived 顺序和重复 ref；single-flight 必须 full-value 区分/拒绝，跨 actor cache hit 仍重新鉴权。
-25. **Abort 请求与终态竞态**：让 `request_abort` 先返回 accepted、BoardRunSink terminal 迟到；期间 ExecutionLease/Buffer/Board 不可复用，safe-state 失败时转 FaultUnsafeRf/Quarantine，重复 terminal 只接受一次。
+25. **Abort 请求与终态竞态**：让 `request_abort` 先返回 accepted、BoardRunSink terminal 迟到；期间 `AcquisitionRunResourceSet`/Buffer/Board 不可复用，safe-state 失败时转 FaultUnsafeRf/Quarantine，重复 terminal 只接受一次。
 26. **Web Snapshot/Watch 原子边界**：在 initial_view cut 后、watch 注册前连续提交多次配置/Operation 终态；从 cursor+1 replay 与实时交叠只按 sequence 观察一次且不漏，boot/epoch 改变、retention gap 和 access-set 升/降权必须返回 ResnapshotRequired 并重新鉴权/取快照。
-27. **Ready pin 与 retention 竞态**：让结果在 Pending→Ready/direct Ready admission 同时到达 retention 回收点；成功 Ready 必持 ResultPinLease 并可 open_read，任一 global/per-actor/session pin 配额不足则只得到 Failed(ResourceExhausted)，TTL/cancel/open_read 竞态只释放或转换一次。
+27. **Ready pin、retention 与多 waiter 竞态**：direct Ready 在 retention 点要么同批取得精确 pin，要么 Rejected 且无 Ticket；三个 caller join 同一 Pending single-flight 时先独立预留 pin 上界，让其中一个 quota 失败、cancel 或 TTL，shared publication 与另两个 Ready 不受影响；每个 reservation/ResultPin/ReaderLease 只转换或释放一次。
 28. **SCPI Session 状态因果**：parser syntax error 后依次验证 ESR/STB、`SYST:ERR?` pop、`*ESR?` read-clear 与 `*CLS`；填满普通队列和 session error FIFO 时仍经保留 SessionStateIngress 有序提交，并产生 Profile 规定的唯一 overflow sentinel/latch而非静默丢失。
 29. **连续平均元数据上界**：运行远大于 retention/factor 的 Cumulative、VendorRunning 与 SlidingWindow；B 的 `AverageContributionRef` 和 accumulator metadata 大小保持 ProductProfile 上界，generation/count/sequence range/digest 与每点有效 count 仍正确。强制回收窗口 A snapshots 后 SlidingWindow 仍用自有固定 ring 正确减去最老 contribution；clear 不混代。
 30. **计算取消与期限**：在 RF graph/B 发布、Trace evaluate 与 calibration solve 的各个有界轮询点触发 StopToken/deadline/budget exhaustion；可协作路径按唯一终态结束，不可中断路径转隔离 Drain，ProgressSink 饱和不反压且容量不提前释放。
@@ -945,6 +1047,7 @@ Interface 就是主要测试表面，不以“每个类都有单测”宣布完�
 34. **Recall RF 激活安全**：构造保存了 RF-on/Continuous/WaitingTrigger 的 State，普通 Recall 与崩溃启动只能恢复 HoldSafeOff；ExplicitRestoreRunState 先安全恢复再以新 Operation 完整 admission，缺授权、safe readback 或 capability 时不得发射 RF。
 35. **Calibration Verification**：用独立 verification artifact 的 characterization 与已知 residual 注入验证 Pass/Fail/Indeterminate、invalid point、过期/缺模型和阈值；取消/失败不改变 CorrectionSet/Binding，报告绑定确切 B 输入/Plan/Set/算法 revision，Web/SCPI 一致。
 36. **跨板相干边界**：两个 Mock Board 分别测试同/异 CoherenceDomain、timebase unlock、trigger skew 和实际轴不一致；只有全部保证满足时才能组成一个逻辑 S-matrix/mixed-mode/calibration bundle，否则编译/prepare 前拒绝，独立 Channel 仍可运行。
+37. **publication commit 失败终态**：对 A/B/C、Calibration、Export、Query result bundle 注入 validation/write failure；candidate/Head/Event 全败且 last-good 保留，已有 Operation/Ticket 必须以安装的 lifecycle terminal reservation state-only 转 Failed 或确认 AlreadyTerminal，Wait/Fence 不悬挂；再破坏 Store integrity 时 Instrument fail-stop并拒绝新 admission。
 
 ## 17. 尚待闭合的责任包
 

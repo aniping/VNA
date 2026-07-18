@@ -4,11 +4,13 @@
 
 ## 当前状态
 
-候选分层架构 v0.1、整体架构、端到端数据流/生命周期契约与 176 项商用功能矩阵已经完成基线，其中商用功能已完成官方证据归类；但它们还不是冻结产品规格，也尚未开始业务代码实现。下一阶段只关闭真正的兼容目标、算法/计量黄金数据、真实单板契约、目标 SDK/容量和少量产品范围；不再要求用户凭感觉确认通用技术模型。
+候选分层架构 v0.1、跨层 Interface、Board Adapter、端到端数据流/生命周期契约与 176 项商用功能矩阵已经完成文档基线，其中商用功能已完成官方证据归类；但它们还不是冻结产品规格，也尚未开始业务代码实现。下一阶段通过公司底软说明/HIL、双工具链编译、算法黄金数据和首条 Mock 纵切关闭这些候选契约；不再要求用户凭感觉确认通用技术模型。
 
 ## 设计文档
 
 - [分层架构与跨层流动（首读）](docs/design/layered-architecture.md)
+- [跨层 Interface 契约基线](docs/design/interface-contracts.md)
+- [Board Adapter Interface 与合同测试契约](docs/design/board-adapter-contract.md)
 - [整体系统架构](docs/design/system-architecture.md)
 - [端到端数据流与生命周期契约](docs/design/data-flow.md)
 - [商用功能逐项对齐矩阵](docs/design/feature-alignment-matrix.md)

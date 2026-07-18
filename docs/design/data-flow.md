@@ -2,9 +2,9 @@
 
 > 状态：候选架构 v0.1；本文冻结跨层数据与所有权边界，不冻结尚待黄金数据验证的数值算法、厂商 SCPI 方言或公司底软 ABI。
 
-本文回答的不是“某个类调用哪个函数”，而是一次 VNA 工作从 Web/SCPI 命令进入，到单板接收机观测、校准、迹线、Marker、Limit、Diagram、查询与导出之间，**什么数据以什么身份、由谁拥有、何时成为正式事实、失败时谁可以继续使用旧结果**。如果还不清楚每个 Module 属于哪一层，请先读 [VNA 分层架构与跨层流动](layered-architecture.md)；整体范围仍以 [整体系统架构](system-architecture.md) 和 [176 项功能对齐矩阵](feature-alignment-matrix.md) 为准。
+本文回答的不是“某个类调用哪个函数”，而是一次 VNA 工作从 Web/SCPI 命令进入，到单板接收机观测、校准、迹线、Marker、Limit、Diagram、查询与导出之间，**什么数据以什么身份、由谁拥有、何时成为正式事实、失败时谁可以继续使用旧结果**。如果还不清楚每个 Module 属于哪一层，请先读 [VNA 分层架构与跨层流动](layered-architecture.md)；方法级 accepted/terminal/lease 规则见[跨层 Interface 契约](interface-contracts.md)，底软回调和单板字段见 [Board Adapter 契约](board-adapter-contract.md)；整体范围仍以 [整体系统架构](system-architecture.md) 和 [176 项功能对齐矩阵](feature-alignment-matrix.md) 为准。
 
-本文统一采用以下跨层读法：Command/Query 从 L1 进入 L2；L2 把冻结工作交给 L3，L3 调度 L4；单板 chunk 从 L6 进入 L4；L4 只返回 candidate/typed result，经 L3 回到 L2；只有 L2 可以用 `DomainCommitBundle` 让 L5 的正式事实原子可见；Query Result/Event 再由 L5 经 L2/L1 返回。Preview 是 L4→L1 的独立可丢旁路。
+本文统一采用以下跨层读法：Command/Query 从 L1 进入 L2；L2 把冻结工作交给 L3，L3 调度 L4；单板 chunk 从 L6 进入 L4；L4 只返回 candidate/typed result，经 L3 回到 L2；只有 L2 可以用 `DomainCommitBundle` 让 L5 的正式事实原子可见；Query Result/Event 再由 L5 经 L2/L1 返回。Preview 由 L2/L3 签发的 `AuthorizedPreviewPublisher` 从 L4 进入有界 Hub，再由 L1 消费授权 mailbox；不是 L4 直连 Web callback。
 
 ## 1. 先冻结三条正交的流
 
@@ -14,7 +14,7 @@
 |---|---|---|---|
 | 控制流 | `CommandEnvelope`、revision、Operation、取消、deadline、完成 fence | Instrument Kernel、Control Executor、OperationCatalog | 大数组和浏览器视图状态 |
 | 正式数据流 | Manifest、A/B/Stage/C、Calibration Observation、质量平面、不可变 Buffer | Measurement Data Store / SnapshotCatalog | “当前选择”、Socket、JSON、厂商 SDK 对象 |
-| 通知流 | catalog revision、event cursor、对象 ID、状态变化摘要、显式 gap | EventJournal + Dispatcher | 正式事实所有权、等待正确性和数组载荷 |
+| 通知流 | catalog revision、event cursor、对象 ID、状态变化摘要、显式 gap | EventJournal → InstrumentStore EventFeed → L2 Watch 投影 → L1 Dispatcher | 正式事实所有权、等待正确性和数组载荷 |
 
 `Operation` 表示工作生命周期，不是数据；`Event` 表示“某事实已经提交”的提示，不是事实；`QueryTicket` 表示某个调用者访问已冻结结果的能力，也不是数据。三者都可以引用同一 Snapshot ID，但互不拥有对方。
 
@@ -42,12 +42,15 @@ flowchart LR
 
     subgraph NotificationFlow["通知流"]
         Commit["L5 Catalog 原子提交"] --> Journal["L5 EventJournal"]
-        Journal --> Dispatcher["L1 Event Dispatcher"]
+        Journal --> Feed["L5 InstrumentStore EventFeed"]
+        Feed --> Projection["L2 ACL/filter/access-revision 投影"]
+        Projection --> Dispatcher["L1 Watch codec/dispatcher"]
         Dispatcher --> Transport
     end
 
     Acquisition --> Board
-    Ingress -.->|"A candidate + terminal"| Runtime
+    Ingress -->|"chunks + run terminal"| Acquisition
+    Acquisition -.->|"AcquisitionTerminal"| Runtime
     Engine -.->|"B、Stage、C candidate + terminal"| Runtime
     Runtime -.->|"typed completion"| Executor
     Executor -->|"DomainCommitBundle"| Commit
@@ -67,7 +70,7 @@ flowchart LR
     classDef notify fill:#fff3dc,stroke:#b47618,color:#4b310d
     class Kernel,Executor,Operation,Runtime,Acquisition,Engine,Transport,Client,Ticket control
     class Board,Ingress,A,B,Stage,C,Frame data
-    class Commit,Journal,Dispatcher notify
+    class Commit,Journal,Feed,Projection,Dispatcher notify
 ```
 
 ### 1.1 Web 与 SCPI 只在边界上不同
@@ -78,26 +81,26 @@ Transport 先完成认证、语法和 wire codec，再把两种入口归一成�
 struct RequestContext {
     RequestId request_id;
     AuthenticatedActorRef actor;
-    SessionId session_id;
+    SessionId session;
+    CompatibilityProfileRevision profile;
     MonotonicDeadline deadline;
-    SessionOrderingToken ordering;
+    SessionSequence sequence;
+    Optional<CausalPredecessor> predecessor;
 };
 
 struct CommandEnvelope {
-    RequestContext context;
     ExpectedRevisionSet expected;
     OptionalIdempotencyKey idempotency;
     TypedCommand command;
 };
 
 struct QueryEnvelope {
-    RequestContext context;
     TargetSelector target;
     TypedQuery query;
 };
 ```
 
-SCPI parser context、selection 与错误队列仍是 Session 状态，但 Adapter 不能把字符串路径直接传进业务模块；Web JSON DOM、HTTP 对象也不能穿过 Kernel Interface。Kernel 接受时重新验证权限，并冻结确切 target ID、Profile revision、typed stage、父 refs 和 ordering；不能信任 Adapter 自己选择的“当前数组”。`QueryAdmission` 是 `InlineResult | ReadyTicket | PendingTicket | RejectedQuery` 的有类型和，只有有硬大小上限的状态/metadata 可以 inline。
+`RequestContext` 作为 `submit/admit` 的独立参数，是 transport-auth、session、Profile、deadline 和因果顺序的唯一来源；Envelope 不再内嵌第二份 context。SCPI parser context、selection 与错误队列仍是 Session 状态，但 Adapter 不能把字符串路径直接传进业务模块；Web JSON DOM、HTTP 对象也不能穿过 Kernel Interface。Kernel 接受时重新验证权限，并冻结确切 target ID、Profile revision、typed stage、父 refs 和 ordering；不能信任 Adapter 自己选择的“当前数组”。`QueryAdmission` 是 `InlineResult | ReadyTicket | PendingTicket | RejectedQuery` 的有类型和，只有有硬大小上限的状态/metadata 可以 inline。
 
 领域 commit 产生的通知统一为：
 
@@ -171,7 +174,7 @@ struct QualityPlane {
 2. `BoardRunSink` 把该 lease **唯一移动**到有界 Acquisition Ingress。Adapter 在移动后不再读写；terminal 后不得再投递。正式 chunk 不能像 Preview 一样丢弃：启动前的 Manifest/reservation 必须覆盖最大在途量；若底软声明可背压则按契约限流，否则任何意外 ingress/pool overflow 都使本次 run 失败并走 abort/drain，绝不能丢块后仍发布 A。
 3. Network Observation Builder 是 chunk 数据的唯一长期拥有者。它校验 generation、sequence、manifest coverage、axis 与质量，并把合格 segment 组合进私有 A candidate。
 4. Preview 不能与 Builder 同时消费同一个 move-only lease。它只能在 Builder 持有期间同步读取有界 `ChunkReadView`，或接收已经复制/派生且有独立所有权的 `PreviewTile`。Preview 队列满时丢 tile，不阻塞 Builder，也不延长 driver buffer 生命周期。
-5. 唯一 terminal 与最后一个 chunk 建立 happens-before；账本闭合后，Builder 把 Buffer seal 为只读，并把 Buffer 所有权随 A candidate 交回 Control Executor，由后者持 permit 原子发布。成功提交后，该 Buffer 由 A/Data Store 继续拥有，任何 pool 都不得复用仍被 A 引用的内存；若 Builder 选择复制到预留的不可变 Snapshot Buffer，则只在复制与校验完成后释放原 lease。失败或取消才归还未发布 Buffer，并丢弃私有 candidate 和所有 Preview，不制造补零 A。
+5. 唯一 terminal 与最后一个 chunk 建立 happens-before；账本闭合后，Builder 把 Buffer seal 为只读，并把 Buffer 所有权装入 A `PublicationCandidateBatch`，只向同层 `AcquisitionEngine` 返回 sealed candidate + ledger 或失败证据。`AcquisitionEngine` 再把自己从 `AcquisitionLeaseSet` 一直持有的 `AcquisitionContinuationOwner`、`PreviewFinalizationOwnerSet` 与 Builder 结果组装成封闭 `AcquisitionTerminal`，先回到 L3 Runtime，再由预留的 completion registration 交付 `RuntimeWorkCompletion` 给 L2 Control Executor；Builder 不能拥有或制造 continuation/Preview owner，L4 也不能绕过 L3 直接调用 L2。candidate 自带 `CandidateCommitLease`，L2 使用独立的 `DomainCommitPermit` 原子发布，不复用已被 Runtime dispatch 消费的 `WorkDispatchPermit`。成功提交后，该 Buffer 由 A/Data Store 继续拥有，任何 pool 都不得复用仍被 A 引用的内存；若 Builder 选择复制到预留的不可变 Snapshot Buffer，则只在复制与校验完成后释放原 lease。失败或取消时，L4 只归还未发布 Buffer、丢弃私有 candidate，并把 `PreviewFinalizationOwnerSet` 经 typed terminal 送回 L2；L2 在失败事实 commit 后才发送 Discarded/Failed，不制造补零 A。
 
 ```mermaid
 sequenceDiagram
@@ -179,10 +182,11 @@ sequenceDiagram
     participant BA as "Board Adapter"
     participant AI as "Acquisition Ingress"
     participant NB as "Network Observation Builder"
+    participant AE as "L4 AcquisitionEngine"
     participant PV as "Preview 子图"
+    participant RT as "L3 Operation Runtime"
     participant CE as "Control Executor"
-    participant DS as "Measurement Data Store"
-    participant DC as "Domain Commit Coordinator"
+    participant IS as "L5 InstrumentStore"
 
     BS->>BA: "a/b chunk + 底软质量"
     alt "底软允许转移 buffer 生命周期"
@@ -197,24 +201,33 @@ sequenceDiagram
     AI->>NB: "terminal after final chunk"
     NB->>NB: "闭合 coverage、sequence、axis、quality ledger"
     alt "完整且成功"
-        NB->>CE: "A PublicationCandidateBatch + CandidateCommitLease"
-        CE->>DC: "commit A + Operation patch + Event"
-        DC->>DS: "install A and transfer sealed Buffer ownership"
-        DC-->>CE: "CommitReceipt"
+        NB->>AE: "sealed A candidate + closed ledger"
+        AE->>RT: "AcquisitionSucceeded: A candidate + retained continuation + Preview owner"
+        RT->>CE: "RuntimeWorkCompletion via pre-reserved registration"
+        CE->>CE: "split StoreJoinOwner; retain RuntimeEscrow + Preview"
+        CE->>IS: "commit A + StoreJoinRequest + Operation patch + Event"
+        IS->>IS: "install A; atomically form A + frozen-parent closure"
+        IS-->>CE: "CommitSucceeded + Store-only handoff"
+        CE->>CE: "combine handoff + RuntimeEscrow for successor dispatch"
     else "缺块、取消或失败"
-        NB-->>PV: "丢弃 provisional generation"
+        NB->>AE: "failure evidence; no candidate"
+        AE->>RT: "AcquisitionFailed + retained PreviewFinalizationOwnerSet"
+        RT->>CE: "typed Failed RuntimeWorkCompletion"
+        CE->>IS: "commit authoritative failure fact"
+        IS-->>CE: "CommitReceipt"
+        CE-->>PV: "Discarded/Failed after commit"
     end
 ```
 
 ### 3.2 从 A 到 B、Stage 和 C
 
-Worker 不直接修改 Catalog，也不直接发 Event。Control Executor 在派发前原子取得全部父输入的 `OperationInputLeaseSet`（公共接口名为 `PinnedInputSet`）和输出 reservation；worker 只产生不可见 `PublicationCandidateBatch`：
+Worker 不直接修改 Catalog，也不直接发 Event。Control Executor 在派发前原子取得全部父输入的 `OperationInputLeaseSet`（公共接口名为 `PinnedInputSet`）和输出 reservation；worker 返回封闭的 `ProcessingSucceeded | ProcessingFailed | ProcessingDraining` terminal，只有成功分支携带不可见 `PublicationCandidateBatch`：
 
 ```cpp
-PublicationCandidateBatch run(const FrozenProcessingJob& job,
-                              PinnedInputSet&& inputs,
-                              OutputReservation&& output,
-                              ExecutionContext& context);
+ProcessingTerminal run(FrozenProcessingJob&& job,
+                       PinnedInputSet&& inputs,
+                       OutputReservation&& output,
+                       ExecutionContext& context) noexcept;
 ```
 
 - `BuildMeasurement` 从一个新 A 和冻结的 accumulator/correction/profile 输入产生同一 batch 内的 B 与新 accumulator candidates；
@@ -294,23 +307,38 @@ struct DomainCommitBundle {
     WaitRegistryPatchSet wait_registry;
     QueryTicketPatchSet query_tickets;
     ResultPinRequestSet result_pins;
+    LifecycleTerminalReservationInstallSet lifecycle_terminals; // 仅初始可见 lifecycle
+    PendingResultPinReservationInstallSet pending_result_pins;  // 仅 Pending Ticket admission
+    ContinuationStoreJoinRequestSet acquisition_continuations;
     EventRecordBatch events;
     RetentionDeltaSet retention;
 };
 
-CommitReceipt commit(DomainCommitBundle&& bundle,
-                     DomainCommitPermit&& permit);
+struct CommitSucceeded {
+    CommitReceipt receipt;
+    ContinuationStoreHandoffSet continuation_store_handoffs;
+};
+
+struct CommitFailed {
+    StoreError error;
+    DomainCommitAbortReceipt consumed_owners;
+};
+
+using CommitResult = Variant<CommitSucceeded, CommitFailed>;
+
+CommitResult InstrumentStore::commit(DomainCommitBundle&& bundle,
+                                     DomainCommitPermit&& permit) noexcept;
 ```
 
-`DomainCatalogPatchSet` 是 Instrument/Channel/CalibrationSession/AnalysisTrace/Diagram/Frame 等小型可变领域 revision 的有类型 patch 集合；它不接收任意 key/value，也不代替不可变 publication。`DomainCommitCoordinator` 在同一 Catalog revision 内校验全部 expected revisions、配额与引用，然后全成或全败地使 publication、领域 revision、Head、Operation/Fence、Instrument Status Register、SCPI Session State、WaitRegistry predicate/wakeup、QueryTicket/ResultPin、EventJournal sequence 和 retention delta 可见；Event 只能在该 revision 成功后被 Dispatcher 看见，等待正确性不依赖 Dispatcher。领域提交保证的是内存与 Catalog 可见性的原子性，具体持久化级别由 Product/Profile 另行规定。
+`DomainCatalogPatchSet` 是 Instrument/Channel/CalibrationSession/AnalysisTrace/Diagram/Frame 等小型可变领域 revision 的有类型 patch 集合；它不接收任意 key/value，也不代替不可变 publication。公开 `InstrumentStore::commit` 在同一 Catalog revision 内校验全部 expected revisions、配额与引用，然后由内部 Measurement Data Store/Domain Commit Coordinator 全成或全败地使 publication、领域 revision、Head、Operation/Fence、Instrument Status Register、SCPI Session State、WaitRegistry predicate/wakeup、QueryTicket/ResultPin、EventJournal sequence 和 retention delta 可见。任何 Operation/Pending Ticket/Drain 在首次可见前都预留并随初始 commit 安装自己的 `LifecycleTerminalReservationSet`；后续 publication bundle 失败时旧 reservation 仍在 L5，L2 必须 reconcile 已有终态或在同一有界 Control turn 内提交不带 candidate 的 state-only Failed bundle，普通资源错误不得留下 Pending/Publishing，只有 Store 完整性故障才 fail-stop。A commit 前，L2 把 continuation 拆成 Store-owned join owner 与由自己持有的 Runtime escrow；Store 事务只把新 A candidate 与 purpose-specific 冻结依赖转换成 `ContinuationStoreHandoff`，L2 再与 escrow 组合派发。`DomainCommitBundle/CommitResult` 不得包含或透传 `ReservedWorkDispatch`、`RuntimeCompletionRegistration` 或 Preview owner；失败时 Store 消费 candidate/Store owner，L2 恰好一次释放 escrow。Event 只能在该 revision 成功后经 InstrumentStore EventFeed、L2 授权投影与 L1 mailbox 看见，等待正确性不依赖 Dispatcher。领域提交保证的是内存与 Catalog 可见性的原子性，具体持久化级别由 Product/Profile 另行规定。
 
-特别地，接受一次平均贡献时，B、new accumulator、`ChannelAverageHead`、`ChannelMeasurementHead`、Operation/Fence、相关 status/wait predicate 和事件必须在同一 bundle 中提交；发布可提升的当前 Live C 时，结果闭包、`TraceAnalysisHead` 和事件必须同批提交；无论 direct Ready admission 还是 Pending→Ready，QueryTicket 的 Ready 状态与目标 `ResultPinLease` 都必须在同一 bundle 内成功。任一前置条件失败，整批 candidate 不可见并释放 `CandidateCommitLease`；随后可以另行提交失败 attempt/status/diagnostic，但不得改写 last-good Snapshot。
+特别地，接受一次平均贡献时，B、new accumulator、`ChannelAverageHead`、`ChannelMeasurementHead`、Operation/Fence、相关 status/wait predicate 和事件必须在同一 bundle 中提交；发布可提升的当前 Live C 时，结果闭包、`TraceAnalysisHead` 和事件必须同批提交。direct Ready admission 在创建 Ticket 的同一 commit 中取得精确 `ResultPinLease`；Pending Query 则在 admission 时为每个 caller 独立安装 `PendingResultPinReservation`，共享 publication commit 只把仍有效 Ticket 的 reservation 转成精确 lease。单个 caller 的 quota/cancel/TTL 不得回滚共享 publication或其他 Ticket。任一 publication commit 失败，整批 candidate 不可见并释放 `CandidateCommitLease`；若已有可见 Operation/Ticket，随后必须用已安装的 terminal reservation 提交失败 attempt/status/wait/Event，不能把终态化写成可选诊断，也不得改写 last-good Snapshot。
 
 `TraceAnalysisHead` 不会被任意成功 C 推进。后台当前 Live 求值可携带 `HeadPromotionPolicy::RequireCurrent{trace_revision, source_binding_revision, input_generation}`，其 compare-and-set 只有仍匹配当前选择时才允许提交；针对历史 B/Stage 的 exact query 默认 `HeadPromotionPolicy::None`，只发布 C、使自己的 Ticket Ready，不更新 Head。若用户要显示该历史结果，应显式切换 `DiagramFrameRefSet` 或 Trace Source，而不是让一次读取产生隐藏的“当前结果倒退”。
 
 浏览器看到 stale 是 Head 与当前配置/最新 attempt 的关系，不是对历史快照做原地标记。
 
-当前 `last_good_b/last_good_c` 与 `ChannelAverageHead` 是受 ProductProfile 上限约束的 retention root；正在使用的 `PinnedInputSet`、`TypedSnapshotLeaseSet`、`CandidateCommitLease`、Query/Reader lease，以及 CalibrationSession 中已接受但尚未完成生命周期转换的 Observation closure 也会阻止其所需 payload 被回收。已经物化且自包含的 child 在不再承诺重算时可允许祖先大 payload 过期，但祖先 tombstone、digest 和最小 provenance 必须保留。`DiagramFrameRefSet` 本身只含软引用，不额外无限 pin 历史 C。浏览器打开数据时仍通过 QueryTicket 获取有配额的 ResultPinLease；若它尝试读取已退出 Head 且已过 retention 的旧 frame，明确得到 Gone 并 resnapshot。
+当前 `last_good_b/last_good_c` 与 `ChannelAverageHead` 是受 ProductProfile 上限约束的 retention root；正在使用的 `PinnedInputSet`、`TypedSnapshotLeaseSet`、`CandidateCommitLease`、purpose-specific `AcquisitionContinuationOwner/ContinuationStoreHandoff`、Query/Reader lease，以及 CalibrationSession 中已接受但尚未完成生命周期转换的 Observation closure 也会阻止其所需 payload 被回收。已经物化且自包含的 child 在不再承诺重算时可允许祖先大 payload 过期，但祖先 tombstone、digest 和最小 provenance 必须保留。`DiagramFrameRefSet` 本身只含软引用，不额外无限 pin 历史 C。浏览器打开数据时仍通过 QueryTicket 获取有配额的 ResultPinLease；若它尝试读取已退出 Head 且已过 retention 的旧 frame，明确得到 Gone 并 resnapshot。
 
 Marker 的 `Invalid/Incomplete` 与 Limit 的 `Indeterminate` 是成功计算出的领域结果，可以随 C 原子发布；只有输入闭包不一致、evaluator 内部失败、资源失败或 Catalog batch commit 失败才使新 C 整批不可见。
 
@@ -323,34 +351,95 @@ sequenceDiagram
     participant CL as "Web 或 SCPI"
     participant IK as "Instrument Kernel"
     participant CE as "Control Executor"
+    participant OR as "L3 Operation Runtime"
     participant AC as "Acquisition Module"
     participant BA as "Board Adapter"
-    participant DS as "Measurement Data Store"
+    participant IS as "L5 InstrumentStore"
     participant MP as "Measurement Pipeline"
-    participant DC as "Domain Commit Coordinator"
 
     CL->>IK: "提交 Typed Command"
     IK->>CE: "校验权限、revision、Profile"
-    CE->>CE: "创建 SweepOperation"
-    CE->>AC: "冻结 SweepIntent 与资源声明"
-    AC->>BA: "prepare with PreAdmissionLease"
-    BA-->>AC: "PreparedExecutionManifest"
-    AC->>AC: "校验、预留并升级 ExecutionLease"
-    AC->>BA: "start with one-shot authorization"
-    BA-->>AC: "chunks、phase、唯一 terminal"
-    AC->>CE: "返回 A candidate batch"
-    CE->>DC: "commit A + SweepOperation phase + Event"
-    DC-->>CE: "A CommitReceipt"
-    CE->>DS: "pin A 和 accumulator/correction 输入"
-    CE->>MP: "BuildMeasurement job"
-    MP-->>CE: "B + accumulator candidate batch"
-    CE->>DC: "commit B + accumulator + both Channel Heads + Operation/Fence/Status/Wait + Event"
-    DC-->>CE: "measurement CommitReceipt"
-    CE-->>CL: "SweepOperation terminal 或 fence wake"
-    CE->>MP: "按需或后台 EvaluateAnalysis"
-    MP-->>CE: "Trace、Marker、Limit、C candidate batch"
-    CE->>DC: "commit C closure + optional CAS TraceAnalysisHead + Event"
-    DC-->>CE: "analysis CommitReceipt"
+    CE->>IS: "read one authorized CatalogCut"
+    IS-->>CE: "frozen Channel/Profile/Capability/Topology input"
+    CE->>CE: "bounded SweepAdmissionPlanner.plan"
+    CE->>OR: "reserve_work acquisition + required successor claims"
+    OR-->>CE: "ReservedWorkDispatch set"
+    CE->>IS: "pin purpose deps + reserve A/B outputs + Sweep terminal fact capacity"
+    IS-->>CE: "Store owners + LifecycleTerminalReservationSet or reject"
+    CE->>CE: "stateful ResourceArbiter all-or-none pre-admit"
+    CE->>IS: "commit SweepOperation Accepted + install lifecycle terminal reservation"
+    alt "initial commit failed"
+        IS-->>CE: "CommitFailed; no Operation visible"
+        CE->>CE: "release complete PendingSweepAdmission; no dispatch"
+        CE-->>IK: "SubmitRejected(mapped error)"
+        IK-->>CL: "rejected; no OperationId"
+    else "initial commit succeeded"
+        IS-->>CE: "CommitReceipt; Store owns terminal reservation"
+        Note over CE: "CE retains execution owners as CommittedNotDispatched"
+        CE-->>IK: "Accepted OperationId"
+        IK-->>CL: "Accepted; not completed"
+        CE->>OR: "dispatch FrozenSweepJob + WorkPermitSet + RuntimeCompletionRegistration; retain WorkId mapping"
+        OR->>AC: "run(job, leases, context)"
+        AC->>BA: "prepare with derived PrepareAuthorization; L4 retains lease"
+        BA-->>AC: "PreparedExecutionManifest"
+        AC->>AC: "validate + zero-allocation local exact finalization"
+        AC->>AC: "consume ExactFinalizationCapability; form AcquisitionRunResourceSet; retain pre-admitted AcquisitionContinuationOwner"
+        AC->>BA: "start with one-shot StartAuthorization + RunDeliveryGrant"
+        BA-->>AC: "chunks、phase、唯一 terminal"
+        AC-->>OR: "AcquisitionSucceeded: A candidate + continuation owner + Preview owner"
+        OR-->>CE: "Runtime PublishableTerminal"
+        CE->>CE: "split StoreJoinOwner; retain RuntimeEscrow + Preview"
+        CE->>IS: "commit A + StoreJoinRequest + Operation phase + Event"
+        alt "A commit failed"
+            IS-->>CE: "CommitFailed + candidate/Store-owner abort receipt"
+            CE->>CE: "release RuntimeEscrow exactly once; retain Preview until failure fact"
+            CE->>IS: "state-only SweepOperation Failed via installed terminal reservation"
+            IS-->>CE: "Terminal CommitReceipt | AlreadyTerminal"
+            CE->>CE: "finalize Preview Failed/Discarded"
+        else "A commit succeeded"
+            IS->>IS: "install A; join pre-pinned Store closure; no Runtime capability"
+            IS-->>CE: "CommitSucceeded + ContinuationStoreHandoff"
+            CE->>OR: "dispatch BuildMeasurement + WorkPermitSet + RuntimeCompletionRegistration; retain WorkId mapping; Runtime holds Preview escrow"
+            OR->>MP: "run BuildMeasurement"
+            MP-->>OR: "ProcessingSucceeded: B + accumulator candidates"
+            OR-->>CE: "Runtime PublishableTerminal"
+            CE->>IS: "commit B + accumulator + Heads + Operation/Fence/Status/Wait + Event"
+            alt "B commit failed"
+                IS-->>CE: "CommitFailed + candidate abort receipt"
+                CE->>IS: "state-only SweepOperation Failed via installed terminal reservation"
+                IS-->>CE: "Terminal CommitReceipt | AlreadyTerminal"
+                CE->>CE: "finalize B/C Preview Failed/Discarded"
+            else "B commit succeeded"
+                IS-->>CE: "measurement CommitReceipt"
+                CE->>CE: "finalize B-target Preview with B ref"
+                CE-->>CL: "SweepOperation terminal 或 fence wake"
+                Note over CE: "B commit 后同一有界 Control turn 内独立 exact-C admission"
+                CE->>OR: "reserve_work EvaluateAnalysis claim"
+                OR-->>CE: "ReservedWorkDispatch or reject"
+                alt "reserve + pin/output/terminal + Pending commit 全成功"
+                    CE->>IS: "pin B/Stage inputs + reserve C output/lifecycle terminal"
+                    CE->>IS: "commit exact-C Pending Operation + install reservation"
+                    IS-->>CE: "CommitReceipt; Store owns C terminal reservation"
+                    CE->>OR: "dispatch EvaluateAnalysis + WorkPermitSet + RuntimeCompletionRegistration; retain WorkId mapping; Runtime holds C Preview escrow"
+                    OR->>MP: "run EvaluateAnalysis"
+                    MP-->>OR: "ProcessingSucceeded: Trace、Marker、Limit、C candidates"
+                    OR-->>CE: "Runtime PublishableTerminal + Preview escrow"
+                    CE->>IS: "commit C closure + optional CAS TraceAnalysisHead + Event"
+                    alt "C commit succeeded"
+                        IS-->>CE: "analysis CommitReceipt"
+                        CE->>CE: "finalize C Preview with C ref"
+                    else "C commit failed"
+                        IS-->>CE: "CommitFailed + candidate abort receipt"
+                        CE->>IS: "state-only EvaluateTraceOperation Failed via terminal reservation"
+                        IS-->>CE: "Terminal CommitReceipt | AlreadyTerminal"
+                        CE->>CE: "finalize C Preview by frozen fallback/Failed"
+                    end
+                else "任一 exact-C admission/initial commit 步骤失败"
+                    CE->>CE: "release local owners; no C Operation; execute frozen CPreviewFallback"
+                end
+            end
+        end
+    end
 ```
 
 Single、Continuous、Groups 只是父 Operation 的调度政策不同；每轮 Logical Sweep 仍产生独立 `SweepOperation`、A、B 与唯一终态。Continuous 不能把所有轮次揉成一个不断被覆盖的数组。
@@ -405,7 +494,7 @@ flowchart LR
     class CalA,Observation,Set,VerifyB,VerifyResult fact
 ```
 
-`CalibrationObservationSnapshot` 至少绑定 session/step/attempt、标准件/模型 revision、方法、实际轴/路由/端口拓扑、质量/有效性，以及独立 average 的 policy、generation、accepted count、complete 与有界 contribution closure。Observation 可以引用由 `CalibrationMethodSpec` 明确允许的 Stage，但该 Stage 的 canonical roots 必须**恰好**是本次 `AcquisitionAttempt` 接受的 A 集合，graph/stage revision 也必须属于该方法；不得把当前或用户选择的 `CorrectionSet`、任何 DUT B、Channel last-good 或 Display selection 带入求解输入。CalibrationSession 在 solve/abort/按政策完成 retention transition 前，把已接受 Observation 及其所需 closure 作为 retention root；Solver 再一次性 pin 全部被接受 observation 和输出 reservation 后运行，只返回持有 `CandidateCommitLease` 的 CorrectionSet `PublicationCandidateBatch`。用户此时切换 Channel、修改 DUT Trace 或继续 Continuous Sweep 都不会改变问题输入。
+`CalibrationObservationSnapshot` 至少绑定 session/step/attempt、标准件/模型 revision、方法、实际轴/路由/端口拓扑、质量/有效性，以及独立 average 的 policy、generation、accepted count、complete 与有界 contribution closure。Observation 可以引用由 `CalibrationMethodSpec` 明确允许的 Stage，但该 Stage 的 canonical roots 必须**恰好**是本次 `AcquisitionAttempt` 接受的 A 集合，graph/stage revision 也必须属于该方法；不得把当前或用户选择的 `CorrectionSet`、任何 DUT B、Channel last-good 或 Display selection 带入求解输入。CalibrationSession 在 solve/abort/按政策完成 retention transition 前，把已接受 Observation 及其所需 closure 作为 retention root；Solver 再一次性 pin 全部被接受 observation 和输出 reservation后运行，返回 `CalibrationSucceeded | CalibrationFailed | CalibrationDraining`，只有成功分支携带持有 `CandidateCommitLease` 的 CorrectionSet `PublicationCandidateBatch`。用户此时切换 Channel、修改 DUT Trace 或继续 Continuous Sweep 都不会改变问题输入。
 
 求解成功只产生不可变 Correction Set；Set 与 Observation 都保留逐板 identity/capability/path condition/evidence 集合。将 Set 选给 Channel 和 enable correction 是单独 Command；每次执行的 correction match 接收非空 `PreparedExecutionManifestSet`（默认单板长度为 1），逐板判断后形成聚合 `CorrectionMatchReport`，不能只比较第一块板。校准验证重新采集独立 verification artifact，并让 B 明确记录“应用了哪个目标 CorrectionSetRevision”；它不能读取当前 Channel 恰好 last-good 的某个 DUT B，也不能把用于求解的同一数据静默当作独立验证证据。
 
@@ -430,7 +519,7 @@ A/B 或其他 typed source
 - C 原子闭包让同一 Trace 的曲线、Marker、Limit 总是引用同一个 AnalysisInputRefSet 与 revision 组合；
 - `DiagramFrameRefSet` 为每个 Placement 固定确切 `analysis_publication_id`。普通视觉刷新可以采用“每 Placement 最新可用”，但必须呈现 generation、时间与 stale；
 - 跨 Trace Marker coupling、共享 Limit、Math 或需要同代比较时，使用更严格的 synchronization policy 先形成相容 C，再原子切换 FrameRefSet，不能因“看起来叠在同一张图”就混用不同代次；
-- Preview 只作为带明确 provisional 样式的 overlay。正式 C 到达时按 generation 替换；失败/取消时删除该 preview generation，并继续显示 last-good FrameRefSet；
+- Preview 只作为带明确 provisional 样式的 overlay。L4/Diagram 不宣布正式替换；L4 Acquisition 归还 `PreviewFinalizationOwnerSet`，B/C 工作期间由 L3 Runtime escrow 持有。L2 只在目标 A/B/已独立 admission 的 exact C 提交成功后以 typed publication ref 发送 `SupersededByFormalResult`。C-target owner 在 B commit 后才尝试有界 exact-C admission；失败时按冻结 policy 以 B ref、`FormalUnavailable` 或 Discarded 立即终结，不无限等 C；失败/取消在失败事实 commit 后由 L2 发送 Discarded/Failed，并继续显示 last-good FrameRefSet；
 - 删除 Diagram 或 Placement 不删除 A/B/C。删除 AnalysisTrace 才按领域所有权规则处理 Marker/Limit/Placement，而历史 Snapshot 仍按 retention 存在。
 
 ## 7. Web、SCPI、查询与导出读取同一事实
@@ -439,55 +528,93 @@ A/B 或其他 typed source
 
 一个 Query 在接受时解析并冻结 target、selection scope、Profile、typed stage、snapshot refs 和 authorization。之后有两种路径：
 
-1. 结果已物化：在同一 `DomainCommitBundle` 中创建 Ticket、取得 `ResultPinLease` 并把 Ticket 置为 Ready；
-2. 结果未物化：先原子创建 Pending Ticket 并创建或加入 Stage/C single-flight Operation；Operation 取得 `PinnedInputSet`，结果 candidate、Ticket Pending→Ready 与 `ResultPinLease` 请求再在同一 commit 中完成。确切 B/Stage 的查询不会被 Live latest-wins 队列合并掉，也默认不提升 `TraceAnalysisHead`。
+1. 结果已物化：在同一 `DomainCommitBundle` 中创建 Ticket、取得精确 `ResultPinLease` 并把 Ticket 置为 Ready；配额/closure/revision 失败同步 Rejected，不创建 Ticket；
+2. 结果未物化：先由 Runtime `reserve_work` 取得 queue/worker permit 与可靠 completion registration，再由 InstrumentStore 原子取得全部 `PinnedInputSet`、output reservation、可见 lifecycle 的 terminal reservation，并为该 caller 按 output-claim 上界取得独立 `PendingResultPinReservation`；全部成功后才创建或加入 Operation 并提交 Pending Ticket。任一资源或初始 commit 失败都释放此前 owner，不留下 Pending/幽灵 Operation，也不 dispatch。结果 candidate 与共享 Operation 事实提交时，只把当前 cut 上仍有效 Pending Ticket 的 reservation 转换为精确 `ResultPinLease`；配额不足的 caller 在 join 前已被拒绝，取消/TTL 只释放自己的 reservation。确切 B/Stage 的查询不会被 Live latest-wins 队列合并掉，也默认不提升 `TraceAnalysisHead`。
 
 `ResultPinLease` pin 的不是单个顶层 ID，而是自包含的 `ResultClosure`：例如 C publication、Trace/Marker/Limit children、axis/quality 和所有结构共享 Buffer。它不要求无限保留所有祖先 payload；祖先 tombstone、digest 与最小 provenance 继续存在，已经物化的自包含 child 仍可读取。若请求需要重新计算而祖先 payload 已被 retention 回收，则明确返回 `PayloadExpired/Gone`，由调用者重新选择当前 Snapshot，不能从 Event ID 猜数据。
 
-`open_read` 在同一原子动作中把 Ticket 从 Ready 转为 Reading，并把 ResultPinLease 转换为 `QueryReadHandle` 内部的 `ReaderLease`，不是先释放再申请。Transport 只看到受限 reader/codec，不接触 lease 实现；完成、断线、超时或 cancel 把 ReaderLease 随 terminal 交回关闭路径，由 Reading→Consumed/Failed 的提交释放自己的 Ticket/Reader，不取消其他调用者共享的求值 Operation。
+`open_read` 通过 Store `open_result(ticket, authorization, permit)` 在同一原子动作中把 Ticket 从 Ready 转为 Reading，并把 ResultPinLease 转换为 `QueryReadHandle` 内部的 `ReaderLease`，不是先释放再申请。Transport 只持完整的受限 handle/codec，不接触或拆出 lease 实现；完成、断线、超时或 cancel 后把完整 handle 连同 `ReadTerminal` 移回 L2，Store `finish_result` 消费它并原子完成 Reading→Consumed/Failed/Abandoned 与 ReaderLease 释放，不取消其他调用者共享的求值 Operation。
 
 ```mermaid
 sequenceDiagram
     participant CL as "Web 或 SCPI"
     participant IK as "Instrument Kernel"
     participant CE as "Control Executor"
-    participant DC as "Domain Commit Coordinator"
-    participant QT as "QueryTicketCatalog"
-    participant DS as "Measurement Data Store"
+    participant OR as "L3 Operation Runtime"
+    participant IS as "L5 InstrumentStore"
     participant WK as "Stage 或 Analysis worker"
     participant TX as "Binary Transfer Lane"
 
     CL->>IK: "QueryEnvelope"
     IK->>CE: "校验并冻结 target、Profile、typed refs、权限"
     alt "结果闭包已存在"
-        CE->>DC: "commit Ticket Ready + ResultPin request"
-        DC->>DS: "pin exact ResultClosure"
-        DC->>QT: "install Ready capability"
-        DC-->>CE: "CommitReceipt"
+        CE->>IS: "reserve lifecycle terminal; commit Ticket Ready + exact ResultPin + install reservation"
+        alt "direct Ready commit succeeded"
+            IS->>IS: "internal pin exact ResultClosure + install Ready"
+            IS-->>CE: "CommitReceipt + ReadyTicket"
+            CE-->>IK: "ReadyTicket"
+        else "pin quota/closure/revision validation failed"
+            IS-->>CE: "CommitRejected(mapped QueryAdmissionError)"
+            CE-->>IK: "RejectedQuery; no Ticket"
+        end
     else "需要物化"
-        CE->>DC: "commit Pending + shared OperationId"
-        DC->>QT: "install Pending"
-        CE->>DS: "pin all inputs + reserve output"
-        CE->>WK: "FrozenProcessingJob"
-        WK-->>CE: "PublicationCandidateBatch + CandidateCommitLease"
-        CE->>DC: "commit result + Pending to Ready + ResultPin request + Event"
-        DC->>DS: "install result and pin exact closure"
-        DC->>QT: "Pending to Ready"
-        DC-->>CE: "CommitReceipt"
+        CE->>OR: "reserve_work Stage/Analysis claim"
+        OR-->>CE: "ReservedWorkDispatch or reject without Pending"
+        CE->>IS: "pin inputs + reserve output/lifecycle terminal/caller ResultPin upper bound"
+        IS-->>CE: "Store owners + PendingResultPinReservation | StoreError"
+        alt "StoreError"
+            CE->>CE: "release locally-held ReservedWorkDispatch + all acquired Store owners; no Pending"
+            CE-->>IK: "RejectedQuery(map_store_admission_error(error)); no Ticket"
+            Note over CE: "quota/output capacity => ResourceExhausted; expired parent => PayloadExpired/Gone"
+        else "Store resources acquired"
+            CE->>IS: "commit Pending + shared OperationId + install lifecycle/pin reservations"
+            alt "Pending commit failed"
+                IS-->>CE: "CommitFailed; no lifecycle visible"
+                CE->>CE: "release ReservedWorkDispatch + PinnedInputSet + OutputReservation + reservations"
+                CE-->>IK: "RejectedQuery(map_store_admission_error(error)); no Ticket; no dispatch"
+            else "Pending commit succeeded"
+                IS-->>CE: "CommitReceipt; Store owns lifecycle/pin reservations"
+                CE->>OR: "dispatch FrozenProcessingJob + WorkPermitSet + RuntimeCompletionRegistration; retain WorkId mapping"
+                OR->>WK: "run(job, inputs, output, context)"
+                WK-->>OR: "closed ProcessingTerminal"
+                alt "Publishable"
+                    OR-->>CE: "Publishable RuntimeWorkCompletion via pre-reserved registration"
+                    CE->>IS: "commit result + convert active PendingResultPinReservations + Event"
+                    alt "publication commit succeeded"
+                        IS->>IS: "install result + exact pins + Pending to Ready"
+                        IS-->>CE: "CommitReceipt + ReadyTicket set"
+                    else "publication commit failed"
+                        IS-->>CE: "CommitFailed + candidate abort receipt; reservations remain"
+                        CE->>IS: "state-only Ticket/Operation Failed via installed terminal reservation"
+                        IS-->>CE: "Terminal CommitReceipt | AlreadyTerminal"
+                        Note over CE,IS: "Store integrity failure here => Instrument fail-stop"
+                    end
+                else "Failed"
+                    OR-->>CE: "Failed RuntimeWorkCompletion; resources released"
+                    CE->>IS: "state-only Ticket/Operation Failed + Event via installed reservation"
+                    IS-->>CE: "Terminal CommitReceipt | AlreadyTerminal"
+                else "Draining"
+                    OR-->>CE: "DrainingHandoff with complete owner + DrainId"
+                    CE->>IS: "state-only Ticket Failed + Operation/Drain fact via installed reservation"
+                    IS-->>CE: "Terminal CommitReceipt | AlreadyTerminal"
+                    Note over OR: "Runtime/Drain keeps all owners until unique DrainTerminal"
+                end
+            end
+        end
     end
-    CL->>IK: "open_read once"
-    IK->>CE: "consume Ready capability"
-    CE->>DC: "commit Ready to Reading + lease handoff"
-    DC->>DS: "ResultPinLease to ReaderLease"
-    DS-->>DC: "QueryReadHandle"
-    DC->>QT: "Reading"
-    DC-->>CE: "QueryReadHandle"
-    CE->>TX: "move QueryReadHandle"
-    TX-->>CL: "metadata + bounded binary stream"
-    TX->>CE: "transfer terminal + return ReaderLease"
-    CE->>DC: "commit Reading to Consumed/Failed + release"
-    DC->>DS: "release ReaderLease"
-    DC->>QT: "terminal state"
+    opt "Ticket Ready"
+        CL->>IK: "open_read once"
+        IK->>CE: "build QueryReadAuthorization + ReaderPermit"
+        CE->>IS: "open_result(ticket, move auth, move permit)"
+        IS->>IS: "atomic Ready to Reading + ResultPin to ReaderLease"
+        IS-->>CE: "ReadOpened(QueryReadHandle)"
+        CE->>TX: "move QueryReadHandle"
+        TX-->>CL: "metadata + bounded binary stream"
+        TX->>CE: "move complete QueryReadHandle + ReadTerminal"
+        CE->>IS: "finish_result(move handle, terminal)"
+        IS->>IS: "atomic Reading terminal + ReaderLease release"
+        IS-->>CE: "ReadFinishReceipt"
+    end
 ```
 
 Web metadata 使用 JSON，复数/迹线/文件大数组走独立 binary stream；SCPI 使用 ASCII 或 IEEE definite-length block。两者读取同一 QueryReadHandle，传输过程中新的 Sweep、selection 变化或 Diagram 切换都不能撕裂结果。
@@ -505,7 +632,7 @@ Web metadata 使用 JSON，复数/迹线/文件大数组走独立 binary stream�
 
 Export Operation 在接受时冻结确切 A/B/Stage/C refs，并在生成、flush、rename 全程持有 `TypedSnapshotLeaseSet`，其语义等同于面向导出的 PinnedInputSet。Touchstone 读取同代完整矩阵 B/Stage；CSV 可以读取明确的 B、Stage 或 C；报告同时 pin 数据、验证结果和模板 revision。
 
-内部/交换文件的大 Blob 读取返回持有 `BlobReadLease` 的 `BlobReadHandle`。路径、文件描述符和临时文件仍封装在 Persistence Module；慢下载不能在无 lease 时继续读已被回收的 blob。失败不会原地覆盖上一有效文件，Finalizing 原子区之外的 cancel 会终止输出并释放相应资源。
+Export/Diagnostic worker 成功只返回待 L2 验证并提交的 `BlobResultRef` candidate；它不会直接把文件句柄交给 Transport。提交后的 blob 由普通 QueryTicket 固定，`open_read` 返回 opaque snapshot/blob reader variant 的 `QueryReadHandle`，内部 `BlobReadLease` 覆盖慢下载全程，最后仍由 `finish_read(Consumed|Failed|Abandoned)` 消费。路径、文件描述符和临时文件只存在于 Store/Persistence/File Adapter Implementation。失败不会原地覆盖上一有效文件，Finalizing 原子区之外的 cancel 会终止输出并释放相应资源。
 
 ### 7.4 State Save/Recall 与外部导入
 
@@ -517,7 +644,10 @@ flowchart LR
     SavePins --> Package["StatePackage candidate"]
     Package --> AtomicFile["校验、flush、atomic replace"]
 
-    Input["StatePackage 或领域交换文件"] --> Staging["有界 staging load"]
+    Upload["HTTP/SCPI binary bytes"] --> BlobWrite["credit-based BlobWriteHandle<br/>Binary Transfer lane"]
+    BlobWrite --> StagedRef["owner/purpose/digest/TTL 绑定 StagedBlobRef"]
+    StagedRef --> Staging["有界 staging load"]
+    Input["设备内已存在的 StatePackage/交换文件 ref"] --> Staging
     Staging --> Validate["schema、digest、migration、refs、Profile/capability validation"]
     Validate --> Candidate["Recall 或 Import candidate"]
     Candidate --> Commit["Control Executor 原子 commit"]
@@ -527,12 +657,12 @@ flowchart LR
     classDef source fill:#fff3dc,stroke:#b47618,color:#4b310d
     classDef work fill:#e8f1ff,stroke:#3973ac,color:#142b42
     classDef fact fill:#e9f7ef,stroke:#37845a,color:#173a27
-    class Current,Input source
-    class SavePins,Staging,Validate,Candidate,Commit work
+    class Current,Input,Upload source
+    class SavePins,BlobWrite,StagedRef,Staging,Validate,Candidate,Commit work
     class Package,AtomicFile,Hold,NewRun fact
 ```
 
-State Save 按 inclusion profile 冻结一个授权 Catalog cut，并在序列化与文件 commit 全程 pin 所含 Correction Set、Trace Memory 或其他 blob；不把运行中的 Operation、Socket selection、账号/密钥或 Preview 写成可恢复事实。Recall 在 staging 中完成全部校验后只提交一个 `RecallCandidate`；Control Executor 将其展开为同一 `DomainCommitBundle` 内的 `DomainCatalogPatchSet`、可选静态 publications、Head/Status/Operation/Event/retention patches，失败时保持整个旧 Instrument revision。成功默认进入 `RestoreInHoldSafeOff`，不会复活旧 Operation、Armed/WaitingTrigger、Continuous generation 或 RF-on。若明确授权 `ExplicitRestoreRunState`，也必须在安全 commit 后重新走 Compiler、pre-admission、prepare、reservation 和新的 SweepOperation。
+State Save 按 inclusion profile 冻结一个授权 Catalog cut，并在序列化与文件 commit 全程 pin 所含 Correction Set、Trace Memory 或其他 blob；不把运行中的 Operation、Socket selection、账号/密钥或 Preview 写成可恢复事实。外部 Recall/Import 的大字节先通过 `begin_blob_write/write_blob_chunk/finish_blob_write` 形成 `StagedBlobRef`；Command 只携带该有界 ref，并再次校验 owner、purpose、digest、TTL 和单次消费政策。Recall 在 staging 中完成全部校验后只提交一个 `RecallCandidate`；Control Executor 将其展开为同一 `DomainCommitBundle` 内的 `DomainCatalogPatchSet`、可选静态 publications、Head/Status/Operation/Event/retention patches，失败时保持整个旧 Instrument revision。成功默认进入 `RestoreInHoldSafeOff`，不会复活旧 Operation、Armed/WaitingTrigger、Continuous generation 或 RF-on。若明确授权 `ExplicitRestoreRunState`，也必须在安全 commit 后重新走 `SweepAdmissionPlanner → Runtime/Store conservative reservation → ResourceArbiter pre-admission → new Operation dispatch → Board prepare → local exact finalization → start`。
 
 Touchstone/CSV、Cal Kit、Limit、Fixture 等导入同样先产生有类型 candidate：数据文件可形成 `ImportedDataSnapshot`，领域文件可形成新的 definition revision；只有显式后续 Command 才把它绑定到 Trace、Channel 或 Calibration Session。解析一个文件绝不能把半验证数组直接塞进当前 B/C 或修改现有 Correction Set。
 
@@ -542,7 +672,7 @@ Touchstone/CSV、Cal Kit、Limit、Fixture 等导入同样先产生有类型 can
 
 只有 Product Profile 和参与板卡能力证明同一 Coherence Domain、timebase lock、同步 trigger/epoch、skew 上界及实际轴兼容时，`CompositeSweepCoordinator` 才可以：
 
-1. 为每块板取得独立 Prepared Manifest、ExecutionLease 和 BoardRunId；
+1. 首次 dispatch 前全有或全无取得跨板保守 envelope；prepare 后为每块板持有独立 Prepared Manifest、`AcquisitionRunResourceSet` 内的 board execution sublease 和 BoardRunId；
 2. 在 start 前完成全组 admission；
 3. 任一成员失败时 fan-out abort/safe-state，等待所有真实 terminal；
 4. 在 all-terminal barrier 后验证轴、epoch、相位/时钟与 coverage ledger；
@@ -554,14 +684,15 @@ Touchstone/CSV、Cal Kit、Limit、Fixture 等导入同样先产生有类型 can
 
 | 失败位置 | 新事实 | Head/旧事实 | 通知与调用者行为 |
 |---|---|---|---|
-| prepare/admission 失败 | 无 A/B/C | last-good 不变 | Operation Failed；无数据完成事件 |
-| chunk 缺失、乱序冲突、run 失败 | 无 A；Preview generation 丢弃 | last-good B/C 不变并显示 stale | Sweep Failed；诊断保留 ledger 摘要 |
+| commit 前 planning/reserve/pin/pre-admit 失败 | 无 A/B/C，不创建 Operation | last-good 不变 | 同步 admission rejection；无幽灵 Operation/数据完成事件 |
+| Operation commit 后 Board prepare/Manifest finalization 失败 | 无 A/B/C | last-good 不变 | cleanup 真实 terminal 后 Operation Failed，或持 owner 进入 Draining；无数据完成事件 |
+| chunk 缺失、乱序冲突、run 失败 | 无 A；L4 归还 Preview finalization owner，L2 在失败事实 commit 后终结 generation | last-good B/C 不变并显示 stale | Sweep Failed；诊断保留 ledger 摘要 |
 | A 成功、RF graph/correction 失败 | A 保留，无新 B | ChannelMeasurementHead 的 attempt/status 更新，last-good B 不变 | measurement 不完成；receiver-stage query 可按权限读 A |
 | Average contribution 被拒绝 | A 可保留，accumulator/B 不推进 | 同 generation 旧 B/C 不变 | count 不增加；报告拒绝原因 |
 | B 成功、某 Trace evaluator 失败 | B 保留，无该 Trace 新 C | 其他 Trace 可正常发布；失败 Trace last-good C stale | 独立 analysis failure event/Operation terminal |
 | Marker Invalid 或 Limit Indeterminate | 新 C 可以成功发布 | Head 指向新 C | 返回有类型领域状态，不伪装为系统异常 |
-| C batch commit 失败 | 新 C 全部不可见 | 旧 C 保留 | 不允许半套 Trace/Marker/Limit |
-| 任一 DomainCommitBundle 校验/写入失败 | 该 bundle 的 publication、领域 revision、Head、Operation/Fence、Status/SCPI Session/WaitRegistry、Ticket/ResultPin、Event 与 retention delta 全部不可见 | 旧 revision 完整保留；CandidateCommitLease 在 abort 后释放 | 不得用补偿事件伪装成原子提交；可另行提交失败诊断 |
+| C batch commit 失败 | 新 C 全部不可见 | 旧 C 保留 | 不允许半套 Trace/Marker/Limit；已有 EvaluateTrace Operation/Ticket 用预留 terminal fact capacity 转 Failed |
+| 任一 DomainCommitBundle 校验/写入失败 | 该 bundle 的 publication、领域 revision、Head、Operation/Fence、Status/SCPI Session/WaitRegistry、Ticket/ResultPin、Event 与 retention delta 全部不可见 | 旧 revision 完整保留；CandidateCommitLease 在 abort 后释放；已安装的 lifecycle terminal reservation 仍有效 | 初始 commit 失败则无 lifecycle/dispatch；已有可见 lifecycle 时必须 reconcile 已有终态或 state-only commit Failed，满足 Wait/Fence 并发失败 Event；普通错误不得无限 Pending，Store integrity fault 才 fail-stop |
 | Event gap | Snapshot 不受影响 | Head/Catalog 仍权威 | 客户端 resnapshot，不能猜增量 |
 | Query 客户端断线 | Snapshot 不受影响 | 只释放该 Ticket/ReaderLease | 共享 Operation 不被误杀 |
 | Export/文件系统失败 | 无新的最终文件 | 上一有效文件与输入 Snapshot 不变 | Operation Failed；清理单个 staging artifact 按安全流程执行 |
@@ -569,57 +700,95 @@ Touchstone/CSV、Cal Kit、Limit、Fixture 等导入同样先产生有类型 can
 
 ## 10. Deep Module 接口与所有权约束
 
-### 10.1 Data Store 与领域提交 Module
+### 10.1 InstrumentStore 与内部事实 Module
 
-`MeasurementDataStore` 隐藏 Buffer、Snapshot graph、parent closure、retention、tombstone、质量平面和 pin 配额；它不向 worker 暴露发布入口：
+L2 只依赖一个公开 `InstrumentStore` transaction boundary；Measurement Data Store、Domain Commit Coordinator、Catalog 与 EventJournal 都是其内部实现，不分别暴露给 Control Executor。Store 隐藏 Buffer、Snapshot graph、parent closure、retention、tombstone、质量平面和 pin 配额，也不向 worker 暴露发布入口：
 
 ```cpp
-PinnedInputSet pin_inputs(const TypedInputRefSet& refs,
-                          InputPinPermit&& permit);
+Result<CatalogCut, StoreError> read_catalog(
+    const CatalogReadRequest& request,
+    const CatalogReadPermit& permit) const noexcept;
 
-QueryReadHandle open_result(ResultPinLease&& result_pin,
-                            ReaderPermit&& permit);
+Result<PinnedInputSet, StoreError> pin_inputs(
+    const TypedInputRefSet& refs,
+    InputPinPermit&& permit) noexcept;
 
-CommitReceipt DomainCommitCoordinator::commit(
+Result<OutputReservation, StoreError> reserve_outputs(
+    const OutputClaim& claim,
+    OutputReservePermit&& permit) noexcept;
+
+Result<LifecycleTerminalReservationSet, StoreError>
+reserve_lifecycle_terminals(
+    const LifecycleTerminalClaimSet& claims,
+    LifecycleTerminalReservePermit&& permit) noexcept;
+
+Result<PendingResultPinReservation, StoreError>
+reserve_pending_result_pin(
+    const PendingResultPinClaim& claim,
+    ResultPinReservePermit&& permit) noexcept;
+
+OpenResultReadResult open_result(QueryTicketId ticket,
+                                 QueryReadAuthorization&& authorization,
+                                 ReaderPermit&& permit) noexcept;
+
+ReadFinishReceipt finish_result(QueryReadHandle&& handle,
+                                ReadTerminal terminal) noexcept;
+
+CommitResult InstrumentStore::commit(
     DomainCommitBundle&& bundle,
-    DomainCommitPermit&& permit);
+    DomainCommitPermit&& permit) noexcept;
+
+EventFeedSubmission begin_event_feed(
+    const EventFeedRequest& request,
+    EventFeedPermit&& permit,
+    EventFeedRegistration&& registration) noexcept;
+
+StopEventFeedResult stop_event_feed(
+    EventFeedControlHandle&& control) noexcept;
 ```
 
-`ResultPinLease` 的新建只作为 `DomainCommitBundle.result_pins` 的一部分发生，不能在 Ticket 已经 Ready 后再补 pin。只有 Control Executor 能取得 commit/input/reader permit。Worker 不能越过它发布 Snapshot 或 Event，Transport 不能直接请求 Buffer 指针。这样既保住跨 Catalog 的原子可见性，也可以在不改变上层模块的情况下替换内存池、持久化后端或 retention 实现。
+`ResultPinLease` 的新建只作为 `DomainCommitBundle.result_pins` 的一部分发生，并与 Ready Ticket 一起留在 Store，不能在 Ticket 已经 Ready 后再补 pin，也不先移给 L2。direct Ready 使用精确 request；Pending Ticket 创建前则由 `reserve_pending_result_pin` 按 caller 和保守 closure 上界占住配额，初始 commit 后 reservation 留在 Store，Pending→Ready 时只做无普通容量失败的精确转换。`reserve_lifecycle_terminals` 同样发生在任何可见 Operation/Ticket/Drain 的初始 commit 前，安装后保证后续 terminal fact 可提交。`open_result` 按 Ticket + 授权原子完成 Ready→Reading 与 ResultPin→ReaderLease；`finish_result` 消费 handle，并同批完成 Reading 终态与 ReaderLease 释放。`begin_event_feed` 则在一个有界动作中建立 EventJournal replay cut → live feed，交付有序 metadata/gap/唯一 terminal；Kernel 再做 Watch ACL/filter 投影。`stop_event_feed` 的封闭结果是 `StopAccepted | AlreadyTerminal | StopRejected<ReclaimedEventFeedControlHandle>`；Accepted 不是 terminal，registration 保活到唯一 feed terminal，Rejected 必须归还 control handle。只有 Control Executor 能取得 catalog/commit/input/reader/feed permit。Worker 不能越过它发布 Snapshot 或 Event，Transport 不能直接请求 Buffer 指针。这样既保住跨 Catalog 的原子可见性，也可以在不改变上层模块的情况下替换内存池、持久化后端或 retention 实现。
 
 ### 10.2 所有权总表
 
 | 资源 | 谁创建 | 谁长期拥有 | 如何转移/释放 |
 |---|---|---|---|
 | 底软回调 buffer | 底软 | 取决于 ABI；默认不能跨回调 | 可转移才包装 lease，否则复制一次进 BufferPool |
-| `AcquisitionChunkLease` | Adapter/BufferPool | Builder，成功时转 A candidate/Data Store | move-only；成功提交后随 A 的只读 Buffer 生命周期释放，或复制进预留 Snapshot Buffer 后释放；仅失败/取消时直接归还 pool |
-| `PreviewTile` | Preview tap | Preview queue | 独立有界对象；可丢弃 |
-| A/B/Stage/C 不可变 Buffer | Data Store/BufferPool 的预留，由 Builder/Worker 填充 | commit 前由 candidate lease、commit 后由 Data Store | Snapshot refs + graph-aware retention；读者只持 lease，结构共享所有权在 commit 时整体转交 |
-| `PinnedInputSet` | Data Store | 当前 Operation/Drain | worker terminal 或所有权转交后释放 |
-| output reservation | Processing Scheduler/Data Store | 运行时由 Operation/Drain，返回后由 CandidateCommitLease | candidate commit 后转为正式占用；整批失败且真实 worker terminal 后释放 |
-| `PublicationCandidateBatch` / `CandidateCommitLease` | Worker 在真实 terminal 返回 | Control Executor 待提交队列 | commit 成功时把 Buffer/共享结构转入 Data Store；整批 abort 时统一释放，禁止逐对象半提交 |
-| `ResultPinLease` | Query admission | QueryTicket | Ready TTL/cancel，或原子转 ReaderLease |
-| `ReaderLease` | `open_read` | QueryReadHandle/Binary Transfer Lane | 随完成、断线或 timeout terminal 交回，并与 Reading→Consumed/Failed 同批释放 |
-| `BlobReadLease` | Persistence | BlobReadHandle | blob 流关闭时释放 |
-| Event | EventJournal | 固定容量 Journal | 不拥有任何 Snapshot payload |
+| `AcquisitionChunkLease` | Adapter/BufferPool | Builder，成功时转 A candidate/InstrumentStore | move-only；成功提交后随 A 的只读 Buffer 生命周期释放，或复制进预留 Snapshot Buffer 后释放；仅失败/取消时直接归还 pool |
+| `AuthorizedPreviewPublisher` / `PreviewTile` | L2/L3 admission / Preview tap | L4 Acquisition producer → bounded PreviewHub；随后 `PreviewFinalizationOwnerSet` 经 Acquisition terminal 回 L2，B/C 工作期间由 Runtime preview escrow 持有 | publisher 绑定 Operation/generation/access scope；tile 可丢并报告 gap；A/B commit 后以 typed ref 终结，C-target 只在 B commit 后有界 exact-C admission 成功时移交，失败立即按 fallback；失败事实 commit 后 Discarded/Failed，Drain 整体转交；不进入 L5 |
+| A/B/Stage/C 不可变 Buffer | InstrumentStore/BufferPool 的预留，由 Builder/Worker 填充 | commit 前由 candidate lease、commit 后由 InstrumentStore | Snapshot refs + graph-aware retention；读者只持 lease，结构共享所有权在 commit 时整体转交 |
+| `PinnedInputSet` | InstrumentStore | 当前 Operation/Drain | worker terminal 或所有权转交后释放 |
+| `OutputReservation` | `InstrumentStore` | 运行时由 Operation/Drain，返回后由 CandidateCommitLease | candidate commit 后转为正式占用；整批失败且真实 worker terminal 后释放；Runtime/预算 Module 另行签发 `ReservedWorkDispatch`/BudgetHandle/WorkspaceBudget，不与此重复 |
+| `PublicationCandidateBatch` / `CandidateCommitLease` | Worker 在真实 terminal 返回 | Control Executor 待提交队列 | commit 成功时把 Buffer/共享结构转入 InstrumentStore；整批 abort 时统一释放，禁止逐对象半提交 |
+| `AcquisitionContinuationOwner` | L2 在 RF start 前按 Sweep purpose 聚合 | AcquisitionRunResourceSet → AcquisitionSucceeded；A commit 前由 L2 拆分 | 正常拆为 Store join owner + Runtime escrow；Acquisition 失败/Drain 前不得半套释放 |
+| `ContinuationStoreJoinOwner` / `ContinuationStoreHandoff` | `InstrumentStore` pins/output/`ContinuationJoinReservation` 由 L2 聚合 / A commit 转换 | commit 时唯一进入 L5 的 continuation 部分 | 使用预留的新 A pin/bytes/closure/quota slot，与新 A 原子合成 complete inputs/output handoff；失败由 Store abort receipt 证明消费 |
+| `ContinuationRuntimeEscrow` | `OperationRuntime::reserve_work` | L2 → Acquisition owner；A commit 调用期间留在 L2 | commit 成功后与 Store handoff 组合派发；失败恰好释放一次；永不进 L5 |
+| `PreReservedBoardCallSet` | stateful pre-admission | AcquisitionLeaseSet → AcquisitionRunResourceSet/cleanup/Drain | 逐板保留 prepare/run call/worker/queue slot 和 sink registrations；Operation commit 后不再临时 acquire |
+| `LifecycleTerminalReservationSet` | InstrumentStore 初始 admission | 初始 commit 后由 Store 内 Operation/Ticket 持有，含 work 声明的 contingency child Drain slot | 成功/失败/取消/Drain handoff 及 child terminal；未用 child slot 随父 terminal 释放；普通资源错误不得耗尽，Store integrity fault 才 fail-stop |
+| `PendingResultPinReservation` | InstrumentStore，按 caller/target/closure 上界 | Pending commit 后由对应 QueryTicket 持有 | Pending→Ready 转精确 ResultPinLease并退还余量；cancel/TTL/access failure 释放；不与其他 waiter 共用 |
+| `ResultPinLease` | `InstrumentStore::commit` | Store 内的 QueryTicket | Ready TTL/cancel，或原子转为仅封装在 QueryReadHandle 内的 ReaderLease；L2 不接触 |
+| `QueryReadHandle` / 内部 `ReaderLease` | Store `open_result` | Binary Transfer Lane | opaque snapshot/blob reader；完成、断线或 timeout 时把完整 handle + ReadTerminal 移回 L2，Store `finish_result` 消费并原子释放；内部 BlobReadLease 不穿出 |
+| `BlobWriteHandle` / `StagedBlobRef` | Kernel upload admission / successful finish | Binary Transfer Lane / staging Catalog | credit + quota + owner/purpose/digest/TTL；Completed 产 ref，Failed/Abandoned/Drain 持有 cleanup 到真实 terminal |
+| Event feed / Watch registration | InstrumentStore / Kernel | 内层 replay→live feed → 外层授权 Watch mailbox | gap/access change/stop 后各自唯一 terminal；不拥有任何 Snapshot payload |
 
 ## 11. 必须先通过的端到端验收场景
 
 1. **单轮二端口**：F/R chunks 乱序投递但 sequence/coverage 可重组时发布一份 A/B；缺一个 required receiver 时不发布 A。
 2. **driver buffer 立即复用**：Mock 在回调返回后覆盖原内存，最终 A hash 仍正确，证明 copy/lease 边界有效。
-3. **Preview 拥塞**：浏览器暂停读取，Preview gap 增长但 Acquisition Ingress、A/B deadline 与 Buffer Pool 不被反压。
+3. **Preview 拥塞与授权变化**：浏览器暂停读取，Preview gap 增长但 Acquisition Ingress、A/B deadline 与 Buffer Pool 不被反压；session/ACL revision 改变立即终止该 consumer 且不取消 Sweep。
 4. **Finite Average**：每个被接受贡献在一个 commit 中发布 B、accumulator 与两个 Channel Head，count 和 `average_complete` 正确；Live C 在过载时可合并而不承诺逐 B 发布；对任一指定 B 的 exact query 都能得到对应非合并 C；第 factor 次只发一次 `average.completed`，且其 C 求值优先级更高；失败贡献不计数。
 5. **Average clear 竞态**：clear 与旧 generation 的 stage/C worker 并发，旧 Snapshot 可读但不能覆盖新 Head。
 6. **惰性 Stage**：同一 canonical roots + graph 的并发 Touchstone/SCPI query 只计算一次；回收内部中间 cache 后最终 Stage 仍可读。
 7. **历史精确查询不倒退 Head**：当前 Head 已指向较新 Live C 时，对旧 B/Stage 的 exact query 能发布并读取历史 C，但 `TraceAnalysisHead` 保持不变；只有仍匹配 current token 的 Live candidate 可 CAS 提升 Head。
 8. **C 原子闭包**：Marker Invalid、Limit Indeterminate 能成功发布；注入 Limit evaluator 内部错误时不出现半套 C。
-9. **Ready 与 retention 竞态**：无论 direct Ready admission 还是 Pending→Ready，Ticket Ready 都必能完整 open/read closure；pin 配额不足只返回 ResourceExhausted，不产生悬空 Ready。
-10. **Event gap**：暂停 Dispatcher、淘汰 Journal 后，SCPI fence 仍按时完成，Web 被要求 resnapshot，权威 Snapshot/Head 不丢。
-11. **校准隔离**：DUT Continuous Sweep、Channel selection 和 Trace 修改不能改变已接受 CalibrationObservation；求解失败不覆盖旧 Set。
-12. **校准验证**：结果能反查目标 Set、verification standard、独立 A/B 与 tolerance revision；当前 Channel 绑定切换不重解释历史报告。
-13. **Diagram 多代次**：普通 overlay 明示每 Placement generation/stale；coupled Marker/Limit 只在同步政策满足时原子切 frame。
-14. **导出期间新 Sweep**：Touchstone/CSV/报告全程 hash 对应同一 refs；cancel/断线不泄漏 input/blob lease，也不留下已宣称成功的半文件。
-15. **可选跨板**：任何成员失败、skew 越界或 timebase unlock 都不发布组合 A，并完成 fan-out abort/safe-state/all-terminal。
+9. **Ready 与多 waiter 隔离**：direct Ready 配额不足同步 Rejected 且无 Ticket；三个 caller join 同一 single-flight 时各自持 `PendingResultPinReservation`，让其中一个 quota 失败、cancel 或 TTL，只终止该 Ticket，shared publication 与另外两个 Ready/open/read closure 不受影响。
+10. **publication commit 故障终态化**：分别在 A/B/C、Calibration、Export 与 Query result commit 注入 validation/write failure；candidate/Head/Event 全败且 last-good 不变，已有 Operation/Ticket 必须通过已安装 terminal reservation 进入 Failed/AlreadyTerminal，Wait/Fence 被满足，绝不永久 Pending/Publishing；再注入 Store integrity failure 时 Instrument fail-stop 并拒绝新工作。
+11. **Event gap**：暂停 Dispatcher、淘汰 Journal 后，SCPI fence 仍按时完成，Web 被要求 resnapshot，权威 Snapshot/Head 不丢。
+12. **校准隔离**：DUT Continuous Sweep、Channel selection 和 Trace 修改不能改变已接受 CalibrationObservation；求解失败不覆盖旧 Set。
+13. **校准验证**：结果能反查目标 Set、verification standard、独立 A/B 与 tolerance revision；当前 Channel 绑定切换不重解释历史报告。
+14. **Diagram 多代次**：普通 overlay 明示每 Placement generation/stale；coupled Marker/Limit 只在同步政策满足时原子切 frame。
+15. **导出期间新 Sweep**：Touchstone/CSV/报告全程 hash 对应同一 refs；cancel/断线不泄漏 input/blob lease，也不留下已宣称成功的半文件。
+16. **可选跨板**：任何成员失败、skew 越界或 timebase unlock 都不发布组合 A，并完成 fan-out abort/safe-state/all-terminal。
 
 ## 12. 当前刻意不冻结的内容
 
