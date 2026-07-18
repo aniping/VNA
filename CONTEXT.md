@@ -2,6 +2,12 @@
 
 本上下文描述 VNA 上层软件中与激励、接收、测量、校准和结果呈现有关的统一业务语言。
 
+## 架构层与数据阶段
+
+项目统一使用 [六层职责模型](docs/design/layered-architecture.md)：L1 协议 Adapter、L2 仪器应用、L3 Operation Runtime、L4 领域执行、L5 权威事实、L6 资源 Adapter 与平台。层表示职责和依赖方向，不要求每个调用机械穿过全部层；`Instrument Kernel` 是控制主干，L3 调度 L4，只有 L2 可以通过 `DomainCommitBundle` 让 L5 的事实原子可见。
+
+A/B/Stage/C 是 L5 中的正式**数据阶段**，不是四个软件层。Marker/Limit 定义在 L2、求值在 L4、结果随 C 存入 L5、最后由浏览器呈现；Diagram 只组织 C 的显示引用，不参与测量判定。`BoardPort` 是 L4 Acquisition 拥有的硬件 seam，Real/Mock/Replay 是它的 L6 Adapter；每块板向上暴露一个 `BoardSession` Interface，不能把单板差异带入 Channel、Trace、Calibration 或 Diagram 语义。
+
 ## 采集
 
 **接收机波量（Receiver Wave Quantity）**：

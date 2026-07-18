@@ -10,4 +10,4 @@ Control Executor 把可选候选批、有类型的 `DomainCatalogPatchSet`、Hea
 
 采集侧同样遵循唯一所有权：Board Adapter 把 move-only `AcquisitionChunkLease` 交给有界 Acquisition Ingress，Network Observation Builder 是唯一长期拥有者。底软 buffer 不能转移时在回调边界复制一次到预留 BufferPool；Preview 只能读取有界 `ChunkReadView` 或拥有独立、可丢弃的 `PreviewTile`。正式 chunk 不能静默丢弃，Preview 拥塞也不能反压采集。
 
-该决策使 Web/SCPI/File 只在线缆编码和会话语义上不同，无法各自维护“当前数组”；也使事件丢失、慢客户端、retention、取消与 Drain 不会破坏正式事实或完成 fence。代价是必须实现强类型 ID、Data Store/Domain Commit permit、Head、lease 配额、候选批和全有或全无领域提交及相应竞态测试。完整规则与验收场景见 [端到端数据流与生命周期契约](../design/data-flow.md)。
+该决策使 Web/SCPI/File 只在线缆编码和会话语义上不同，无法各自维护“当前数组”；也使事件丢失、慢客户端、retention、取消与 Drain 不会破坏正式事实或完成 fence。代价是必须实现强类型 ID、Data Store/Domain Commit permit、Head、lease 配额、候选批和全有或全无领域提交及相应竞态测试。职责落层见 [分层架构与跨层流动](../design/layered-architecture.md)，完整所有权规则与验收场景见 [端到端数据流与生命周期契约](../design/data-flow.md)。

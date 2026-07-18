@@ -2,7 +2,9 @@
 
 > 状态：候选架构 v0.1；本文冻结跨层数据与所有权边界，不冻结尚待黄金数据验证的数值算法、厂商 SCPI 方言或公司底软 ABI。
 
-本文回答的不是“某个类调用哪个函数”，而是一次 VNA 工作从 Web/SCPI 命令进入，到单板接收机观测、校准、迹线、Marker、Limit、Diagram、查询与导出之间，**什么数据以什么身份、由谁拥有、何时成为正式事实、失败时谁可以继续使用旧结果**。整体架构与功能范围仍以 [整体系统架构](system-architecture.md) 和 [176 项功能对齐矩阵](feature-alignment-matrix.md) 为准。
+本文回答的不是“某个类调用哪个函数”，而是一次 VNA 工作从 Web/SCPI 命令进入，到单板接收机观测、校准、迹线、Marker、Limit、Diagram、查询与导出之间，**什么数据以什么身份、由谁拥有、何时成为正式事实、失败时谁可以继续使用旧结果**。如果还不清楚每个 Module 属于哪一层，请先读 [VNA 分层架构与跨层流动](layered-architecture.md)；整体范围仍以 [整体系统架构](system-architecture.md) 和 [176 项功能对齐矩阵](feature-alignment-matrix.md) 为准。
+
+本文统一采用以下跨层读法：Command/Query 从 L1 进入 L2；L2 把冻结工作交给 L3，L3 调度 L4；单板 chunk 从 L6 进入 L4；L4 只返回 candidate/typed result，经 L3 回到 L2；只有 L2 可以用 `DomainCommitBundle` 让 L5 的正式事实原子可见；Query Result/Event 再由 L5 经 L2/L1 返回。Preview 是 L4→L1 的独立可丢旁路。
 
 ## 1. 先冻结三条正交的流
 
@@ -19,45 +21,51 @@
 ```mermaid
 flowchart LR
     subgraph ControlFlow["控制流"]
-        Client["Web 或 SCPI 客户端"] --> Transport["Transport Adapter"]
-        Transport --> Kernel["Instrument Kernel"]
-        Kernel --> Executor["Control Executor"]
-        Executor --> Operation["OperationCatalog"]
+        Client["Web 或 SCPI 客户端"] --> Transport["L1 Transport Adapter"]
+        Transport --> Kernel["L2 Instrument Kernel"]
+        Kernel --> Executor["L2 Control Executor"]
+        Executor --> Runtime["L3 Operation Runtime"]
+        Runtime --> Acquisition["L4 Acquisition Engine"]
+        Runtime --> Engine["L4 Measurement/Calibration Engines"]
     end
 
     subgraph DataFlow["正式数据流"]
-        Board["Board Adapter"] --> Ingress["Acquisition Ingress"]
-        Ingress --> A["A：CompletedSweepBundle"]
-        A --> B["B：CompletedMeasurementBundle"]
-        A --> Stage["MeasurementStageSnapshot"]
+        Board["L6 Board Adapter"] --> Ingress["L4 Acquisition Ingress"]
+        A["L5 A：CompletedSweepBundle"]
+        A --> B["L5 B：CompletedMeasurementBundle"]
+        A --> Stage["L5 MeasurementStageSnapshot"]
         B --> Stage
-        B --> C["C：AnalysisPublication"]
+        B --> C["L5 C：AnalysisPublication"]
         Stage --> C
-        C --> Frame["DiagramFrameRefSet"]
+        C --> Frame["L5 DiagramFrameRefSet"]
     end
 
     subgraph NotificationFlow["通知流"]
-        Commit["Catalog 原子提交"] --> Journal["EventJournal"]
-        Journal --> Dispatcher["Event Dispatcher"]
+        Commit["L5 Catalog 原子提交"] --> Journal["L5 EventJournal"]
+        Journal --> Dispatcher["L1 Event Dispatcher"]
         Dispatcher --> Transport
     end
 
-    Executor --> Board
-    Executor --> Commit
-    A --> Commit
-    B --> Commit
-    Stage --> Commit
-    C --> Commit
-    Kernel --> Ticket["QueryTicket"]
-    Ticket -. "pins selected result closure" .-> A
-    Ticket -. "pins selected result closure" .-> B
-    Ticket -. "pins selected result closure" .-> Stage
-    Ticket -. "pins selected result closure" .-> C
+    Acquisition --> Board
+    Ingress -.->|"A candidate + terminal"| Runtime
+    Engine -.->|"B、Stage、C candidate + terminal"| Runtime
+    Runtime -.->|"typed completion"| Executor
+    Executor -->|"DomainCommitBundle"| Commit
+    Commit -->|"publish as applicable"| A
+    Commit -->|"publish as applicable"| B
+    Commit -->|"publish as applicable"| Stage
+    Commit -->|"publish as applicable"| C
+    Commit --> Operation["L5 OperationCatalog"]
+    Commit --> Ticket["L5 QueryTicket"]
+    Ticket -.->|"pins selected result closure"| A
+    Ticket -.->|"pins selected result closure"| B
+    Ticket -.->|"pins selected result closure"| Stage
+    Ticket -.->|"pins selected result closure"| C
 
     classDef control fill:#e8f1ff,stroke:#3973ac,color:#142b42
     classDef data fill:#e9f7ef,stroke:#37845a,color:#173a27
     classDef notify fill:#fff3dc,stroke:#b47618,color:#4b310d
-    class Kernel,Executor,Operation,Transport,Client,Ticket control
+    class Kernel,Executor,Operation,Runtime,Acquisition,Engine,Transport,Client,Ticket control
     class Board,Ingress,A,B,Stage,C,Frame data
     class Commit,Journal,Dispatcher notify
 ```

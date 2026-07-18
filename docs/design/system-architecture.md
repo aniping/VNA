@@ -2,6 +2,8 @@
 
 > 状态：候选架构 v0.1，176 项商用功能已完成官方证据归类，但兼容 Profile、算法/计量黄金数据、真实单板契约、公司 SDK/容量和少量产品范围尚未闭合，因此不得视为冻结或批准。
 
+> 首次阅读请先看 [VNA 分层架构与跨层流动](layered-architecture.md)。本文在该六层地图之上展开完整领域模型、Module Interface、线程/内存与功能语义，不再让读者从实现节点反推分层。
+
 ## 1. 目标、证据与约束
 
 本项目建设一套运行在公司定制 AArch64 GNU/Linux 5.10 PREEMPT 平台上的成熟 VNA 上层软件。软件不实现单板底软，但通过稳定的单板适配 seam 接入多种真实单板，并在 Windows MinGW 环境以 MOCK/回放适配器完成开发和测试。用户通过浏览器或 TCP Socket SCPI 操作同一台逻辑仪器。
@@ -64,36 +66,46 @@ Channel、Analysis Trace、Marker、Diagram、快照、连接、队列、日志�
 
 高端噪声系数、频谱、混频器、脉冲、IMD、增益压缩、眼图等必须保留 capability 扩展位置，但不进入基础 VNA 的虚假承诺。
 
-## 4. 系统全景
+## 4. 分层入口与详细系统全景
+
+六层主干是：L1 协议 Adapter → L2 Instrument Kernel/Control Executor → L3 Operation Runtime → L4 采集或计算 Engine；L2 通过 L5 Instrument Store 读取并原子提交权威事实，L4 只经 L6 Resource Adapter 接触单板、文件和平台。A/B/Stage/C 是 L5 中的数据阶段，不是另外四个软件层。逐层职责、禁止事项和完整命令/数据时序见 [分层架构首读文档](layered-architecture.md)。
+
+下面是进入实现钻取后的 Module 关系图；它刻意比六层首图更细：
 
 ```mermaid
 flowchart LR
-    Browser["Browser UI"] --> Web["Web Transport Adapter"]
-    ScpiClient["SCPI TCP Clients"] --> SCPI["SCPI Transport Adapter"]
-    Web --> Kernel["Instrument Kernel"]
+    Browser["Browser UI"] --> Web["L1 Web Transport Adapter"]
+    ScpiClient["SCPI TCP Clients"] --> SCPI["L1 SCPI Transport Adapter"]
+    Web --> Kernel["L2 Instrument Kernel"]
     SCPI --> Kernel
-    Kernel --> Control["Control Executor"]
-    Control --> Acquisition["Acquisition Module"]
-    Control --> Pipeline["Measurement Pipeline"]
-    Control --> Calibration["Calibration Module"]
-    Control --> Persistence["Persistence Module"]
-    Acquisition -. "PublicationCandidateBatch (A)" .-> Control
-    Pipeline -. "PublicationCandidateBatch" .-> Control
-    Calibration -. "PublicationCandidateBatch (CorrectionSet)" .-> Control
-    Control --> DataStore["Measurement Data Store<br/>pin / read"]
-    Control --> Commit["DomainCommitCoordinator<br/>all-or-nothing commit"]
+    Kernel --> Control["L2 Control Executor：唯一写者"]
+    Control --> Runtime["L3 Operation Runtime"]
+    Runtime --> Acquisition["L4 Acquisition Engine"]
+    Runtime --> Pipeline["L4 Measurement Pipeline"]
+    Runtime --> Calibration["L4 Calibration Module"]
+    Runtime --> Persistence["L4 Persistence Module"]
+    Runtime --> Diagnostics["L4 Diagnostics Module"]
+    Acquisition -.->|"A candidate + terminal"| Runtime
+    Pipeline -.->|"B、Stage、C candidate + terminal"| Runtime
+    Calibration -.->|"Observation、CorrectionSet candidate + terminal"| Runtime
+    Persistence -.->|"typed result + terminal"| Runtime
+    Diagnostics -.->|"typed result + terminal"| Runtime
+    Runtime -.->|"typed completion"| Control
+    Control --> DataStore["L5 Measurement Data Store：pin / read"]
+    Control --> Commit["L5 DomainCommitCoordinator：all-or-nothing"]
     Commit --> DataStore
-    Acquisition --> BoardPort["Board Adapter seam"]
-    BoardPort --> Real["Real Board Adapter"]
-    BoardPort --> Mock["Mock Board Adapter"]
-    BoardPort --> Replay["Replay Board Adapter"]
+    Acquisition --> BoardPort["L6 BoardPort seam：BoardSession Interface"]
+    BoardPort --> Real["L6 Real Board Adapter"]
+    BoardPort --> Mock["L6 Mock Board Adapter"]
+    BoardPort --> Replay["L6 Replay Board Adapter"]
     Real --> Bottom["Company board software"]
-    Commit --> Events["Versioned Event Stream"]
-    Events --> Web
-    Events --> SCPI
+    Commit --> Events["L5 EventJournal"]
+    Commit --> Wait["L5 Status、Fence、WaitRegistry"]
+    Events -->|"经 Kernel watch Interface 读取"| Web
+    Wait -->|"经 Kernel wait/status Interface 读取"| SCPI
 ```
 
-Web 和 SCPI 是 Transport Adapter，不是第二套应用。`httplib::Request`、JSON DOM、SCPI 字符串、Socket 句柄、厂商底软结构体和 Eigen 类型都不得穿过 Instrument Kernel 的 Interface。
+图中的 L5→L1 回程箭头表示已授权的数据流，不表示 L5 反向依赖协议层：Web Dispatcher 通过 Kernel 的 `watch` Interface 读取 EventJournal；SCPI Adapter 通过 Kernel 的 wait/status Interface 消费 WaitReadyQueue 和状态事实。Web 和 SCPI 是 Transport Adapter，不是第二套应用。`httplib::Request`、JSON DOM、SCPI 字符串、Socket 句柄、厂商底软结构体和 Eigen 类型都不得穿过 Instrument Kernel 的 Interface。
 
 ## 5. 完整领域模型
 
@@ -391,7 +403,9 @@ AnalysisInputRefSet
 
 不可变 Snapshot 与“当前/last-good 选择”分开：`ChannelMeasurementHead{last_good_b, latest_attempt, status, revision}`、`ChannelAverageHead{generation,current_accumulator_snapshot_id,count,complete,revision}` 和 `TraceAnalysisHead{last_good_c, latest_attempted_input, status, revision}` 是 Control Executor 唯一更新的小型权威记录。Head patch 必须携带 expected revision/current-input token；历史 exact query 默认没有 Head patch，若用户要查看旧结果则显式切换 `DiagramFrameRefSet` 或 Trace Source。当前 last-good/average closure 是受 ProductProfile 上限约束的 retention root；运行期 `DiagramFrameRefSet` 只含软引用，不无限 pin 历史。失败只更新 Head/status/diagnostic，不改写历史 B/C。stale 是 Head、当前配置和最新 attempt 的关系，不是给旧 Snapshot 原地打补丁。
 
-## 7. deep modules、Interface 与 seam
+## 7. 六层内部的 deep modules、Interface 与 seam
+
+本节是 [六层职责图](layered-architecture.md) 的实现钻取，不表示每个小标题都是一个对外软件层。`ControlExecutor` 是 Instrument Kernel 的 Implementation；Acquisition、Pipeline、Calibration、Persistence 和 Diagnostics 是 L4 内部的深 Module；Data Store 与 Domain Commit 共同实现 L5 权威事实层。
 
 ### 7.1 Instrument Kernel
 
@@ -425,6 +439,10 @@ WatchHandle watch(const WatchRequest& request, EventSink& sink);
 Control Executor 仍是领域状态唯一写者，但入口不是单个无界 FIFO：`SafetyIngress` 为已经授权的 cancel/abort/RF-off/shutdown/故障锁存保留独立有界槽位和最大调度延迟；有界 `SessionStateIngress` 为每个已建立 SCPI Session 保留独立 control slot/partition，承载 parser error、execution/query error 和所有 destructive/read-clear 状态操作；`PriorityReadIngress` 只允许 health/readiness、`*STB?`/Condition 等读取已经发布且不产生副作用的 Catalog snapshot；`NormalIngress` 承载普通 Command、data Query admission 和任何可能触发惰性求值的读取，并在满载时立即拒绝。普通 data query 或 `SYST:ERR?`/`*ESR?`/`*CLS` 不能伪装成 PriorityRead。调度器优先处理到期的 Safety item，同时用有界配额保证正常工作不会被恶意重复 cancel 永久饿死；同一 Operation 的重复安全请求幂等合并。
 
 每个协议 ingress item 带 `session_sequence + causal_predecessor`。Safety 可以越过其他 Session 或无关普通项，但不能越过同一 Session 尚未 commit 的前置命令；调度器可以优先完成其最小前置链后再执行安全项。例如同一连接 `INIT;ABORt` 必须先建立目标 Operation 再取消，不能先报“无目标”后又启动 Sweep。Parser 在 Transport 边界发现语法错误时提交 `RecordSessionError{session_id, session_sequence, error}`；`SYST:ERR?` pop、`*ESR?` read-clear、`*CLS` clear 及 ESE/SRE 写入也经 SessionStateIngress，并与同 Session 普通命令保持 causal 顺序。冻结的 SCPI Profile 决定 `*CLS` 只清 Session Error/ESR，还是还影响 Instrument Operation/Questionable Event；所有受影响 Catalog 必须在同一领域 commit 原子更新。Session error FIFO 达到上限时按该 Profile 设置确定性的 overflow sentinel/latch，旧/新错误的取舍也由 Profile 固定，绝不静默丢失。Watchdog、硬件 interlock/kill 和 Adapter 的 out-of-band fault action 不属于协议命令序列，可以立即越过全部队列。Transport 的 control lane 只解决网络线程饿死，不能替代 Kernel admission 隔离；这些 OOB 路径先执行安全动作，再把观察结果以保留槽位提交给唯一写者形成 revision/audit。
+
+#### L3 Operation Runtime
+
+`OperationRuntime` 是 Instrument Kernel 内部使用的调度 Module，不是第二个领域核心。它只接收已经冻结的 `FrozenWorkItem + permits`，在固定容量的 Acquisition/Processing/Solver/Persistence/Diagnostics lane 上执行预算、deadline、取消、进度、真实 terminal 与 Drain/Quarantine 所有权转交，再把 typed completion 交回 Control Executor。它不得解释 Command、读取 current selection、修改 Catalog/Head/Ticket 或发布 Event；这些规则保证增加新 worker lane 不会产生第二个状态写者。详细有界 lane 与背压见 §12。
 
 ### 7.2 Acquisition Module
 
