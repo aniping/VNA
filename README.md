@@ -14,7 +14,9 @@
 - `MockBoardControl` 虚拟时间，以及确定性的 receiver-wave `a/b` chunk 与类型化质量标志；
 - prepare/run 同步 Rejected 时归还全部 move-only 输入且零 callback；
 - Accepted 后非内联回调、唯一 terminal 和 terminal 后零回调；
-- Runtime 固定 slot 的 `reserve_work → dispatch → completion`；
+- Runtime 在 `reserve_work` 时同时冻结有限 deadline/budget，并绑定 `receiver + WorkId + generation + completion mailbox`；不同控制消费者不能误取彼此终态，Accepted 后的 dispatch 不再申请完成容量；
+- 工作按 `dispatch → start/resume → typed completion` 分步推进，终态先写入预留 mailbox，再由后续 Control pump 可靠交付，提交不等待工作完成；
+- 工作返回 `Running` 或尚有 completion 待交付时继续占用 slot；返回 `Draining` 后保持容量占用，直到同一注册收到对应 Drain 终态；
 - Store 在 Operation 可见前预留 terminal capacity，初始 commit 失败不派发，已安装 reservation 可在容量压力下提交终态；
 - L2 先提交 Accepted Operation、再 dispatch，Runtime completion 再提交 L5 权威终态的跨层合同测试。
 

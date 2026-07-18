@@ -10,6 +10,8 @@ namespace vna::instrument {
 
 /// 扫描操作在进入运行时前可能出现的拒绝原因。
 enum class SweepAdmissionErrc {
+    /// WorkId 已被 Running 或 Draining 扫描占用，不能建立第二条活动映射。
+    DuplicateWorkId,
     /// 控制器没有空闲的 WorkId 到 OperationId 映射槽。
     ControllerCapacityExhausted,
     /// OperationRuntime 无法预留工作容量。
@@ -65,7 +67,10 @@ public:
     /// 尝试接受并派发一项扫描工作。
     /// @param operation 对外暴露的非 0 操作 ID，不能与 Store 中已有 ID 重复。
     /// @param work_id 运行时内部使用的非 0 工作 ID；活动映射中必须唯一。
-    /// @param work 实际工作对象；成功后必须存活到 completion 回调结束。
+    /// @param limits 本次扫描冻结的有限 deadline 与 budget 上界。
+    /// @param work 实际工作对象；普通路径成功后必须存活到 completion 回调结束；
+    ///        Draining 路径必须继续存活到 Runtime 的 Drain 终态回调结束；
+    ///        不转移所有权。
     /// @param completion 扫描终态接收器；成功后必须存活到回调结束。
     /// @return 两项预留、Accepted 提交和派发均成功时返回操作回执；任一预留
     ///         或初始提交失败时返回对应错误，且不会执行 work。若 Accepted 已
@@ -74,8 +79,14 @@ public:
     core::Result<AcceptedSweepOperation, SweepAdmissionError> submit(
         store::OperationId operation,
         runtime::WorkId work_id,
+        runtime::ExecutionLimits limits,
         runtime::RuntimeWork& work,
         SweepCompletionSink& completion) noexcept;
+
+    /// 推进一个 Runtime 状态转换或交付一条预留 completion mailbox 消息。
+    /// @return 本次调用推进或交付了工作时返回 true；当前无工作时返回 false。
+    /// @note 回调只在本调用栈内进入控制器；Runtime 不保存控制器地址。
+    bool run_one() noexcept;
 
 private:
     struct Mapping final {
@@ -83,16 +94,24 @@ private:
         runtime::WorkId work{};
         store::OperationId operation{};
         SweepCompletionSink* completion{nullptr};
+        runtime::DrainId drain{};
     };
 
     void on_runtime_terminal(
         runtime::WorkId work,
         runtime::RuntimeTerminal terminal) noexcept override;
+    /// 接收 Runtime 的唯一 Drain 资源终态并释放保留的 WorkId 映射。
+    /// @param work 原扫描工作的 ID。
+    /// @param terminal 与先前 Draining handoff 匹配的资源终态。
+    void on_runtime_drain_terminal(
+        runtime::WorkId work,
+        runtime::RuntimeDrainTerminal terminal) noexcept override;
     std::size_t find_free_mapping() const noexcept;
     std::size_t find_mapping(runtime::WorkId work) const noexcept;
 
     runtime::OperationRuntime& runtime_;
     store::InstrumentStore& store_;
+    runtime::RuntimeCompletionReceiver completion_receiver_;
     std::array<Mapping, kMaximumMappings> mappings_{};
 };
 

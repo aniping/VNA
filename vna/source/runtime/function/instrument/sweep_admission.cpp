@@ -8,14 +8,22 @@ namespace vna::instrument {
 SweepAdmissionController::SweepAdmissionController(
     runtime::OperationRuntime& runtime,
     store::InstrumentStore& store) noexcept
-    : runtime_(runtime), store_(store) {}
+    : runtime_(runtime),
+      store_(store),
+      completion_receiver_(runtime.register_completion_receiver()) {}
 
 core::Result<AcceptedSweepOperation, SweepAdmissionError>
 SweepAdmissionController::submit(
     store::OperationId operation,
     runtime::WorkId work_id,
+    runtime::ExecutionLimits limits,
     runtime::RuntimeWork& work,
     SweepCompletionSink& completion) noexcept {
+    if (find_mapping(work_id) != kMaximumMappings) {
+        return core::Result<AcceptedSweepOperation, SweepAdmissionError>::failure(
+            SweepAdmissionError{SweepAdmissionErrc::DuplicateWorkId});
+    }
+
     const auto mapping_index = find_free_mapping();
     if (mapping_index == kMaximumMappings) {
         return core::Result<AcceptedSweepOperation, SweepAdmissionError>::failure(
@@ -23,7 +31,8 @@ SweepAdmissionController::submit(
     }
 
     // 先预留执行槽，但此时工作尚未入队；后续任一步失败都会由 RAII 归还它。
-    auto runtime_reservation_result = runtime_.reserve_work(work_id);
+    auto runtime_reservation_result = runtime_.reserve_work(
+        work_id, limits, completion_receiver_);
     if (!runtime_reservation_result.has_value()) {
         return core::Result<AcceptedSweepOperation, SweepAdmissionError>::failure(
             SweepAdmissionError{SweepAdmissionErrc::RuntimeAdmissionRejected});
@@ -52,8 +61,7 @@ SweepAdmissionController::submit(
     mappings_[mapping_index] = Mapping{true, work_id, operation, &completion};
     auto dispatched = runtime_.dispatch(
         std::move(runtime_reservation),
-        work,
-        runtime::RuntimeCompletionRegistration{*this});
+        work);
     if (!dispatched.has_value()) {
         // Accepted 已经对外可见，不能再把 submit() 回滚成“从未接受”。
         // 运行时拒绝本控制器刚签发的有效凭证属于内部契约异常，因此立即落 Failed。
@@ -65,6 +73,10 @@ SweepAdmissionController::submit(
         AcceptedSweepOperation{operation, work_id});
 }
 
+bool SweepAdmissionController::run_one() noexcept {
+    return runtime_.run_one(completion_receiver_, *this);
+}
+
 void SweepAdmissionController::on_runtime_terminal(
     runtime::WorkId work,
     runtime::RuntimeTerminal terminal) noexcept {
@@ -73,9 +85,19 @@ void SweepAdmissionController::on_runtime_terminal(
         return;
     }
 
-    // 先摘除映射，防止完成回调重入时对同一 WorkId 重复提交终态。
     auto mapping = mappings_[index];
-    mappings_[index] = Mapping{};
+    const auto is_draining =
+        terminal.kind == runtime::RuntimeTerminalKind::Draining;
+    if (is_draining) {
+        // 父 Operation 可以失败终结，但映射继续保留到唯一 Drain terminal。
+        mappings_[index].drain = terminal.drain;
+        // 外部 completion 在父 Operation 终结后即可释放；先清空指针，避免
+        // 回调重入完成 Drain 并复用同一映射槽后，外层再改写新映射。
+        mappings_[index].completion = nullptr;
+    } else {
+        // 真实工作终态先摘除映射，防止完成回调重入时重复提交。
+        mappings_[index] = Mapping{};
+    }
     const auto terminal_state =
         terminal.kind == runtime::RuntimeTerminalKind::Completed
             ? store::OperationState::Completed
@@ -88,6 +110,17 @@ void SweepAdmissionController::on_runtime_terminal(
             mapping.completion->on_sweep_terminal(*snapshot);
         }
     }
+}
+
+void SweepAdmissionController::on_runtime_drain_terminal(
+    runtime::WorkId work,
+    runtime::RuntimeDrainTerminal terminal) noexcept {
+    const auto index = find_mapping(work);
+    if (index == kMaximumMappings || mappings_[index].drain != terminal.drain) {
+        return;
+    }
+    // 具名 Drain 已到资源终态；本里程碑只闭合内部所有权，不创建 Store Drain 事实。
+    mappings_[index] = Mapping{};
 }
 
 std::size_t SweepAdmissionController::find_free_mapping() const noexcept {
