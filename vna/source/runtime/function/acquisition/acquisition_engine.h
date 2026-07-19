@@ -1,10 +1,13 @@
 #pragma once
 
 #include "runtime/function/acquisition/acquisition_admission.h"
+#include "runtime/function/acquisition/acquisition_ingress.h"
+#include "runtime/function/acquisition/network_observation_builder.h"
 #include "runtime/function/acquisition/acquisition_result.h"
 #include "runtime/function/operation/operation_runtime.h"
 #include "runtime/platform/board/board_port.h"
 
+#include <cstddef>
 #include <optional>
 
 namespace vna::acquisition {
@@ -26,8 +29,13 @@ public:
     /// @param prepare_call 已预留的 Prepare 调用 ID。
     /// @param run 已预留的 Run 调用 ID。
     /// @param generation 已预留的 Run 代次。
+    /// @param snapshot_id 首次派发前预签发、提交成功后公开的 A snapshot ID。
+    /// @param logical_sweep_id 本次完整逻辑扫频 ID。
+    /// @param work 与 Accepted Operation 绑定的 Runtime WorkId 事实。
+    /// @param ingress_capacity 首次派发前为 Board callback 预留的正式 chunk 数。
     /// @param continuation 首次 dispatch 前冻结的有界 Ingress 持续接收证明。
-    /// @param delivery 已预留的数据交付凭证；转移所有权。
+    /// @param delivery 已预留的数据交付凭证及固定回退 Buffer 槽；转移所有权，
+    ///        Run 同步拒绝时由 Adapter 原样返还，接受后由 Adapter 保持到终态。
     /// @param drain Runtime 需要两阶段完成时使用的具名 Drain ID。
     /// @param resources 首次派发前取得的全部采集关键资源；转移所有权并保持到
     ///        普通失败终态提交后、Drain 真实资源终态，或 Quarantine 隔离期结束。
@@ -40,6 +48,10 @@ public:
         board::PrepareCallId prepare_call,
         board::BoardRunId run,
         board::RunGeneration generation,
+        CompletedSweepId snapshot_id,
+        LogicalSweepId logical_sweep_id,
+        runtime::WorkId work,
+        std::size_t ingress_capacity,
         board::AcquisitionContinuationAttestation continuation,
         board::RunDeliveryGrant&& delivery,
         runtime::DrainId drain,
@@ -73,6 +85,11 @@ public:
     ///       证据的 PrepareFailed 或匹配 Run terminal 后终结。PrepareSucceeded、
     ///       PrepareDraining、Quarantined/CleanupFailed 均不得调用；重复调用返回 false。
     bool finalize_failure_owners() noexcept;
+
+    /// 取得唯一成功终态的 candidate 与 completion owner 聚合。
+    /// @return Runtime 报告 Completed 后首次调用返回 move-only success；失败、
+    ///         Draining、尚未完成或重复调用返回空。返回对象由 L2 持有到 commit。
+    std::optional<AcquisitionSucceeded> take_success() noexcept;
 
 private:
     enum class Phase {
@@ -115,6 +132,10 @@ private:
     board::PrepareCallId prepare_call_{};
     board::BoardRunId run_{};
     board::RunGeneration generation_{};
+    CompletedSweepId snapshot_id_{};
+    LogicalSweepId logical_sweep_id_{};
+    runtime::WorkId work_{};
+    AcquisitionIngress ingress_;
     board::AcquisitionContinuationAttestation continuation_{};
     board::RunDeliveryGrant delivery_;
     runtime::DrainId drain_{};
@@ -125,6 +146,8 @@ private:
     board::PreparedExecutionId prepared_{};
     std::optional<board::PrepareTerminal> prepare_terminal_{};
     std::optional<board::BoardRunTerminal> run_terminal_{};
+    std::optional<NetworkObservationBuilder> builder_{};
+    std::optional<AcquisitionSucceeded> success_{};
     std::optional<board::BoardPrepareDrainOwner> board_prepare_drain_owner_{};
     bool callback_contract_violation_{false};
     DrainObligation drain_obligation_{DrainObligation::None};

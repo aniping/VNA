@@ -1,6 +1,7 @@
 #include "test_support.h"
 
 #include "adapter/mock/mock_board.h"
+#include "runtime/platform/board/acquisition_buffer_pool.h"
 
 #include <array>
 #include <cstdint>
@@ -256,7 +257,6 @@ TEST(BoardAdapterContract, ExecutionReservationCannotBeReusedAcrossPhases) {
     MockScenario scenario{};
     scenario.prepare_delay = 1U;
     scenario.run_delay = 1U;
-    scenario.point_count = 3U;
     MockBoardProvider provider{MockCapabilityProfile{201U}, scenario};
     auto opened_result = provider.open_controlled(
         BoardOpenRequest{1U, BoardContractVersion{1U, 0U}});
@@ -304,6 +304,10 @@ TEST(BoardAdapterContract, ExecutionReservationCannotBeReusedAcrossPhases) {
         PrepareSinkRegistration{duplicate_prepared_sink});
     VNA_REQUIRE(std::holds_alternative<PrepareRejected>(duplicate_prepared));
 
+    AcquisitionBufferPool buffer_pool{2U};
+    auto delivery_result = buffer_pool.reserve_delivery(68U, 2U);
+    VNA_REQUIRE(delivery_result.has_value());
+    auto delivery = std::move(delivery_result).take_value();
     RecordingRunSink run_sink;
     auto run_submission = opened.board.execution().begin_run(
         reservation,
@@ -317,7 +321,7 @@ TEST(BoardAdapterContract, ExecutionReservationCannotBeReusedAcrossPhases) {
             capability.operational_epoch,
             AcquisitionContinuationAttestation{
                 vna::core::StrongDigest{0x6869U}, 100U}),
-        RunDeliveryGrant{68U},
+        std::move(delivery),
         BoardRunSinkRegistration{run_sink});
     VNA_REQUIRE(std::holds_alternative<RunAccepted>(run_submission));
 
@@ -360,7 +364,6 @@ TEST(BoardAdapterContract, RunRejectsPreparedIdentityNotIssuedByItsReservation) 
     MockScenario scenario{};
     scenario.prepare_delay = 1U;
     scenario.run_delay = 1U;
-    scenario.point_count = 3U;
     MockBoardProvider provider{MockCapabilityProfile{201U}, scenario};
     auto opened_result = provider.open_controlled(
         BoardOpenRequest{1U, BoardContractVersion{1U, 0U}});
@@ -498,7 +501,6 @@ TEST(BoardAdapterContract, AcceptedRunEmitsDeterministicWavesAndOneTerminal) {
     MockScenario scenario{};
     scenario.prepare_delay = 2U;
     scenario.run_delay = 5U;
-    scenario.point_count = 3U;
     scenario.incident_a[0U] = ComplexSample{1.0F, 0.0F};
     scenario.incident_a[1U] = ComplexSample{1.0F, 0.1F};
     scenario.incident_a[2U] = ComplexSample{1.0F, 0.2F};
@@ -533,6 +535,10 @@ TEST(BoardAdapterContract, AcceptedRunEmitsDeterministicWavesAndOneTerminal) {
     auto prepared = std::get<PrepareSucceeded>(std::move(prepare_terminal)).execution;
     const auto& manifest = prepared.manifest.manifest();
 
+    AcquisitionBufferPool buffer_pool{2U};
+    auto delivery_result = buffer_pool.reserve_delivery(30U, 2U);
+    VNA_REQUIRE(delivery_result.has_value());
+    auto delivery = std::move(delivery_result).take_value();
     RecordingRunSink run_sink;
     auto start_authorization = StartAuthorization::issue(
         capability.session_id,
@@ -546,7 +552,7 @@ TEST(BoardAdapterContract, AcceptedRunEmitsDeterministicWavesAndOneTerminal) {
         RunGeneration{1U},
         std::move(prepared.start_token),
         std::move(start_authorization),
-        RunDeliveryGrant{30U},
+        std::move(delivery),
         BoardRunSinkRegistration{run_sink});
 
     VNA_REQUIRE(std::holds_alternative<RunAccepted>(run_submission));

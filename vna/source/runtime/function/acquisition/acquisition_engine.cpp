@@ -13,6 +13,10 @@ AcquisitionEngine::AcquisitionEngine(
     board::PrepareCallId prepare_call,
     board::BoardRunId run,
     board::RunGeneration generation,
+    CompletedSweepId snapshot_id,
+    LogicalSweepId logical_sweep_id,
+    runtime::WorkId work,
+    std::size_t ingress_capacity,
     board::AcquisitionContinuationAttestation continuation,
     board::RunDeliveryGrant&& delivery,
     runtime::DrainId drain,
@@ -24,6 +28,10 @@ AcquisitionEngine::AcquisitionEngine(
       prepare_call_(prepare_call),
       run_(run),
       generation_(generation),
+      snapshot_id_(snapshot_id),
+      logical_sweep_id_(logical_sweep_id),
+      work_(work),
+      ingress_(ingress_capacity),
       continuation_(continuation),
       delivery_(std::move(delivery)),
       drain_(drain),
@@ -51,6 +59,8 @@ runtime::RuntimeWorkStep AcquisitionEngine::start(
         !board_reservation_.valid() ||
         execution_ == nullptr || !prepare_authorization_.valid() ||
         !prepare_call_.valid() || !run_.valid() || !generation_.valid() ||
+        !snapshot_id_.valid() || !logical_sweep_id_.valid() || !work_.valid() ||
+        !ingress_.valid() ||
         !continuation_.valid() || !delivery_.valid()) {
         return fail(
             AcquisitionFailurePhase::Admission,
@@ -126,6 +136,12 @@ runtime::RuntimeWorkStep AcquisitionEngine::resume(
                 AcquisitionFailurePhase::ManifestFinalization,
                 AcquisitionFailureReason::ManifestOutsideAdmission);
         }
+        builder_.emplace(manifest, run_, generation_);
+        if (builder_->error().has_value()) {
+            return fail(
+                AcquisitionFailurePhase::ManifestFinalization,
+                AcquisitionFailureReason::ManifestOutsideAdmission);
+        }
 
         auto start_authorization = board::StartAuthorization::issue(
             manifest.session_id,
@@ -156,6 +172,13 @@ runtime::RuntimeWorkStep AcquisitionEngine::resume(
     }
 
     if (phase_ == Phase::Acquiring) {
+        while (auto chunk = ingress_.pop()) {
+            if (!builder_.has_value() ||
+                builder_->accept(std::move(*chunk)) !=
+                    board::ChunkIngressDisposition::Accepted) {
+                callback_contract_violation_ = true;
+            }
+        }
         if (!run_terminal_.has_value()) {
             return wait_or_drain(context, AcquisitionFailurePhase::Run);
         }
@@ -177,6 +200,9 @@ runtime::RuntimeWorkStep AcquisitionEngine::resume(
 
         const auto terminal = *run_terminal_;
         run_terminal_.reset();
+        if (!builder_.has_value() || !builder_->record_terminal(terminal)) {
+            callback_contract_violation_ = true;
+        }
         if (callback_contract_violation_ || terminal.run_id != run_ ||
             terminal.generation != generation_) {
             return fail(
@@ -188,9 +214,21 @@ runtime::RuntimeWorkStep AcquisitionEngine::resume(
                 AcquisitionFailurePhase::Run,
                 AcquisitionFailureReason::BoardTerminalFailed);
         }
-        return fail(
-            AcquisitionFailurePhase::Run,
-            AcquisitionFailureReason::SuccessPathUnavailable);
+        auto candidate_result = builder_->seal(
+            snapshot_id_, logical_sweep_id_, work_, intent_.digest);
+        if (!candidate_result.has_value()) {
+            return fail(
+                AcquisitionFailurePhase::CandidateSealing,
+                candidate_result.error().code ==
+                        NetworkObservationErrc::IncompleteCoverage
+                    ? AcquisitionFailureReason::IncompleteObservationSet
+                    : AcquisitionFailureReason::BoardContractViolation);
+        }
+        success_.emplace(AcquisitionSucceeded{
+            std::move(candidate_result).take_value(),
+            AOnlyCompletionOwners{std::move(resources_), snapshot_id_}});
+        phase_ = Phase::Terminal;
+        return runtime::RuntimeWorkStep::completed();
     }
 
     return fail(
@@ -248,6 +286,15 @@ bool AcquisitionEngine::finalize_failure_owners() noexcept {
     return resources_.finalize_failure();
 }
 
+std::optional<AcquisitionSucceeded> AcquisitionEngine::take_success() noexcept {
+    if (!success_.has_value()) {
+        return std::nullopt;
+    }
+    auto result = std::optional<AcquisitionSucceeded>{std::move(*success_)};
+    success_.reset();
+    return result;
+}
+
 void AcquisitionEngine::on_terminal(
     board::PrepareTerminal&& terminal) noexcept {
     if ((phase_ != Phase::Preparing && phase_ != Phase::Draining) ||
@@ -268,10 +315,19 @@ void AcquisitionEngine::on_phase(
 
 board::ChunkIngressDisposition AcquisitionEngine::on_chunk(
     board::ReceiverObservationChunk&& chunk) noexcept {
-    (void)chunk;
-    // 工单 02 只闭合延迟失败；正式 chunk owner/Builder 在工单 03 接入。
-    callback_contract_violation_ = true;
-    return board::ChunkIngressDisposition::AbortRunProtocolViolation;
+    // BoardRunSink 是最外层无条件所有权边界。即使 Adapter 违反时序或身份，
+    // 也必须先接管 payload，再用 disposition 要求其停止后续交付。
+    auto owned = std::move(chunk);
+    if (phase_ != Phase::Acquiring || run_terminal_.has_value() ||
+        !builder_.has_value()) {
+        callback_contract_violation_ = true;
+        return board::ChunkIngressDisposition::AbortRunProtocolViolation;
+    }
+    const auto disposition = ingress_.push(std::move(owned));
+    if (disposition != board::ChunkIngressDisposition::Accepted) {
+        callback_contract_violation_ = true;
+    }
+    return disposition;
 }
 
 void AcquisitionEngine::on_terminal(

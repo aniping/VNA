@@ -85,7 +85,7 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
             plan_digest,
             capabilities,
             request.point_count,
-            2U,
+            static_cast<std::uint32_t>(kAOnlyChunkCapacity),
             request.start_hz,
             request.stop_hz});
     if (!acquisition_result.has_value()) {
@@ -95,6 +95,16 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
 
     const auto operation = store::OperationId{next_operation_id_++};
     const auto work = runtime::WorkId{next_work_id_++};
+    const auto snapshot_id = acquisition::CompletedSweepId{
+        next_completed_sweep_id_++};
+    const auto logical_sweep_id = acquisition::LogicalSweepId{
+        next_logical_sweep_id_++};
+    auto delivery_result = acquisition_buffers_.reserve_delivery(
+        work.value(), kAOnlyChunkCapacity);
+    if (!delivery_result.has_value()) {
+        return reject(AOnlySubmitErrc::AcquisitionResourcesUnavailable);
+    }
+    auto delivery = std::move(delivery_result).take_value();
     const runtime::ExecutionLimits limits{
         now + profile_.deadline_span_ticks, profile_.budget_units};
     auto runtime_result = runtime_.reserve_work(
@@ -127,10 +137,14 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
         board::PrepareCallId{work.value()},
         board::BoardRunId{work.value()},
         board::RunGeneration{work.value()},
+        snapshot_id,
+        logical_sweep_id,
+        work,
+        kAOnlyChunkCapacity,
         board::AcquisitionContinuationAttestation{
             continuation_digest,
             board_now + profile_.board_continuation_span_ticks},
-        board::RunDeliveryGrant{work.value()},
+        std::move(delivery),
         runtime::DrainId{work.value()},
         std::move(acquisition_lease),
         std::move(board_reservation));
@@ -176,6 +190,54 @@ void InstrumentKernel::on_runtime_terminal(
         return;
     }
     auto& slot = slots_[index];
+    if (terminal.kind == runtime::RuntimeTerminalKind::Completed) {
+        auto success = slot.engine->take_success();
+        if (!success.has_value()) {
+            const auto committed = store_.commit_acquisition_failed(
+                slot.operation,
+                acquisition::AcquisitionFailure{
+                    acquisition::AcquisitionFailurePhase::CandidateSealing,
+                    acquisition::AcquisitionFailureReason::
+                        IncompleteObservationSet});
+            if (committed.has_value()) {
+                (void)slot.engine->finalize_failure_owners();
+                slot.release_pending = true;
+            }
+            return;
+        }
+
+        auto commit = store_.commit_completed_sweep(
+            slot.operation, std::move(success->candidate));
+        if (auto* receipt =
+                std::get_if<store::CompletedSweepCommitReceipt>(&commit)) {
+            if (success->completion_owners.finalize_published(
+                    receipt->completed_sweep)) {
+                slot.release_pending = true;
+            } else {
+                // 已发布 A 不能回滚；无法终结的 purpose-specific owner 保持隔离。
+                slot.pending_success.emplace(std::move(*success));
+            }
+            return;
+        }
+
+        auto rejected = std::get<store::RejectedCompletedSweepCommit>(
+            std::move(commit));
+        success->candidate = std::move(rejected.reclaimed);
+        const auto failed = store_.commit_acquisition_failed(
+            slot.operation,
+            acquisition::AcquisitionFailure{
+                acquisition::AcquisitionFailurePhase::PublicationCommit,
+                acquisition::AcquisitionFailureReason::StoreCommitRejected});
+        if (!failed.has_value()) {
+            slot.pending_success.emplace(std::move(*success));
+            return;
+        }
+        (void)success->candidate.abort();
+        (void)success->completion_owners.finalize_failed();
+        slot.release_pending = true;
+        return;
+    }
+
     const auto committed = store_.commit_acquisition_failed(
         slot.operation, slot.engine->failure());
     if (!committed.has_value()) {
@@ -231,6 +293,7 @@ void InstrumentKernel::release_completed_slots() noexcept {
             slot.release_pending = false;
             slot.work = runtime::WorkId{};
             slot.operation = store::OperationId{};
+            slot.pending_success.reset();
         }
     }
 }

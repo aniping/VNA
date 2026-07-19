@@ -131,53 +131,6 @@ void StartAuthorization::invalidate() noexcept {
     valid_ = false;
 }
 
-RunDeliveryGrant::RunDeliveryGrant(RunDeliveryGrant&& other) noexcept
-    : grant_id_(other.grant_id_), valid_(other.valid_) {
-    other.invalidate();
-}
-
-RunDeliveryGrant& RunDeliveryGrant::operator=(RunDeliveryGrant&& other) noexcept {
-    if (this != &other) {
-        grant_id_ = other.grant_id_;
-        valid_ = other.valid_;
-        other.invalidate();
-    }
-    return *this;
-}
-
-void RunDeliveryGrant::invalidate() noexcept {
-    grant_id_ = 0U;
-    valid_ = false;
-}
-
-AcquisitionChunkLease::AcquisitionChunkLease(
-    const std::array<ComplexSample, kMaximumContractChunkSamples>& samples,
-    std::size_t size) noexcept
-    : samples_(samples),
-      size_(size <= samples_.size() ? size : 0U),
-      valid_(size > 0U && size <= samples_.size()) {}
-
-AcquisitionChunkLease::AcquisitionChunkLease(AcquisitionChunkLease&& other) noexcept
-    : samples_(other.samples_), size_(other.size_), valid_(other.valid_) {
-    other.invalidate();
-}
-
-AcquisitionChunkLease& AcquisitionChunkLease::operator=(
-    AcquisitionChunkLease&& other) noexcept {
-    if (this != &other) {
-        samples_ = other.samples_;
-        size_ = other.size_;
-        valid_ = other.valid_;
-        other.invalidate();
-    }
-    return *this;
-}
-
-void AcquisitionChunkLease::invalidate() noexcept {
-    size_ = 0U;
-    valid_ = false;
-}
-
 BoardRunSinkRegistration::BoardRunSinkRegistration(
     BoardRunSinkRegistration&& other) noexcept
     : sink_(other.sink_) {
@@ -263,6 +216,8 @@ struct PendingRun final {
     StartAuthorization authorization;
     RunDeliveryGrant delivery;
     BoardRunSinkRegistration sink;
+    /// 与 PreparedStartToken 同源的实际清单；Run 输出只能由它决定形状。
+    PreparedExecutionManifest manifest{};
     MockScenario scenario{};
     VirtualDuration due_at{0U};
 };
@@ -307,6 +262,7 @@ public:
         execution_reservation_phase_ = MockExecutionReservationPhase::Reserved;
         active_prepared_id_ = PreparedExecutionId{};
         active_manifest_digest_ = core::StrongDigest{};
+        active_manifest_ = PreparedExecutionManifest{};
         ++observations_.acquired_execution_reservations;
         return core::Result<BoardExecutionReservation, BoardError>::success(
             issue_execution_reservation(active_execution_reservation_));
@@ -368,7 +324,6 @@ public:
         if (!authorization_matches) {
             return reject(BoardErrc::AuthorizationMismatch, true);
         }
-
         if (pending_prepare_.has_value()) {
             return reject(BoardErrc::Busy, true);
         }
@@ -426,9 +381,11 @@ public:
             return reject(BoardErrc::Busy, true);
         }
         if (scenario_.run_behavior == MockRunBehavior::Succeed &&
-            (scenario_.point_count == 0U ||
-             scenario_.point_count > kMaximumContractChunkSamples ||
-             scenario_.point_count > capabilities_.maximum_points)) {
+            (active_manifest_.actual_point_count == 0U ||
+             active_manifest_.actual_point_count > kMaximumContractChunkSamples ||
+             active_manifest_.required_observation_count == 0U ||
+             active_manifest_.required_observation_count >
+                 active_manifest_.required_observations.size())) {
             return reject(BoardErrc::ResourceExhausted, true);
         }
 
@@ -446,6 +403,11 @@ public:
         if (!authorization_matches) {
             return reject(BoardErrc::AuthorizationMismatch, true);
         }
+        if (scenario_.run_behavior == MockRunBehavior::Succeed &&
+            delivery.remaining_fallback_capacity() <
+                active_manifest_.required_observation_count) {
+            return reject(BoardErrc::ResourceExhausted, true);
+        }
 
         // 捕获当前场景，保证一旦接受，输出波形和质量标记就不再被配置修改影响。
         ++observations_.accepted_run_calls;
@@ -457,6 +419,7 @@ public:
             std::move(authorization),
             std::move(delivery),
             std::move(sink),
+            active_manifest_,
             scenario_,
             now_ + scenario_.run_delay});
         return RunAccepted{run, generation};
@@ -498,6 +461,7 @@ private:
             execution_reservation_phase_ = MockExecutionReservationPhase::None;
             active_prepared_id_ = PreparedExecutionId{};
             active_manifest_digest_ = core::StrongDigest{};
+            active_manifest_ = PreparedExecutionManifest{};
             ++observations_.released_execution_reservations;
         }
     }
@@ -531,7 +495,16 @@ private:
             manifest_digest,
             pending.intent.point_count,
             pending.intent.start_hz,
-            pending.intent.stop_hz};
+            pending.intent.stop_hz,
+            std::array<
+                PreparedObservationSpec,
+                kMaximumPreparedObservations>{
+                PreparedObservationSpec{
+                    ReceiverWave::IncidentA, pending.intent.point_count},
+                PreparedObservationSpec{
+                    ReceiverWave::ResponseB, pending.intent.point_count}},
+            2U};
+        active_manifest_ = manifest;
         // 清单摘要把后续 PreparedStartToken/StartAuthorization 绑定到本次 Prepare。
         PrepareTerminal terminal = PrepareSucceeded{PreparedExecution{
             PreparedStartToken{capabilities_.session_id, prepared_id, manifest_digest},
@@ -570,45 +543,46 @@ private:
             return;
         }
 
-        const auto manifest_id = ManifestId{pending.prepared.prepared_id().value()};
-        const auto prepared_id = pending.prepared.prepared_id();
-        ReceiverObservationChunk incident{
-            manifest_id,
-            prepared_id,
-            pending.run,
-            pending.generation,
-            ChunkSequence{1U},
-            ReceiverWave::IncidentA,
-            0U,
-            AcquisitionChunkLease{
-                pending.scenario.incident_a, pending.scenario.point_count},
-            pending.scenario.incident_quality};
-        ++observations_.run_chunk_callbacks;
-        const auto incident_disposition = sink.on_chunk(std::move(incident));
-
         RunTerminalKind terminal_kind = RunTerminalKind::Completed;
-        std::uint32_t delivered_chunks = 1U;
-        // A 波未被上层接受时停止交付，B 波不会越过已经触发的背压/协议错误。
-        if (incident_disposition == ChunkIngressDisposition::Accepted) {
-            ReceiverObservationChunk response{
-                manifest_id,
-                prepared_id,
+        std::uint32_t delivered_chunks = 0U;
+        for (std::size_t index = 0U;
+             index < pending.manifest.required_observation_count;
+             ++index) {
+            const auto& required = pending.manifest.required_observations[index];
+            if (pending.scenario.observation_behavior ==
+                    MockObservationBehavior::OmitResponseButComplete &&
+                required.wave == ReceiverWave::ResponseB) {
+                continue;
+            }
+            const auto& samples = required.wave == ReceiverWave::IncidentA
+                ? pending.scenario.incident_a
+                : pending.scenario.response_b;
+            const auto quality = required.wave == ReceiverWave::IncidentA
+                ? pending.scenario.incident_quality
+                : pending.scenario.response_quality;
+            auto payload = pending.delivery.copy_fallback(
+                samples, required.point_count);
+            if (!payload.has_value()) {
+                terminal_kind = RunTerminalKind::Failed;
+                break;
+            }
+            ReceiverObservationChunk chunk{
+                pending.manifest.id,
+                pending.manifest.prepared_id,
                 pending.run,
                 pending.generation,
-                ChunkSequence{2U},
-                ReceiverWave::ResponseB,
+                ChunkSequence{index + 1U},
+                required.wave,
                 0U,
-                AcquisitionChunkLease{
-                    pending.scenario.response_b, pending.scenario.point_count},
-                pending.scenario.response_quality};
+                std::move(payload).take_value(),
+                quality};
             ++observations_.run_chunk_callbacks;
-            const auto response_disposition = sink.on_chunk(std::move(response));
-            delivered_chunks = 2U;
-            if (response_disposition != ChunkIngressDisposition::Accepted) {
+            ++delivered_chunks;
+            if (sink.on_chunk(std::move(chunk)) !=
+                ChunkIngressDisposition::Accepted) {
                 terminal_kind = RunTerminalKind::Failed;
+                break;
             }
-        } else {
-            terminal_kind = RunTerminalKind::Failed;
         }
 
         // 先注销交付许可再发唯一终态；终态之后本 Run 不再持有交付预算。
@@ -653,6 +627,8 @@ private:
     PreparedExecutionId active_prepared_id_{};
     /// 与 active_prepared_id_ 配对的 Manifest 摘要。
     core::StrongDigest active_manifest_digest_{};
+    /// 当前 reservation 的实际执行事实；成功 Run 的形状只能从此处取得。
+    PreparedExecutionManifest active_manifest_{};
     std::uint64_t next_execution_reservation_id_{1U};
 };
 

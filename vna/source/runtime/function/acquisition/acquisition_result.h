@@ -1,5 +1,7 @@
 #pragma once
 
+#include "runtime/function/acquisition/a_only_completion_owners.h"
+#include "runtime/function/acquisition/candidate_commit_lease.h"
 #include "runtime/platform/board/board_port.h"
 
 namespace vna::acquisition {
@@ -14,6 +16,10 @@ enum class AcquisitionFailurePhase {
     ManifestFinalization,
     /// Board Run 提交或异步终态阶段。
     Run,
+    /// 必需观测、实际轴与成功 terminal 闭合并密封 candidate 的阶段。
+    CandidateSealing,
+    /// L2 把 worker candidate 原子提交到 Store 的阶段。
+    PublicationCommit,
     /// Accepted 后发现 Runtime 内部派发契约不成立。
     RuntimeDispatch
 };
@@ -38,8 +44,10 @@ enum class AcquisitionFailureReason {
     ManifestOutsideAdmission,
     /// Board 回调的身份、顺序或数量违反公开契约。
     BoardContractViolation,
-    /// 当前里程碑尚未允许成功数据候选进入 Store。
-    SuccessPathUnavailable,
+    /// 成功 terminal 到达时必需观测或点覆盖仍不完整。
+    IncompleteObservationSet,
+    /// Store 拒绝了已经密封的 A publication candidate。
+    StoreCommitRejected,
     /// Accepted 后 Runtime 拒绝了此前签发的有效派发能力。
     RuntimeDispatchContractViolation
 };
@@ -61,6 +69,17 @@ struct AcquisitionFailure final {
     /// 同步 BoardError 有效时为 true；异步失败终态不伪造 BoardError。
     bool has_board_error{false};
     board::BoardErrc board_error{board::BoardErrc::ContractViolation};
+};
+
+/// L4 成功终态移交给 L2 的完整 publication 与 purpose-specific owner 集合。
+///
+/// candidate 只能进入 InstrumentStore commit/abort；completion_owners 必须留在
+/// L2，直到 Store receipt 或失败事实可见后才终结，两者不能被合并进 Store。
+struct AcquisitionSucceeded final {
+    /// worker 密封且提交前不可查询的正式 A 候选 owner。
+    CandidateCommitLease candidate;
+    /// 匹配 A-only completion 与 disabled Preview 的 L2 owner 聚合。
+    AOnlyCompletionOwners completion_owners;
 };
 
 }  // namespace vna::acquisition

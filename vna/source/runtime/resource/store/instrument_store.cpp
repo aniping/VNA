@@ -146,6 +146,64 @@ InstrumentStore::commit_acquisition_failed(
         operation, OperationState::Failed, &failure);
 }
 
+CompletedSweepCommitResult InstrumentStore::commit_completed_sweep(
+    OperationId operation,
+    acquisition::CandidateCommitLease&& candidate) noexcept {
+    const auto reject = [&](StoreErrc code) -> CompletedSweepCommitResult {
+        return RejectedCompletedSweepCommit{
+            StoreError{code}, std::move(candidate)};
+    };
+    if (!operation.valid() || !candidate.valid()) {
+        return reject(StoreErrc::InvalidCandidate);
+    }
+
+    for (std::size_t index = 0U; index < capacity_; ++index) {
+        auto& slot = slots_[index];
+        if (slot.slot_state != SlotState::Visible ||
+            slot.operation.id != operation) {
+            continue;
+        }
+        if (slot.operation.state != OperationState::Accepted ||
+            slot.operation.work != candidate.work() ||
+            slot.operation.plan_digest != candidate.plan_digest()) {
+            return reject(StoreErrc::InvalidCandidate);
+        }
+
+        const auto terminal_revision = revision_ + 1U;
+        CompletedSweepBundle completed{
+            operation, terminal_revision, candidate};
+
+        // 所有有界字段准备完成后才切换 revision；本同步函数不会在中途暴露 Slot。
+        revision_ = terminal_revision;
+        slot.operation.state = OperationState::Completed;
+        slot.operation.revision = terminal_revision;
+        slot.completed_sweep.emplace(std::move(completed));
+        slot.fence_visible = true;
+        slot.fence = OperationFenceSnapshot{
+            operation, OperationState::Completed, terminal_revision};
+        status_ = InstrumentStatusSnapshot{
+            operation, OperationState::Completed, terminal_revision};
+        slot.event_visible = true;
+        slot.event = OperationEventSnapshot{
+            OperationEventId{next_event_id_++},
+            operation,
+            OperationState::Completed,
+            terminal_revision,
+            false,
+            acquisition::AcquisitionFailure{},
+            true,
+            candidate.snapshot_id()};
+        ++events_;
+        ++publications_.completed_sweeps;
+        const auto published_id = candidate.snapshot_id();
+        (void)candidate.abort();
+        return CompletedSweepCommitReceipt{
+            operation, published_id, terminal_revision};
+    }
+
+    return reject(StoreErrc::OperationNotFound);
+}
+
 core::Result<TerminalCommitReceipt, StoreError>
 InstrumentStore::commit_terminal_impl(
     OperationId operation,
@@ -209,6 +267,18 @@ std::optional<OperationSnapshot> InstrumentStore::inspect_operation(
         if (slots_[index].slot_state == SlotState::Visible &&
             slots_[index].operation.id == operation) {
             return slots_[index].operation;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<CompletedSweepBundle> InstrumentStore::inspect_completed_sweep(
+    OperationId operation) const noexcept {
+    for (std::size_t index = 0U; index < capacity_; ++index) {
+        const auto& slot = slots_[index];
+        if (slot.slot_state == SlotState::Visible &&
+            slot.operation.id == operation && slot.completed_sweep.has_value()) {
+            return *slot.completed_sweep;
         }
     }
     return std::nullopt;

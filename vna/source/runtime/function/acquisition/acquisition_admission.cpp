@@ -99,6 +99,25 @@ bool AcquisitionAdmissionPool::Lease::narrow_to(
     }
 
     const auto& capabilities = claim_.capabilities;
+    bool observation_map_valid = manifest.required_observation_count > 0U &&
+        manifest.required_observation_count <= claim_.maximum_chunks &&
+        manifest.required_observation_count <=
+            manifest.required_observations.size();
+    for (std::size_t index = 0U;
+         observation_map_valid && index < manifest.required_observation_count;
+         ++index) {
+        observation_map_valid =
+            manifest.required_observations[index].point_count ==
+            manifest.actual_point_count;
+        for (std::size_t previous = 0U;
+             observation_map_valid && previous < index;
+             ++previous) {
+            observation_map_valid =
+                manifest.required_observations[previous].wave !=
+                manifest.required_observations[index].wave;
+        }
+    }
+
     return manifest.id.valid() && manifest.prepared_id.valid() &&
         manifest.manifest_digest.valid() &&
         manifest.session_id == capabilities.session_id &&
@@ -111,6 +130,7 @@ bool AcquisitionAdmissionPool::Lease::narrow_to(
         manifest.actual_point_count <= claim_.maximum_points &&
         manifest.actual_start_hz >= claim_.minimum_start_hz &&
         manifest.actual_stop_hz <= claim_.maximum_stop_hz &&
+        observation_map_valid &&
         (manifest.actual_point_count == 1U
              ? manifest.actual_stop_hz == manifest.actual_start_hz
              : manifest.actual_stop_hz > manifest.actual_start_hz);
@@ -128,6 +148,19 @@ bool AcquisitionAdmissionPool::Lease::finalize_failure() noexcept {
     (void)exact_finalization_.retire();
     // 两个 purpose-specific owner 都终结后才记录一次，避免布尔计数冒充部分完成。
     owner_->record_failure_finalization();
+    return true;
+}
+
+bool AcquisitionAdmissionPool::Lease::finalize_success() noexcept {
+    if (!valid()) {
+        return false;
+    }
+    const auto completion_retired = a_only_completion_.retire();
+    const auto preview_retired = disabled_preview_.retire();
+    if (!completion_retired || !preview_retired) {
+        return false;
+    }
+    owner_->record_success_finalization();
     return true;
 }
 
@@ -166,6 +199,7 @@ AcquisitionAdmissionPool::reserve(Claim claim) noexcept {
 AcquisitionAdmissionPool::Snapshot AcquisitionAdmissionPool::inspect() const noexcept {
     Snapshot snapshot{};
     snapshot.failure_finalizations = failure_finalizations_;
+    snapshot.success_finalizations = success_finalizations_;
     for (std::size_t index = 0U; index < capacity_; ++index) {
         if (slots_[index].resources != 0U) {
             ++snapshot.in_use;
@@ -188,6 +222,10 @@ void AcquisitionAdmissionPool::release_resource(
 
 void AcquisitionAdmissionPool::record_failure_finalization() noexcept {
     ++failure_finalizations_;
+}
+
+void AcquisitionAdmissionPool::record_success_finalization() noexcept {
+    ++success_finalizations_;
 }
 
 }  // namespace vna::acquisition

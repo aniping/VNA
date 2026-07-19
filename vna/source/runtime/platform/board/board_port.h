@@ -14,6 +14,8 @@
 
 namespace vna::board {
 
+class AcquisitionBufferPool;
+
 /// 以下强类型 ID 分别标识单板会话、Prepare 调用、已准备执行、清单、
 /// Run 调用、Run 代次和数据块序号；不同种类的 ID 不能隐式混用。
 using BoardSessionId = core::StrongId<struct BoardSessionIdTag>;
@@ -185,6 +187,25 @@ private:
     bool valid_{false};
 };
 
+/// 原始接收机波量种类；尚未经过比值、校准或格式化处理。
+enum class ReceiverWave {
+    /// 入射参考接收机 a 波。
+    IncidentA,
+    /// 响应测量接收机 b 波。
+    ResponseB
+};
+
+/// 单次 Prepared Manifest 可声明的最大必需接收机观测数。
+constexpr std::size_t kMaximumPreparedObservations = 4U;
+
+/// Prepared Manifest 中一项必须完整交付的接收机观测。
+struct PreparedObservationSpec final {
+    /// 观测的接收机波量身份。
+    ReceiverWave wave{ReceiverWave::IncidentA};
+    /// 本观测必须覆盖的完整点数。
+    std::uint32_t point_count{0U};
+};
+
 /// Prepare 成功后由适配器确认的实际执行参数和版本证据。
 struct PreparedExecutionManifest final {
     ManifestId id{};
@@ -204,6 +225,12 @@ struct PreparedExecutionManifest final {
     double actual_start_hz{0.0};
     /// 单板实际使用的终止频率，单位 Hz。
     double actual_stop_hz{0.0};
+    /// 本次执行必须完整交付的有界接收机观测图。
+    std::array<PreparedObservationSpec, kMaximumPreparedObservations>
+        required_observations{};
+    /// required_observations 中有效项数量，范围为
+    /// [1, kMaximumPreparedObservations]。
+    std::uint32_t required_observation_count{0U};
 };
 
 /// Prepare 成功后允许且仅允许启动对应已准备执行的 move-only 令牌。
@@ -404,34 +431,6 @@ private:
     bool valid_{false};
 };
 
-/// 单次 Run 数据交付预算的 move-only 凭证。
-///
-/// begin_run() 接受后由适配器持有，并在发送终态前 retire；同步拒绝时
-/// 必须原样返还给调用者，防止交付预算泄漏或被重复使用。
-class RunDeliveryGrant final {
-public:
-    /// @param grant_id 非 0 的交付许可 ID；0 会创建无效凭证。
-    explicit RunDeliveryGrant(std::uint64_t grant_id) noexcept
-        : grant_id_(grant_id), valid_(grant_id != 0U) {}
-    RunDeliveryGrant(RunDeliveryGrant&& other) noexcept;
-    RunDeliveryGrant& operator=(RunDeliveryGrant&& other) noexcept;
-    RunDeliveryGrant(const RunDeliveryGrant&) = delete;
-    RunDeliveryGrant& operator=(const RunDeliveryGrant&) = delete;
-
-    /// @return 凭证尚未被移动或注销时返回 true。
-    bool valid() const noexcept { return valid_; }
-    /// @return 交付许可的原始 ID。
-    std::uint64_t grant_id() const noexcept { return grant_id_; }
-    /// 显式注销许可，使其不能再次用于 Run。
-    void retire() noexcept { invalidate(); }
-
-private:
-    void invalidate() noexcept;
-
-    std::uint64_t grant_id_{0U};
-    bool valid_{false};
-};
-
 /// 一个接收机复数采样点，采用实部/虚部笛卡尔表示。
 struct ComplexSample final {
     float real{0.0F};
@@ -445,23 +444,25 @@ struct ComplexSample final {
 /// 单个 BoardPort 数据块在当前契约中可携带的最大复数点数。
 constexpr std::size_t kMaximumContractChunkSamples = 64U;
 
-/// 独占携带一块接收机采样数据的 move-only 租约。
+/// 独占携带一块接收机采样数据的 move-only BufferPool 租约。
 ///
-/// 当前实现把样本复制进固定数组，接口仍采用租约语义，以便真实适配器后续
-/// 替换为 DMA/缓冲池所有权而不改变上层数据流契约。
+/// 样本位于首次派发前预留的固定 Pool 槽中；移动只转移槽位身份和指针，不复制
+/// 复数数组。最后一个 owner 析构或被覆盖时将槽位归还签发 Pool。
 class AcquisitionChunkLease final {
 public:
-    /// 创建数据块租约。
-    /// @param samples 固定容量样本源。
-    /// @param size 有效样本数，范围必须为 [1, kMaximumContractChunkSamples]；
-    ///        越界时创建无效租约且 size() 为 0。
-    AcquisitionChunkLease(
-        const std::array<ComplexSample, kMaximumContractChunkSamples>& samples,
-        std::size_t size) noexcept;
+    /// 转移 Pool 槽位唯一所有权。
+    /// @param other 所有权来源；构造完成后失效，只能析构或重新赋值。
     AcquisitionChunkLease(AcquisitionChunkLease&& other) noexcept;
+    /// 先归还目标当前槽位，再转移来源 Pool 槽位。
+    /// @param other 所有权来源；赋值完成后失效，只能析构或重新赋值。
+    /// @return 当前 lease 引用。
     AcquisitionChunkLease& operator=(AcquisitionChunkLease&& other) noexcept;
+    /// Pool lease 具有唯一槽位所有权，禁止复制。
     AcquisitionChunkLease(const AcquisitionChunkLease&) = delete;
+    /// Pool lease 具有唯一槽位所有权，禁止复制赋值。
     AcquisitionChunkLease& operator=(const AcquisitionChunkLease&) = delete;
+    /// 向签发 Pool 归还仍持有的 generation-bound 槽位。
+    ~AcquisitionChunkLease();
 
     /// @return 租约包含合法的非空数据块时返回 true。
     bool valid() const noexcept { return valid_; }
@@ -475,19 +476,90 @@ public:
     }
 
 private:
+    friend class AcquisitionBufferPool;
+
+    AcquisitionChunkLease(
+        AcquisitionBufferPool& owner,
+        const ComplexSample* samples,
+        std::size_t slot,
+        std::uint64_t generation,
+        std::size_t size) noexcept;
+    void release() noexcept;
     void invalidate() noexcept;
 
-    std::array<ComplexSample, kMaximumContractChunkSamples> samples_{};
+    AcquisitionBufferPool* owner_{nullptr};
+    const ComplexSample* samples_{nullptr};
+    std::size_t slot_{0U};
+    std::uint64_t generation_{0U};
     std::size_t size_{0U};
     bool valid_{false};
 };
 
-/// 原始接收机波形种类；尚未经过比值、校准或格式化处理。
-enum class ReceiverWave {
-    /// 入射参考接收机 A 波。
-    IncidentA,
-    /// 响应测量接收机 B 波。
-    ResponseB
+/// 单次 Run 数据交付预算与预留回退 Buffer 的 move-only 凭证。
+///
+/// begin_run() 接受后由适配器持有，并在发送终态前 retire；同步拒绝时
+/// 必须原样返还给调用者。Pool 签发的凭证允许不可转移的底软内存在 callback
+/// 前通过 copy_fallback() 复制一次，后续只移动 AcquisitionChunkLease。
+class RunDeliveryGrant final {
+public:
+    /// 建立不携带回退 Buffer 的交付许可，仅适用于不会交付 payload 的失败/拒绝路径。
+    /// @param grant_id 非 0 的交付许可 ID；0 会创建无效凭证。
+    explicit RunDeliveryGrant(std::uint64_t grant_id) noexcept
+        : grant_id_(grant_id), valid_(grant_id != 0U) {}
+    /// 转移交付许可及全部尚未使用的 Pool 预留槽。
+    /// @param other 所有权来源；构造完成后失效，只能析构或重新赋值。
+    RunDeliveryGrant(RunDeliveryGrant&& other) noexcept;
+    /// 先 retire 当前许可并归还未使用槽，再转移来源。
+    /// @param other 所有权来源；赋值完成后失效，只能析构或重新赋值。
+    /// @return 当前 grant 引用。
+    RunDeliveryGrant& operator=(RunDeliveryGrant&& other) noexcept;
+    /// 交付许可及预留槽只能有一个 owner，禁止复制。
+    RunDeliveryGrant(const RunDeliveryGrant&) = delete;
+    /// 交付许可及预留槽只能有一个 owner，禁止复制赋值。
+    RunDeliveryGrant& operator=(const RunDeliveryGrant&) = delete;
+    /// 归还仍未转换为 lease 的预留槽；已签发 lease 独立归还自身槽位。
+    ~RunDeliveryGrant();
+
+    /// @return 凭证尚未被移动或注销时返回 true。
+    bool valid() const noexcept { return valid_; }
+    /// @return 交付许可的原始 ID。
+    std::uint64_t grant_id() const noexcept { return grant_id_; }
+    /// @return 尚可转换为 AcquisitionChunkLease 的预留回退槽位数。
+    std::size_t remaining_fallback_capacity() const noexcept {
+        return reserved_count_ - issued_count_;
+    }
+
+    /// 将不可转移的底软样本复制一次到下一个预留槽并取得唯一 lease。
+    /// @param samples callback 返回后可能立即失效或复用的固定容量源数组。
+    /// @param size 有效点数，范围必须为 [1, kMaximumContractChunkSamples]。
+    /// @return 成功时返回指向预留 Pool 槽的 move-only lease；凭证未由 Pool
+    ///         签发或预留槽不足时返回 ResourceExhausted，输入/槽位身份非法时
+    ///         返回 ContractViolation；失败不消费槽位。
+    core::Result<AcquisitionChunkLease, BoardError> copy_fallback(
+        const std::array<ComplexSample, kMaximumContractChunkSamples>& samples,
+        std::size_t size) noexcept;
+
+    /// 注销许可并归还所有未转换为 lease 的预留槽；可重复调用。
+    void retire() noexcept;
+
+private:
+    friend class AcquisitionBufferPool;
+
+    RunDeliveryGrant(
+        std::uint64_t grant_id,
+        AcquisitionBufferPool& buffer_pool,
+        std::array<std::size_t, kMaximumPreparedObservations> reserved_slots,
+        std::array<std::uint64_t, kMaximumPreparedObservations> generations,
+        std::size_t reserved_count) noexcept;
+    void invalidate() noexcept;
+
+    std::uint64_t grant_id_{0U};
+    AcquisitionBufferPool* buffer_pool_{nullptr};
+    std::array<std::size_t, kMaximumPreparedObservations> reserved_slots_{};
+    std::array<std::uint64_t, kMaximumPreparedObservations> generations_{};
+    std::size_t reserved_count_{0U};
+    std::size_t issued_count_{0U};
+    bool valid_{false};
 };
 
 /// 可按位组合的接收机数据质量异常。
@@ -682,7 +754,8 @@ public:
     /// @param generation 非 0 的 Run 代次，用于丢弃迟到事件。
     /// @param prepared Prepare 成功返回且与 authorization 匹配的启动令牌。
     /// @param authorization 绑定会话、清单、运行状态和接收能力的启动授权。
-    /// @param delivery 上层预留的数据交付预算凭证。
+    /// @param delivery 上层预留的数据交付预算凭证；会产生正式 payload 的执行
+    ///        还必须携带覆盖 Manifest 必需块数的固定 BufferPool 槽。
     /// @param sink 接收阶段、A/B 原始数据块和唯一终态的注册。
     /// @return RunAccepted 表示所有 move-only 输入已被消费且后续异步回调；
     ///         RunRejected 表示未启动，并原样返还全部输入且永不回调。

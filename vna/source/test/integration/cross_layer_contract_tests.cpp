@@ -6,6 +6,7 @@
 #include "runtime/function/instrument/sweep_admission.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <limits>
@@ -96,7 +97,8 @@ public:
     enum class Fault {
         PrepareAcceptedIdentity,
         RunAcceptedIdentity,
-        PrepareDraining
+        PrepareDraining,
+        ChunkBeforeRunAccepted
     };
 
     explicit ContractBreakingBoard(Fault fault) noexcept : fault_(fault) {}
@@ -167,12 +169,44 @@ public:
         }
         run_ = run;
         generation_ = generation;
+        if (fault_ == Fault::ChunkBeforeRunAccepted) {
+            std::array<
+                vna::board::ComplexSample,
+                vna::board::kMaximumContractChunkSamples> samples{};
+            samples[0U] = vna::board::ComplexSample{1.0F, 0.0F};
+            auto payload = delivery.copy_fallback(samples, 1U);
+            if (!payload.has_value()) {
+                return vna::board::RunRejected{
+                    vna::board::BoardError{
+                        vna::board::BoardErrc::ResourceExhausted},
+                    vna::board::ReclaimedRunInputs{
+                        std::move(prepared),
+                        std::move(authorization),
+                        std::move(delivery),
+                        std::move(sink)}};
+            }
+            vna::board::ReceiverObservationChunk chunk{
+                vna::board::ManifestId{81U},
+                vna::board::PreparedExecutionId{81U},
+                run,
+                generation,
+                vna::board::ChunkSequence{1U},
+                vna::board::ReceiverWave::IncidentA,
+                0U,
+                std::move(payload).take_value(),
+                vna::board::ChunkQuality{}};
+            early_chunk_disposition_ = sink.sink().on_chunk(std::move(chunk));
+            early_chunk_consumed_ = !chunk.payload.valid();
+        }
         prepared_.emplace(std::move(prepared));
         start_authorization_.emplace(std::move(authorization));
         delivery_.emplace(std::move(delivery));
         run_sink_.emplace(std::move(sink));
         return vna::board::RunAccepted{
-            vna::board::BoardRunId{run.value() + 100U}, generation};
+            fault_ == Fault::RunAcceptedIdentity
+                ? vna::board::BoardRunId{run.value() + 100U}
+                : run,
+            generation};
     }
 
     void complete_prepare() noexcept {
@@ -191,7 +225,17 @@ public:
             manifest_digest,
             prepare_intent_.point_count,
             prepare_intent_.start_hz,
-            prepare_intent_.stop_hz};
+            prepare_intent_.stop_hz,
+            std::array<
+                vna::board::PreparedObservationSpec,
+                vna::board::kMaximumPreparedObservations>{
+                vna::board::PreparedObservationSpec{
+                    vna::board::ReceiverWave::IncidentA,
+                    prepare_intent_.point_count},
+                vna::board::PreparedObservationSpec{
+                    vna::board::ReceiverWave::ResponseB,
+                    prepare_intent_.point_count}},
+            2U};
         auto sink = std::move(*prepare_sink_);
         prepare_sink_.reset();
         vna::board::PrepareTerminal terminal = vna::board::PrepareSucceeded{
@@ -243,6 +287,12 @@ public:
         return active_reservation_.valid();
     }
 
+    bool early_chunk_consumed() const noexcept { return early_chunk_consumed_; }
+
+    vna::board::ChunkIngressDisposition early_chunk_disposition() const noexcept {
+        return early_chunk_disposition_;
+    }
+
 private:
     void release_execution_reservation(
         vna::board::BoardExecutionReservationId id) noexcept override {
@@ -271,6 +321,9 @@ private:
     std::optional<vna::board::StartAuthorization> start_authorization_{};
     std::optional<vna::board::RunDeliveryGrant> delivery_{};
     std::optional<vna::board::BoardRunSinkRegistration> run_sink_{};
+    bool early_chunk_consumed_{false};
+    vna::board::ChunkIngressDisposition early_chunk_disposition_{
+        vna::board::ChunkIngressDisposition::Accepted};
     vna::board::BoardExecutionReservationId active_reservation_{};
 };
 
@@ -291,7 +344,6 @@ SubmissionTimingSample measure_a_only_submission(std::uint32_t point_count) {
     scenario.run_behavior = board::MockRunBehavior::Fail;
     scenario.prepare_delay = 0U;
     scenario.run_delay = 0U;
-    scenario.point_count = 0U;
     board::MockBoardProvider provider{
         board::MockCapabilityProfile{201U}, scenario};
     auto opened_result = provider.open_controlled(
@@ -564,7 +616,6 @@ TEST(AOnlySweepContract, ExplicitDiagnosticAuthorizationPrecedesAccepted) {
     scenario.run_behavior = board::MockRunBehavior::Fail;
     scenario.prepare_delay = 0U;
     scenario.run_delay = 0U;
-    scenario.point_count = 0U;
     board::MockBoardProvider provider{
         board::MockCapabilityProfile{201U}, scenario};
     auto opened_result = provider.open_controlled(
@@ -630,7 +681,6 @@ TEST(AOnlySweepContract, MockRunFailsAtScheduledThreeHundredFiftyMilliseconds) {
     scenario.prepare_delay = 5U;
     scenario.run_behavior = board::MockRunBehavior::Fail;
     scenario.run_delay = 350U;
-    scenario.point_count = 0U;
     board::MockBoardProvider provider{
         board::MockCapabilityProfile{201U}, scenario};
     auto opened_result = provider.open_controlled(
@@ -732,7 +782,6 @@ TEST(AOnlySweepContract, ContinuationExpiryIsRelativeToCurrentBoardTick) {
     scenario.prepare_delay = 0U;
     scenario.run_behavior = board::MockRunBehavior::Fail;
     scenario.run_delay = 0U;
-    scenario.point_count = 0U;
     board::MockBoardProvider provider{
         board::MockCapabilityProfile{201U}, scenario};
     auto opened_result = provider.open_controlled(
@@ -1041,6 +1090,48 @@ TEST(AOnlySweepContract, WrongRunAcceptedIdentityKeepsSinkAliveThroughDrain) {
     VNA_REQUIRE(kernel.run_one());
     VNA_REQUIRE(kernel.run_one());
     VNA_REQUIRE(runtime.inspect().draining == 0U);
+    VNA_REQUIRE(acquisition_resources.inspect().in_use == 0U);
+    VNA_REQUIRE(!board.execution_reserved());
+}
+
+TEST(AOnlySweepContract, EarlyRunChunkIsRejectedAndConsumedAtBoardBoundary) {
+    using namespace vna;
+
+    ManualRuntimeClock clock;
+    runtime::OperationRuntime runtime{1U, clock};
+    store::InstrumentStore store{1U};
+    acquisition::AcquisitionAdmissionPool acquisition_resources{1U};
+    ContractBreakingBoard board{
+        ContractBreakingBoard::Fault::ChunkBeforeRunAccepted};
+    instrument::InstrumentKernel kernel{
+        runtime,
+        store,
+        board,
+        acquisition_resources,
+        clock,
+        instrument::AOnlyKernelProfile{1000U, 64U}};
+    const auto submitted = kernel.submit_a_only(instrument::AOnlySweepRequest{
+        3U,
+        1.0e6,
+        3.0e6,
+        instrument::AOnlyDiagnosticAuthorization::issue_for_mock_diagnostics()});
+    VNA_REQUIRE(submitted.has_value());
+
+    VNA_REQUIRE(kernel.run_one());
+    board.complete_prepare();
+    VNA_REQUIRE(kernel.run_one());
+    VNA_REQUIRE(
+        board.early_chunk_disposition() ==
+        board::ChunkIngressDisposition::AbortRunProtocolViolation);
+    // Adapter 违反时序不改变所有权边界：Engine 拒绝后也必须消费 Pool lease。
+    VNA_REQUIRE(board.early_chunk_consumed());
+
+    board.complete_run_failure();
+    VNA_REQUIRE(kernel.run_one());
+    VNA_REQUIRE(kernel.run_one());
+    VNA_REQUIRE(
+        store.inspect_operation(submitted.value().operation)->state ==
+        store::OperationState::Failed);
     VNA_REQUIRE(acquisition_resources.inspect().in_use == 0U);
     VNA_REQUIRE(!board.execution_reserved());
 }

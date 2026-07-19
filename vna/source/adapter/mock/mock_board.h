@@ -28,6 +28,14 @@ enum class MockRunBehavior {
     Reject
 };
 
+/// Mock 成功 Run 的正式观测交付策略。
+enum class MockObservationBehavior {
+    /// 按 Manifest 交付全部必需观测后报告 Completed。
+    Complete,
+    /// 省略响应波 b 但仍报告 Completed，用于证明 terminal 不等于完整覆盖。
+    OmitResponseButComplete
+};
+
 /// Mock 对外公布的硬件能力配置。
 struct MockCapabilityProfile final {
     /// 单次扫描支持的最大点数。
@@ -42,8 +50,9 @@ struct MockScenario final {
     MockRunBehavior run_behavior{MockRunBehavior::Succeed};
     /// Run 从接受到开始交付事件所需的虚拟毫秒数。
     VirtualDuration run_delay{1U};
-    /// 每种接收机波形交付的有效点数，最大为 kMaximumContractChunkSamples。
-    std::uint32_t point_count{3U};
+    /// 成功 Run 如何交付 Manifest 要求的观测；接受 Run 时按值冻结。
+    MockObservationBehavior observation_behavior{
+        MockObservationBehavior::Complete};
     /// 将作为 IncidentA 数据块交付的确定性复数样本。
     std::array<ComplexSample, kMaximumContractChunkSamples> incident_a{};
     /// 将作为 ResponseB 数据块交付的确定性复数样本。

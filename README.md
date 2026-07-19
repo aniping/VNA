@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-候选分层架构 v0.1、跨层 Interface、Board Adapter、端到端数据流/生命周期契约与 176 项商用功能矩阵已经完成文档基线，其中商用功能已完成官方证据归类。第一条 C++17/MinGW A-only 失败纵切已经闭合：公共 `InstrumentKernel` 接收类型化 raw/diagnostic 请求，依次经过固定容量 Runtime、L4 Acquisition、Mock Board Prepare/Run 和 Store 原子失败提交。这些代码用于关闭关键所有权契约，还不是整机产品规格或完整业务实现。
+候选分层架构 v0.1、跨层 Interface、Board Adapter、端到端数据流/生命周期契约与 176 项商用功能矩阵已经完成文档基线，其中商用功能已完成官方证据归类。C++17/MinGW A-only 成功/失败纵切已经闭合：公共 `InstrumentKernel` 接收类型化 raw/diagnostic 请求，依次经过固定容量 Runtime、L4 Acquisition、Mock Board Prepare/Run 和 Store 原子终态提交；成功路径发布第一份正式 A 层 `CompletedSweepBundle`。这些代码用于关闭关键数据与所有权契约，还不是整机产品规格或完整业务实现。
 
 ## 当前可执行纵切
 
@@ -24,16 +24,22 @@
 - A-only 上层资源以七个具名 move-only RAII owner 在首次 dispatch 前全量准入；Mock Adapter 还会真实预占同一次 Prepare/Run 的 call、队列和 callback sink execution 槽，并强制其按 `Reserved → Preparing → Prepared → Running → Terminal` 一次性消费；非法 call/sink、跨阶段复用或第二项并发提交均同步零 callback/零幽灵拒绝；实际 Manifest 只能一次性消费精确收窄 capability，不能扩大频率/点数 envelope；
 - Adapter 返回错误的 `PrepareAccepted`/`RunAccepted` 身份时，Acquisition 会提交类型化失败并进入对应 terminal 的 Drain；只有携带清理证据的 `PrepareFailed` 或匹配的 Run terminal 可以解除 owner，`PrepareSucceeded`/`PrepareDraining` 因仍代表底板资源而转入 `Quarantined`；
 - `PrepareDraining` 会把具名 Board drain owner 与本地/Board 容量一起转入 `Quarantined`；当前 seam 没有后续排空证明，因此 Kernel 持续隔离整组 owner，绝不谎报 `Drained` 或复用容量；
-- Mock 延迟失败路径在同一 Store revision 原子写入 Failed Operation、status、fence 和类型化 Event，且 A/B/Stage/C 正式发布计数保持为 0。
+- Mock 延迟失败路径在同一 Store revision 原子写入 Failed Operation、status、fence 和类型化 Event，且 A/B/Stage/C 正式发布计数保持为 0；
+- Prepared Manifest 以有界 required observation map 声明本轮必需接收机波量；Mock 成功输出的点数、身份与形状只从该实际清单派生，不再使用独立场景点数；
+- Kernel 在首次派发前从固定 `AcquisitionBufferPool` 原子预留 a/b 两个回退槽并把它们绑定到 `RunDeliveryGrant`；Mock 用不可转移源数组模拟底软，在 callback 前只复制一次到 Pool，之后 `AcquisitionChunkLease` 只移动槽位指针和 generation；
+- 正式 chunk 通过固定容量 `AcquisitionIngress` 把 move-only `AcquisitionChunkLease` 从 Board callback 转交给唯一长期 owner `NetworkObservationBuilder`；拒绝也会消费 payload，回调不生成轴、不写 Store；
+- Builder 只在实际轴、全部必需 a/b 点覆盖、质量和唯一 Completed terminal 均闭合后密封 `CandidateCommitLease`；成功 terminal 但缺少 b 波会形成类型化失败且不发布部分 A；
+- L2 在 Runtime Completed 后才把 candidate 交给 Store；Store 在一个 revision 内共同发布不可变 `CompletedSweepBundle`、Completed Operation、status/fence 和完成 Event，receipt 返回后才终结 A-only completion 与 disabled Preview owner；
+- 公开 A 查询返回值副本，可读取实际轴、a/b 复数值、逐点质量、LogicalSweepId 及单元素 BoardRunEvidence，不暴露 Store 内部裸 Buffer；A-only 成功仍不发布 B、Stage、C 或空后继 handoff。
 
 当前明确未实现：
 
 - Board Safety/Maintenance、完整 discard/abort/排空恢复/Replay 和真实底软 Adapter；
-- 成功 A candidate/Builder 与不可变 CompletedSweepBundle（下一工单）、B/C 处理链、校准、Trace/Marker/Limit、Diagram、文件与诊断；
+- 乱序多块观测与连续不可变历史、B/C 处理链、校准、Trace/Marker/Limit、Diagram、文件与诊断；
 - Web、SCPI、cpp-httplib、Eigen3 和 JSON；
 - 公司 AArch64 SDK 编译与目标机/HIL 验证。
 
-当前 Mock 单个 contract chunk 使用 64 个复数样本的有界 backing；这是首条合同测试的临时上界，不是产品点数上限。接入正式 BufferPool/Ingress seam 后才能扩大或实现多 chunk，不能把它带入真实板卡能力声明。
+当前 Pool 单槽和 Mock 源数组最多携带 64 个复数样本，单块纵切的 Ingress 静态深度等于 Manifest 最大必需观测数，实际 A-only 准入深度为 2；这些都是本纵切的临时上界，不是产品点数上限。多 chunk、底软回调后立即复用源内存及 BufferPool/Ingress 容量压力分别由后续工单验收，不能把当前 Mock 约束带入真实板卡能力声明。
 
 当前可执行产品组合只包含 `VnaBoardMock`，没有 Real Board Adapter、SafetyLane、RF-off/readback 或 HIL 证据。A-only 授权明确命名为 Mock diagnostics；不得把该纵切连接真实 RF 或宣称具备生产安全能力。
 

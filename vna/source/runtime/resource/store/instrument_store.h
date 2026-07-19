@@ -4,6 +4,7 @@
 #include "runtime/core/base/strong_id.h"
 #include "runtime/function/acquisition/acquisition_result.h"
 #include "runtime/function/operation/operation_runtime.h"
+#include "runtime/resource/store/completed_sweep_bundle.h"
 
 #include <array>
 #include <cstddef>
@@ -13,8 +14,6 @@
 
 namespace vna::store {
 
-/// 对外可见操作的唯一标识；0 为无效值。
-using OperationId = core::StrongId<struct OperationIdTag>;
 /// Store Event Journal 内的单调事件身份；0 为无效值。
 using OperationEventId = core::StrongId<struct OperationEventIdTag>;
 
@@ -29,7 +28,9 @@ enum class StoreErrc {
     /// 相同 OperationId 已经可见。
     DuplicateOperation,
     /// 找不到要提交终态的操作。
-    OperationNotFound
+    OperationNotFound,
+    /// A candidate 无效，或其 WorkId/plan digest 与 Accepted Operation 不匹配。
+    InvalidCandidate
 };
 
 /// Store 接口返回的类型化错误。
@@ -85,6 +86,10 @@ struct OperationEventSnapshot final {
     /// failure 字段是否保存一项完整 A-only 采集失败。
     bool has_acquisition_failure{false};
     acquisition::AcquisitionFailure failure{};
+    /// 本 Event 是否引用同 revision 发布的 CompletedSweepBundle。
+    bool has_completed_sweep{false};
+    /// has_completed_sweep 为 true 时的正式 A snapshot ID。
+    acquisition::CompletedSweepId completed_sweep{};
 };
 
 /// 当前正式数据 Catalog 中各数据阶段的发布数量。
@@ -161,6 +166,26 @@ struct TerminalCommitReceipt final {
     TerminalCommitDisposition disposition{TerminalCommitDisposition::Committed};
 };
 
+/// A-only 成功 publication 原子提交后的回执。
+struct CompletedSweepCommitReceipt final {
+    OperationId operation{};
+    acquisition::CompletedSweepId completed_sweep{};
+    /// 与 A、Operation、status、fence 和 Event 共同使用的新 revision。
+    std::uint64_t revision{0U};
+};
+
+/// A-only 成功 publication 被拒绝时的回执。
+struct RejectedCompletedSweepCommit final {
+    StoreError error{};
+    /// Store 未取得所有权的完整 candidate，调用者仍须重试或显式 abort。
+    acquisition::CandidateCommitLease reclaimed;
+};
+
+/// A-only success bundle 的封闭提交结果。
+using CompletedSweepCommitResult = std::variant<
+    CompletedSweepCommitReceipt,
+    RejectedCompletedSweepCommit>;
+
 /// Store 资源占用和修订号的只读快照。
 struct StoreSnapshot final {
     /// 已预留但尚未公开为 Accepted 的生命周期数。
@@ -175,8 +200,8 @@ struct StoreSnapshot final {
 
 /// 固定容量的仪器操作生命周期存储。
 ///
-/// 当前仅保存操作生命周期，不保存通道、迹线或测量数据。所有接口均为同步调用，
-/// 且不在内部动态扩容，便于后续映射到 RTOS 的有界资源模型。
+/// 当前保存 A-only Operation 生命周期与固定容量 CompletedSweepBundle，不保存
+/// B/Stage/C。所有接口均同步且不动态扩容，便于映射到 RTOS 有界资源模型。
 class InstrumentStore final {
 public:
     static constexpr std::size_t kMaximumOperations = 16U;
@@ -229,10 +254,27 @@ public:
         OperationId operation,
         acquisition::AcquisitionFailure failure) noexcept;
 
+    /// 原子发布 A-only 成功的全部权威事实。
+    /// @param operation 已经 Accepted 且安装终态预留的 OperationId。
+    /// @param candidate worker 返回、仍拥有全部正式观测的 move-only 候选；成功
+    ///        时被消费，拒绝时在结果中原样返还。
+    /// @return 成功时 A、Completed Operation、status、fence 和 Event 共享同一
+    ///         revision；身份/关联不匹配时 Store 不改变且返还 candidate。
+    CompletedSweepCommitResult commit_completed_sweep(
+        OperationId operation,
+        acquisition::CandidateCommitLease&& candidate) noexcept;
+
     /// 按 ID 查询操作状态。
     /// @param operation 要查询的操作 ID。
     /// @return 找到时返回值拷贝；不存在时返回 std::nullopt。
     std::optional<OperationSnapshot> inspect_operation(
+        OperationId operation) const noexcept;
+
+    /// 按关联 Operation 查询已发布的不可变 A 层快照。
+    /// @param operation 产生该快照的 OperationId。
+    /// @return 发布完成时返回独立值副本；Accepted/Failed/不存在时为空。返回值
+    ///         不包含 Store 内部裸 Buffer，生命周期由调用者副本自身决定。
+    std::optional<CompletedSweepBundle> inspect_completed_sweep(
         OperationId operation) const noexcept;
 
     /// 查询某个 Operation 已提交的终态 fence。
@@ -270,6 +312,7 @@ private:
         OperationFenceSnapshot fence{};
         bool event_visible{false};
         OperationEventSnapshot event{};
+        std::optional<CompletedSweepBundle> completed_sweep{};
     };
 
     void release_reservation(

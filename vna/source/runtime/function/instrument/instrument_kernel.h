@@ -4,6 +4,7 @@
 #include "runtime/function/acquisition/acquisition_admission.h"
 #include "runtime/function/acquisition/acquisition_engine.h"
 #include "runtime/function/operation/operation_runtime.h"
+#include "runtime/platform/board/acquisition_buffer_pool.h"
 #include "runtime/platform/board/board_port.h"
 #include "runtime/resource/store/instrument_store.h"
 
@@ -122,12 +123,17 @@ public:
     bool run_one() noexcept;
 
 private:
+    /// 当前 A-only 单块清单固定需要 a/b 两个 chunk；Claim、Pool 与 Ingress 共用。
+    static constexpr std::size_t kAOnlyChunkCapacity = 2U;
+
     struct Slot final {
         bool active{false};
         bool release_pending{false};
         runtime::WorkId work{};
         store::OperationId operation{};
         std::optional<acquisition::AcquisitionEngine> engine{};
+        /// Store success commit 后 owner 无法安全终结时继续隔离的聚合。
+        std::optional<acquisition::AcquisitionSucceeded> pending_success{};
     };
 
     void on_runtime_terminal(
@@ -147,9 +153,13 @@ private:
     runtime::RuntimeMonotonicClock& clock_;
     AOnlyKernelProfile profile_{};
     runtime::RuntimeCompletionReceiver completion_receiver_;
+    /// 单板一次只允许一项 execution，A-only 因而固定预留 a/b 两个回退槽。
+    board::AcquisitionBufferPool acquisition_buffers_{kAOnlyChunkCapacity};
     std::array<Slot, kMaximumAOnlyOperations> slots_{};
     std::uint64_t next_operation_id_{1U};
     std::uint64_t next_work_id_{1U};
+    std::uint64_t next_completed_sweep_id_{1U};
+    std::uint64_t next_logical_sweep_id_{1U};
 };
 
 }  // namespace vna::instrument

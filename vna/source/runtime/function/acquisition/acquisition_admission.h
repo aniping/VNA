@@ -120,6 +120,9 @@ public:
         std::size_t in_use{0U};
         /// A-only completion 与 disabled Preview owner 成对失败终结的累计次数。
         std::uint64_t failure_finalizations{0U};
+        /// A-only completion 与 disabled Preview owner 在 A commit receipt 后
+        /// 成对成功终结的累计次数。
+        std::uint64_t success_finalizations{0U};
     };
 
     /// 一项 generation-bound 的 move-only 上层采集资源租约。
@@ -159,6 +162,12 @@ public:
         /// @note 本调用不立即复用池槽；其余 owner 析构后才完全归还槽位。
         bool finalize_failure() noexcept;
 
+        /// 在 Store 已返回匹配 A publication receipt 后终结 completion/Preview owner。
+        /// @return 首次成功终结时返回 true；无效租约或重复调用返回 false。
+        /// @note 与 finalize_failure() 互斥；其余 A/candidate/Buffer/Ingress owner
+        ///       仍由本 Lease 析构归还固定容量。
+        bool finalize_success() noexcept;
+
     private:
         friend class AcquisitionAdmissionPool;
         Lease(
@@ -188,7 +197,7 @@ public:
     ///         活得更久。
     core::Result<Lease, Error> reserve(Claim claim) noexcept;
 
-    /// @return 当前占用数与已按失败终结的 owner 计数副本。
+    /// @return 当前占用数以及成功、失败终结 owner 的累计计数副本。
     Snapshot inspect() const noexcept;
 
 private:
@@ -208,11 +217,13 @@ private:
         std::uint64_t generation,
         LocalResource resource) noexcept;
     void record_failure_finalization() noexcept;
+    void record_success_finalization() noexcept;
 
     std::array<Slot, kMaximumLeases> slots_{};
     std::size_t capacity_{0U};
     std::uint64_t next_generation_{1U};
     std::uint64_t failure_finalizations_{0U};
+    std::uint64_t success_finalizations_{0U};
 };
 
 }  // namespace vna::acquisition
