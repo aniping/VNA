@@ -80,6 +80,21 @@ enum class AOnlySubmitErrc {
 struct AOnlySubmitError final {
     /// 稳定拒绝分类；调用者不解析日志文本。
     AOnlySubmitErrc code{AOnlySubmitErrc::InvalidRequest};
+    /// 同步提交拒绝固定发生在首次 Accepted/dispatch 前的 Admission 阶段。
+    acquisition::AcquisitionFailurePhase phase{
+        acquisition::AcquisitionFailurePhase::Admission};
+    /// 调用者再次提交前必须满足的稳定前置条件。
+    acquisition::AcquisitionRetryClass retry{
+        acquisition::AcquisitionRetryClass::DoNotRetryWithoutChange};
+    /// Run 尚未被接受的执行生命周期事实；不代表物理 RF 安全证明。
+    acquisition::AcquisitionSafetyImpact safety{
+        acquisition::AcquisitionSafetyImpact::NoRunAccepted};
+    /// 已读取 capability cut 时保存 BoardSessionId；授权前拒绝时无效。
+    board::BoardSessionId board_session{};
+    /// 已读取 capability cut 时保存其 revision；授权前拒绝时为 0。
+    std::uint64_t capability_revision{0U};
+    /// 原请求携带的 revision 前置条件；0 表示未显式指定。
+    std::uint64_t expected_capability_revision{0U};
 };
 
 /// A-only 提交成功回执；不暴露 Runtime、Board 或输出 Buffer 身份。

@@ -106,6 +106,12 @@ struct AcquisitionFailure final {
     /// 当前失败已经取得的执行生命周期证据；不宣称物理 RF 安全。
     AcquisitionSafetyImpact safety{
         AcquisitionSafetyImpact::ResourceIsolationRequired};
+    /// PrepareSucceeded 已返回 Manifest 时保存其身份；此前失败时无效。
+    board::ManifestId manifest{};
+    /// Manifest 声明的 BoardSessionId；此前失败时无效。
+    board::BoardSessionId board_session{};
+    /// Manifest 声明的 capability revision；此前失败时为 0。
+    std::uint64_t capability_revision{0U};
 };
 
 /// L4 成功终态移交给 L2 的完整 publication 与 purpose-specific owner 集合。

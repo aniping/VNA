@@ -195,6 +195,22 @@ PrepareSinkRegistration& PrepareSinkRegistration::operator=(
     return *this;
 }
 
+DiscardPreparedSinkRegistration::DiscardPreparedSinkRegistration(
+    DiscardPreparedSinkRegistration&& other) noexcept
+    : sink_(other.sink_) {
+    other.sink_ = nullptr;
+}
+
+DiscardPreparedSinkRegistration&
+DiscardPreparedSinkRegistration::operator=(
+    DiscardPreparedSinkRegistration&& other) noexcept {
+    if (this != &other) {
+        sink_ = other.sink_;
+        other.sink_ = nullptr;
+    }
+    return *this;
+}
+
 namespace {
 
 constexpr BoardSessionId kMockSessionId{1U};
@@ -326,6 +342,13 @@ struct PendingPrepare final {
     VirtualDuration due_at{0U};
 };
 
+struct PendingDiscard final {
+    // begin_discard_prepared() 接受后，Mock 独占 token 与 sink 到 cleanup terminal。
+    PreparedStartToken prepared;
+    DiscardPreparedSinkRegistration sink;
+    VirtualDuration due_at{0U};
+};
+
 struct PendingRun final {
     // 场景在接受 Run 时复制，测试随后修改全局场景不会改变已排队执行。
     BoardRunId run{};
@@ -354,6 +377,8 @@ enum class MockExecutionReservationPhase {
     Reserved,
     Preparing,
     Prepared,
+    RunRejectedAwaitingDiscard,
+    Discarding,
     Running,
     Terminal
 };
@@ -480,7 +505,7 @@ public:
         auto reject = [&](BoardErrc code, bool consume) mutable -> RunSubmission {
             if (consume) {
                 execution_reservation_phase_ =
-                    MockExecutionReservationPhase::Terminal;
+                    MockExecutionReservationPhase::RunRejectedAwaitingDiscard;
             }
             // Run 拒绝与 Prepare 相同：调用者重新取得所有 move-only 输入的所有权。
             ++observations_.rejected_run_calls;
@@ -565,6 +590,47 @@ public:
         return RunAccepted{run, generation};
     }
 
+    DiscardPreparedSubmission begin_discard_prepared(
+        const BoardExecutionReservation& reservation,
+        PreparedStartToken&& prepared,
+        DiscardPreparedRequest request,
+        DiscardPreparedSinkRegistration&& sink) noexcept override {
+        (void)request;
+        auto reject = [&](BoardErrc code) mutable -> DiscardPreparedSubmission {
+            ++observations_.rejected_discard_calls;
+            return DiscardPreparedRejected{
+                BoardError{code},
+                ReclaimedDiscardPreparedInputs{
+                    std::move(prepared), std::move(sink)}};
+        };
+
+        const bool phase_allows_discard =
+            execution_reservation_phase_ ==
+                MockExecutionReservationPhase::Prepared ||
+            execution_reservation_phase_ ==
+                MockExecutionReservationPhase::RunRejectedAwaitingDiscard;
+        if (!owns_execution_reservation(reservation) ||
+            reservation.id() != active_execution_reservation_ ||
+            !phase_allows_discard || pending_discard_.has_value()) {
+            return reject(BoardErrc::ContractViolation);
+        }
+        if (!prepared.valid() || !sink.valid() ||
+            prepared.session_id() != capabilities_.session_id ||
+            prepared.prepared_id() != active_prepared_id_ ||
+            prepared.manifest_digest() != active_manifest_digest_) {
+            return reject(BoardErrc::AuthorizationMismatch);
+        }
+
+        const auto prepared_id = prepared.prepared_id();
+        ++observations_.accepted_discard_calls;
+        execution_reservation_phase_ = MockExecutionReservationPhase::Discarding;
+        pending_discard_.emplace(PendingDiscard{
+            std::move(prepared),
+            std::move(sink),
+            now_ + scenario_.discard_delay});
+        return DiscardPreparedAccepted{prepared_id};
+    }
+
     void load_profile(MockCapabilityProfile profile) noexcept override {
         profile_ = profile;
         ++capabilities_.capability_revision;
@@ -578,6 +644,10 @@ public:
         // 虚拟时钟取代 sleep/线程：测试对异步事件发生时刻拥有完全控制权。
         if (pending_prepare_.has_value() && pending_prepare_->due_at <= now_) {
             complete_prepare();
+        }
+
+        if (pending_discard_.has_value() && pending_discard_->due_at <= now_) {
+            complete_discard();
         }
 
         if (pending_run_.has_value()) {
@@ -596,7 +666,12 @@ private:
         // 违反契约，在 Accepted terminal 前销毁租约，则宁可保持槽位占用也不允许
         // 新请求复用仍持有 callback sink 的底层容量。
         if (active_execution_reservation_ == id &&
-            !pending_prepare_.has_value() && !pending_run_.has_value()) {
+            !pending_prepare_.has_value() && !pending_discard_.has_value() &&
+            !pending_run_.has_value() &&
+            (execution_reservation_phase_ ==
+                 MockExecutionReservationPhase::Reserved ||
+             execution_reservation_phase_ ==
+                 MockExecutionReservationPhase::Terminal)) {
             active_execution_reservation_ = BoardExecutionReservationId{};
             execution_reservation_phase_ = MockExecutionReservationPhase::None;
             active_prepared_id_ = PreparedExecutionId{};
@@ -686,6 +761,25 @@ private:
             PreparedManifestLease{std::move(manifest)}}};
         ++observations_.prepare_terminal_callbacks;
         pending.sink.sink().on_terminal(std::move(terminal));
+    }
+
+    void complete_discard() noexcept {
+        if (!pending_discard_.has_value()) {
+            return;
+        }
+
+        auto pending = std::move(*pending_discard_);
+        pending_discard_.reset();
+        const auto prepared_id = pending.prepared.prepared_id();
+        execution_reservation_phase_ = MockExecutionReservationPhase::Terminal;
+        active_prepared_id_ = PreparedExecutionId{};
+        active_manifest_digest_ = core::StrongDigest{};
+        active_manifest_ = PreparedExecutionManifest{};
+        ++observations_.discard_terminal_callbacks;
+        pending.sink.sink().on_terminal(DiscardPreparedTerminal{
+            prepared_id,
+            DiscardPreparedTerminalKind::Discarded,
+            BoardError{BoardErrc::ContractViolation}});
     }
 
     void progress_run() noexcept {
@@ -825,6 +919,7 @@ private:
     VirtualDuration now_{0U};
     std::uint64_t next_prepared_id_{1U};
     std::optional<PendingPrepare> pending_prepare_{};
+    std::optional<PendingDiscard> pending_discard_{};
     std::optional<PendingRun> pending_run_{};
     BoardExecutionReservationId active_execution_reservation_{};
     MockExecutionReservationPhase execution_reservation_phase_{

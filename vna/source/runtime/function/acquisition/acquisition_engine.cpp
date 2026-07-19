@@ -62,8 +62,7 @@ vna::acquisition::AcquisitionSafetyImpact safety_for_failure(
     using vna::acquisition::AcquisitionFailurePhase;
     using vna::acquisition::AcquisitionFailureReason;
     using vna::acquisition::AcquisitionSafetyImpact;
-    if (reason == AcquisitionFailureReason::BoardPrepareDraining ||
-        reason == AcquisitionFailureReason::BoardContractViolation) {
+    if (reason == AcquisitionFailureReason::BoardPrepareDraining) {
         return AcquisitionSafetyImpact::ResourceIsolationRequired;
     }
     if (phase == AcquisitionFailurePhase::Run &&
@@ -76,6 +75,16 @@ vna::acquisition::AcquisitionSafetyImpact safety_for_failure(
         return AcquisitionSafetyImpact::RunTerminalObserved;
     }
     return AcquisitionSafetyImpact::NoRunAccepted;
+}
+
+void attach_manifest_context(
+    vna::acquisition::AcquisitionFailure& failure,
+    vna::board::ManifestId manifest,
+    vna::board::BoardSessionId session,
+    std::uint64_t capability_revision) noexcept {
+    failure.manifest = manifest;
+    failure.board_session = session;
+    failure.capability_revision = capability_revision;
 }
 
 }  // namespace
@@ -165,6 +174,34 @@ runtime::RuntimeWorkStep AcquisitionEngine::start(
 
 runtime::RuntimeWorkStep AcquisitionEngine::resume(
     runtime::ExecutionContext& context) noexcept {
+    if (phase_ == Phase::DiscardingPrepared) {
+        if (!discard_terminal_.has_value()) {
+            // Prepared cleanup 使用 Prepare admission 时预留的独立 terminal route；
+            // 用户 stop/deadline 不能撤销这项板侧 cleanup 义务。
+            return runtime::RuntimeWorkStep::running();
+        }
+        const auto terminal = *discard_terminal_;
+        discard_terminal_.reset();
+        const bool cleanup_closed =
+            !discard_contract_violation_ && terminal.prepared == prepared_ &&
+            terminal.kind == board::DiscardPreparedTerminalKind::Discarded;
+        if (!cleanup_closed) {
+            failure_.reason = AcquisitionFailureReason::BoardContractViolation;
+            failure_.has_board_error =
+                terminal.kind ==
+                board::DiscardPreparedTerminalKind::CleanupFailed;
+            failure_.board_error = terminal.error.code;
+            failure_.retry = AcquisitionRetryClass::AfterRecovery;
+            failure_.safety =
+                AcquisitionSafetyImpact::ResourceIsolationRequired;
+            phase_ = Phase::Draining;
+            drain_obligation_ = DrainObligation::Quarantine;
+            return runtime::RuntimeWorkStep::draining(drain_);
+        }
+        phase_ = Phase::Terminal;
+        return runtime::RuntimeWorkStep::failed();
+    }
+
     if (phase_ == Phase::Preparing) {
         if (!prepare_terminal_.has_value()) {
             return wait_or_drain(context, AcquisitionFailurePhase::Prepare);
@@ -214,18 +251,28 @@ runtime::RuntimeWorkStep AcquisitionEngine::resume(
         }
 
         auto prepared = std::move(std::get<board::PrepareSucceeded>(terminal).execution);
-        const auto manifest = prepared.manifest.manifest();
+        prepared_manifest_.emplace(std::move(prepared.manifest));
+        const auto manifest = prepared_manifest_->manifest();
         prepared_ = manifest.prepared_id;
+        manifest_ = manifest.id;
+        board_session_ = manifest.session_id;
+        capability_revision_ = manifest.capability_revision;
         if (!resources_.narrow_to(manifest)) {
-            return fail(
+            return begin_prepared_discard(
+                std::move(prepared.start_token),
+                board::DiscardPreparedReason::ManifestOutsideAdmission,
                 AcquisitionFailurePhase::ManifestFinalization,
-                AcquisitionFailureReason::ManifestOutsideAdmission);
+                AcquisitionFailureReason::ManifestOutsideAdmission,
+                nullptr);
         }
         builder_.emplace(manifest, run_, generation_);
         if (builder_->error().has_value()) {
-            return fail(
+            return begin_prepared_discard(
+                std::move(prepared.start_token),
+                board::DiscardPreparedReason::ManifestOutsideAdmission,
                 AcquisitionFailurePhase::ManifestFinalization,
-                AcquisitionFailureReason::ManifestOutsideAdmission);
+                AcquisitionFailureReason::ManifestOutsideAdmission,
+                nullptr);
         }
 
         auto start_authorization = board::StartAuthorization::issue(
@@ -243,8 +290,18 @@ runtime::RuntimeWorkStep AcquisitionEngine::resume(
             std::move(delivery_),
             board::BoardRunSinkRegistration{*this});
         if (auto* rejected = std::get_if<board::RunRejected>(&submission)) {
-            return fail_board_rejection(
-                AcquisitionFailurePhase::Run, rejected->error);
+            auto reclaimed = std::move(rejected->reclaimed);
+            const auto error = rejected->error;
+            rejected_start_authorization_.emplace(
+                std::move(reclaimed.authorization));
+            rejected_delivery_.emplace(std::move(reclaimed.delivery));
+            rejected_run_sink_.emplace(std::move(reclaimed.sink));
+            return begin_prepared_discard(
+                std::move(reclaimed.prepared),
+                board::DiscardPreparedReason::RunRejected,
+                AcquisitionFailurePhase::Run,
+                AcquisitionFailureReason::BoardRejected,
+                &error);
         }
         const auto accepted = std::get<board::RunAccepted>(submission);
         if (accepted.run != run_ || accepted.generation != generation_) {
@@ -390,6 +447,16 @@ void AcquisitionEngine::on_terminal(
     prepare_terminal_.emplace(std::move(terminal));
 }
 
+void AcquisitionEngine::on_terminal(
+    board::DiscardPreparedTerminal&& terminal) noexcept {
+    if (phase_ != Phase::DiscardingPrepared ||
+        discard_terminal_.has_value()) {
+        discard_contract_violation_ = true;
+        return;
+    }
+    discard_terminal_.emplace(std::move(terminal));
+}
+
 void AcquisitionEngine::on_phase(
     const board::BoardRunPhaseEvent& event) noexcept {
     if ((phase_ != Phase::Acquiring && phase_ != Phase::Draining) ||
@@ -447,6 +514,8 @@ runtime::RuntimeWorkStep AcquisitionEngine::fail(
         board::BoardErrc::ContractViolation,
         retry_for_failure(reason),
         safety_for_failure(phase, reason)};
+    attach_manifest_context(
+        failure_, manifest_, board_session_, capability_revision_);
     phase_ = Phase::Terminal;
     return runtime::RuntimeWorkStep::failed();
 }
@@ -465,6 +534,8 @@ runtime::RuntimeWorkStep AcquisitionEngine::fail_board_rejection(
         error.code,
         retry_for_board_error(error.code),
         AcquisitionSafetyImpact::NoRunAccepted};
+    attach_manifest_context(
+        failure_, manifest_, board_session_, capability_revision_);
     phase_ = Phase::Terminal;
     return runtime::RuntimeWorkStep::failed();
 }
@@ -484,8 +555,69 @@ runtime::RuntimeWorkStep AcquisitionEngine::fail_board_terminal(
         error.code,
         retry_for_board_error(error.code),
         safety_for_failure(phase, reason)};
+    attach_manifest_context(
+        failure_, manifest_, board_session_, capability_revision_);
     phase_ = Phase::Terminal;
     return runtime::RuntimeWorkStep::failed();
+}
+
+runtime::RuntimeWorkStep AcquisitionEngine::begin_prepared_discard(
+    board::PreparedStartToken&& prepared,
+    board::DiscardPreparedReason discard_reason,
+    AcquisitionFailurePhase failure_phase,
+    AcquisitionFailureReason failure_reason,
+    const board::BoardError* board_error) noexcept {
+    const bool has_board_error = board_error != nullptr;
+    const auto error = has_board_error
+        ? board_error->code
+        : board::BoardErrc::ContractViolation;
+    failure_ = AcquisitionFailure{
+        failure_phase,
+        failure_reason,
+        prepare_call_,
+        prepared_,
+        run_,
+        generation_,
+        has_board_error,
+        error,
+        has_board_error ? retry_for_board_error(error)
+                        : retry_for_failure(failure_reason),
+        AcquisitionSafetyImpact::NoRunAccepted};
+    attach_manifest_context(
+        failure_, manifest_, board_session_, capability_revision_);
+
+    auto submission = execution_->begin_discard_prepared(
+        board_reservation_,
+        std::move(prepared),
+        board::DiscardPreparedRequest{discard_reason},
+        board::DiscardPreparedSinkRegistration{*this});
+    if (auto* rejected =
+            std::get_if<board::DiscardPreparedRejected>(&submission)) {
+        const auto discard_error = rejected->error;
+        quarantined_prepared_.emplace(
+            std::move(rejected->reclaimed.prepared));
+        quarantined_discard_sink_.emplace(
+            std::move(rejected->reclaimed.sink));
+        failure_.reason = AcquisitionFailureReason::BoardContractViolation;
+        failure_.has_board_error = true;
+        failure_.board_error = discard_error.code;
+        failure_.retry = AcquisitionRetryClass::AfterRecovery;
+        failure_.safety =
+            AcquisitionSafetyImpact::ResourceIsolationRequired;
+        phase_ = Phase::Draining;
+        drain_obligation_ = DrainObligation::Quarantine;
+        return runtime::RuntimeWorkStep::draining(drain_);
+    }
+
+    const auto accepted =
+        std::get<board::DiscardPreparedAccepted>(submission);
+    if (accepted.prepared != prepared_) {
+        // Adapter 已取得 token/sink，错误同步身份不能解除 callback 生命周期；
+        // 等真实 terminal 后转入 Quarantine，不能立即释放 reservation。
+        discard_contract_violation_ = true;
+    }
+    phase_ = Phase::DiscardingPrepared;
+    return runtime::RuntimeWorkStep::running();
 }
 
 runtime::RuntimeWorkStep AcquisitionEngine::wait_or_drain(
@@ -517,6 +649,8 @@ runtime::RuntimeWorkStep AcquisitionEngine::wait_or_drain(
         board::BoardErrc::ContractViolation,
         retry_for_failure(reason),
         AcquisitionSafetyImpact::ResourceIsolationRequired};
+    attach_manifest_context(
+        failure_, manifest_, board_session_, capability_revision_);
     phase_ = Phase::Draining;
     drain_obligation_ = phase == AcquisitionFailurePhase::Prepare
         ? DrainObligation::PrepareTerminal
@@ -540,6 +674,8 @@ runtime::RuntimeWorkStep AcquisitionEngine::drain_contract_violation(
         board::BoardErrc::ContractViolation,
         AcquisitionRetryClass::AfterRecovery,
         AcquisitionSafetyImpact::ResourceIsolationRequired};
+    attach_manifest_context(
+        failure_, manifest_, board_session_, capability_revision_);
     phase_ = Phase::Draining;
     drain_obligation_ = obligation;
     return runtime::RuntimeWorkStep::draining(drain_);

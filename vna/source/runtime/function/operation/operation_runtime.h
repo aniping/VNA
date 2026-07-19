@@ -356,6 +356,7 @@ public:
 
 class OperationRuntime;
 class ReservedWorkDispatch;
+class OperationRuntimeContractTestAccess;
 
 /// Runtime 签发的 move-only completion 接收路由能力。
 ///
@@ -559,6 +560,7 @@ public:
 
 private:
     friend class ReservedWorkDispatch;
+    friend class OperationRuntimeContractTestAccess;
 
     enum class SlotState {
         Empty,
@@ -609,6 +611,8 @@ private:
     DiscardingProgressSink progress_{};
     RuntimeMonotonicClock* clock_{nullptr};
     bool pumping_{false};
+    /// 只允许 friend 测试访问器触发；产品接口无法设置，消费一次后自动清除。
+    bool reject_next_dispatch_for_contract_test_{false};
 };
 
 }  // namespace vna::runtime

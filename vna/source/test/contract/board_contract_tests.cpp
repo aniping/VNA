@@ -14,6 +14,9 @@ namespace {
 
 static_assert(!std::is_copy_constructible_v<vna::board::PrepareAuthorization>);
 static_assert(!std::is_copy_constructible_v<vna::board::PreparedStartToken>);
+static_assert(
+    !std::is_copy_constructible_v<
+        vna::board::DiscardPreparedSinkRegistration>);
 static_assert(!std::is_copy_constructible_v<vna::board::StartAuthorization>);
 static_assert(!std::is_copy_constructible_v<vna::board::RunDeliveryGrant>);
 static_assert(!std::is_copy_constructible_v<vna::board::AcquisitionChunkLease>);
@@ -73,6 +76,18 @@ public:
     std::uint32_t terminal_count{0U};
     std::array<ChunkRecord, 4U> chunks{};
     std::optional<vna::board::BoardRunTerminal> terminal{};
+};
+
+class RecordingDiscardSink final : public vna::board::DiscardPreparedSink {
+public:
+    void on_terminal(
+        vna::board::DiscardPreparedTerminal&& value) noexcept override {
+        ++terminal_count;
+        terminal = value;
+    }
+
+    std::uint32_t terminal_count{0U};
+    std::optional<vna::board::DiscardPreparedTerminal> terminal{};
 };
 
 vna::board::PrepareAuthorization matching_prepare_authorization(
@@ -493,6 +508,63 @@ TEST(BoardAdapterContract, AcceptedPrepareIsNonInlineAndHasOneTerminal) {
 
     opened.control->advance(100U);
     VNA_REQUIRE(sink.terminal_count == 1U);
+}
+
+TEST(BoardAdapterContract, PreparedDiscardIsNonInlineAndHasOneTerminal) {
+    using namespace vna::board;
+
+    MockScenario scenario{};
+    scenario.prepare_delay = 0U;
+    scenario.discard_delay = 5U;
+    MockBoardProvider provider{MockCapabilityProfile{201U}, scenario};
+    auto opened_result = provider.open_controlled(
+        BoardOpenRequest{1U, BoardContractVersion{1U, 0U}});
+    VNA_REQUIRE(opened_result.has_value());
+    auto opened = std::move(opened_result).take_value();
+    auto reservation_result = opened.board.execution().reserve_execution();
+    VNA_REQUIRE(reservation_result.has_value());
+    auto reservation = std::move(reservation_result).take_value();
+    const auto capability = opened.board.execution().capabilities();
+    const SweepIntent intent{
+        3U, 1.0e6, 3.0e6, vna::core::StrongDigest{0xD15CA4DU}};
+    RecordingPrepareSink prepare_sink;
+    auto prepare_submission = opened.board.execution().begin_prepare(
+        reservation,
+        PrepareCallId{71U},
+        intent,
+        matching_prepare_authorization(capability, intent.digest),
+        PrepareSinkRegistration{prepare_sink});
+    VNA_REQUIRE(std::holds_alternative<PrepareAccepted>(prepare_submission));
+    opened.control->advance(0U);
+    VNA_REQUIRE(prepare_sink.terminal.has_value());
+    auto prepare_terminal = std::move(*prepare_sink.terminal);
+    auto prepared =
+        std::get<PrepareSucceeded>(std::move(prepare_terminal)).execution;
+    const auto prepared_id = prepared.start_token.prepared_id();
+
+    RecordingDiscardSink discard_sink;
+    auto discard_submission =
+        opened.board.execution().begin_discard_prepared(
+            reservation,
+            std::move(prepared.start_token),
+            DiscardPreparedRequest{
+                DiscardPreparedReason::ManifestOutsideAdmission},
+            DiscardPreparedSinkRegistration{discard_sink});
+    VNA_REQUIRE(
+        std::holds_alternative<DiscardPreparedAccepted>(discard_submission));
+    VNA_REQUIRE(discard_sink.terminal_count == 0U);
+    VNA_REQUIRE(opened.control->observations().accepted_discard_calls == 1U);
+
+    opened.control->advance(4U);
+    VNA_REQUIRE(discard_sink.terminal_count == 0U);
+    opened.control->advance(1U);
+    VNA_REQUIRE(discard_sink.terminal_count == 1U);
+    VNA_REQUIRE(discard_sink.terminal.has_value());
+    VNA_REQUIRE(discard_sink.terminal->prepared == prepared_id);
+    VNA_REQUIRE(
+        discard_sink.terminal->kind ==
+        DiscardPreparedTerminalKind::Discarded);
+    VNA_REQUIRE(opened.control->observations().discard_terminal_callbacks == 1U);
 }
 
 TEST(BoardAdapterContract, AcceptedRunEmitsDeterministicWavesAndOneTerminal) {

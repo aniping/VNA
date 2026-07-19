@@ -85,6 +85,8 @@ struct MockScenario final {
     VirtualDuration prepare_delay{1U};
     /// PrepareSucceeded 中 Manifest 的一致性行为；接受 Prepare 时按值冻结。
     MockManifestBehavior manifest_behavior{MockManifestBehavior::MatchIntent};
+    /// Prepared discard 从接受到唯一 cleanup terminal 的虚拟毫秒数。
+    VirtualDuration discard_delay{1U};
     /// Run 是成功、异步失败还是同步拒绝；接受 Run 时按值冻结。
     MockRunBehavior run_behavior{MockRunBehavior::Succeed};
     /// Run 从接受到唯一终态的虚拟毫秒数；有效范围为 [300, 400]。
@@ -117,6 +119,12 @@ struct MockObservationSnapshot final {
     std::uint32_t accepted_prepare_calls{0U};
     std::uint32_t rejected_prepare_calls{0U};
     std::uint32_t prepare_terminal_callbacks{0U};
+    /// Adapter 接受并异步闭合的 Prepared discard 累计数。
+    std::uint32_t accepted_discard_calls{0U};
+    /// 因身份/phase 非法而同步拒绝的 Prepared discard 累计数。
+    std::uint32_t rejected_discard_calls{0U};
+    /// 已交付的 Prepared discard 唯一 terminal 累计数。
+    std::uint32_t discard_terminal_callbacks{0U};
     std::uint32_t accepted_run_calls{0U};
     std::uint32_t rejected_run_calls{0U};
     std::uint32_t run_phase_callbacks{0U};

@@ -21,6 +21,25 @@ core::StrongDigest digest_request(const AOnlySweepRequest& request) noexcept {
     return core::StrongDigest{value == 0U ? 1U : value};
 }
 
+acquisition::AcquisitionRetryClass retry_for_submit_error(
+    AOnlySubmitErrc code) noexcept {
+    switch (code) {
+        case AOnlySubmitErrc::RevisionConflict:
+            return acquisition::AcquisitionRetryClass::AfterStateRefresh;
+        case AOnlySubmitErrc::ControllerCapacityExhausted:
+        case AOnlySubmitErrc::AcquisitionResourcesUnavailable:
+        case AOnlySubmitErrc::RuntimeAdmissionRejected:
+        case AOnlySubmitErrc::StoreAdmissionRejected:
+            return acquisition::AcquisitionRetryClass::AfterResourceRelease;
+        case AOnlySubmitErrc::StoreInitialCommitRejected:
+            return acquisition::AcquisitionRetryClass::AfterRecovery;
+        case AOnlySubmitErrc::DiagnosticAuthorizationRequired:
+        case AOnlySubmitErrc::InvalidRequest:
+            return acquisition::AcquisitionRetryClass::DoNotRetryWithoutChange;
+    }
+    return acquisition::AcquisitionRetryClass::AfterRecovery;
+}
+
 }  // namespace
 
 InstrumentKernel::InstrumentKernel(
@@ -40,8 +59,19 @@ InstrumentKernel::InstrumentKernel(
 
 AOnlySubmitResult InstrumentKernel::submit_a_only(
     const AOnlySweepRequest& request) noexcept {
-    const auto reject = [](AOnlySubmitErrc code) noexcept {
-        return AOnlySubmitResult::failure(AOnlySubmitError{code});
+    const auto reject = [&request](
+                            AOnlySubmitErrc code,
+                            board::CapabilitySnapshot capabilities = {}) noexcept {
+        return AOnlySubmitResult::failure(AOnlySubmitError{
+            code,
+            acquisition::AcquisitionFailurePhase::Admission,
+            retry_for_submit_error(code),
+            acquisition::AcquisitionSafetyImpact::NoRunAccepted,
+            capabilities.session_id,
+            capabilities.session_id.valid()
+                ? capabilities.capability_revision
+                : 0U,
+            request.expected_capability_revision});
     };
     if (!request.authorization.valid()) {
         return reject(AOnlySubmitErrc::DiagnosticAuthorizationRequired);
@@ -56,7 +86,7 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
         (request.expected_capability_revision != 0U &&
          request.expected_capability_revision !=
              capabilities.capability_revision)) {
-        return reject(AOnlySubmitErrc::RevisionConflict);
+        return reject(AOnlySubmitErrc::RevisionConflict, capabilities);
     }
     const auto board_now = board_execution_.monotonic_tick();
     const bool request_is_valid = request.point_count > 0U &&
@@ -73,12 +103,12 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
         profile_.board_continuation_span_ticks > 0U &&
         profile_.board_continuation_span_ticks < maximum_tick - board_now;
     if (!request_is_valid || !profile_is_valid) {
-        return reject(AOnlySubmitErrc::InvalidRequest);
+        return reject(AOnlySubmitErrc::InvalidRequest, capabilities);
     }
 
     const auto slot_index = find_free_slot();
     if (slot_index == kMaximumAOnlyOperations) {
-        return reject(AOnlySubmitErrc::ControllerCapacityExhausted);
+        return reject(AOnlySubmitErrc::ControllerCapacityExhausted, capabilities);
     }
 
     const auto plan_digest = digest_request(request);
@@ -86,7 +116,8 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
         request.point_count, request.start_hz, request.stop_hz, plan_digest};
     auto board_reservation_result = board_execution_.reserve_execution();
     if (!board_reservation_result.has_value()) {
-        return reject(AOnlySubmitErrc::AcquisitionResourcesUnavailable);
+        return reject(
+            AOnlySubmitErrc::AcquisitionResourcesUnavailable, capabilities);
     }
     auto board_reservation =
         std::move(board_reservation_result).take_value();
@@ -99,7 +130,8 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
             request.start_hz,
             request.stop_hz});
     if (!acquisition_result.has_value()) {
-        return reject(AOnlySubmitErrc::AcquisitionResourcesUnavailable);
+        return reject(
+            AOnlySubmitErrc::AcquisitionResourcesUnavailable, capabilities);
     }
     auto acquisition_lease = std::move(acquisition_result).take_value();
 
@@ -112,7 +144,8 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
     auto delivery_result = acquisition_buffers_.reserve_delivery(
         work.value(), kAOnlyChunkCapacity);
     if (!delivery_result.has_value()) {
-        return reject(AOnlySubmitErrc::AcquisitionResourcesUnavailable);
+        return reject(
+            AOnlySubmitErrc::AcquisitionResourcesUnavailable, capabilities);
     }
     auto delivery = std::move(delivery_result).take_value();
     const runtime::ExecutionLimits limits{
@@ -120,13 +153,13 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
     auto runtime_result = runtime_.reserve_work(
         work, limits, completion_receiver_);
     if (!runtime_result.has_value()) {
-        return reject(AOnlySubmitErrc::RuntimeAdmissionRejected);
+        return reject(AOnlySubmitErrc::RuntimeAdmissionRejected, capabilities);
     }
     auto runtime_reservation = std::move(runtime_result).take_value();
 
     auto store_result = store_.reserve_lifecycle_terminal();
     if (!store_result.has_value()) {
-        return reject(AOnlySubmitErrc::StoreAdmissionRejected);
+        return reject(AOnlySubmitErrc::StoreAdmissionRejected, capabilities);
     }
     auto terminal_reservation = std::move(store_result).take_value();
 
@@ -163,7 +196,7 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
         operation, work, plan_digest, std::move(terminal_reservation));
     if (std::holds_alternative<store::RejectedAcceptedCommit>(accepted_commit)) {
         slot.engine.reset();
-        return reject(AOnlySubmitErrc::StoreInitialCommitRejected);
+        return reject(AOnlySubmitErrc::StoreInitialCommitRejected, capabilities);
     }
 
     slot.active = true;
@@ -172,7 +205,7 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
     auto dispatched = runtime_.dispatch(
         std::move(runtime_reservation), *slot.engine);
     if (!dispatched.has_value()) {
-        (void)store_.commit_acquisition_failed(
+        const auto failed = store_.commit_acquisition_failed(
             operation,
             acquisition::AcquisitionFailure{
                 acquisition::AcquisitionFailurePhase::RuntimeDispatch,
@@ -186,9 +219,13 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
                 board::BoardErrc::ContractViolation,
                 acquisition::AcquisitionRetryClass::AfterRecovery,
                 acquisition::AcquisitionSafetyImpact::NoRunAccepted});
-        (void)slot.engine->finalize_failure_owners();
-        slot.release_pending = true;
-        release_completed_slots();
+        if (failed.has_value()) {
+            (void)slot.engine->finalize_failure_owners();
+            slot.release_pending = true;
+            release_completed_slots();
+        }
+        // 预留终态若因 Store integrity 故障仍无法提交，保留 Engine、Board 和
+        // 上层 owner 隔离；不能释放资源却把 Operation 永久留在 Accepted。
     }
 
     return AOnlySubmitResult::success(AcceptedAOnlyOperation{operation});

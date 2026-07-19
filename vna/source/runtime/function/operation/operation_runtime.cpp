@@ -246,6 +246,14 @@ core::Result<DispatchReceipt, RuntimeError> OperationRuntime::dispatch(
             RuntimeError{RuntimeErrc::InvalidPermit});
     }
 
+    if (reject_next_dispatch_for_contract_test_) {
+        // 仅由 test/support 中的 friend 访问器设置，用于证明 Accepted 已可见后
+        // 的内部契约异常仍走预留失败终态；reservation 保持有效并由调用者归还。
+        reject_next_dispatch_for_contract_test_ = false;
+        return core::Result<DispatchReceipt, RuntimeError>::failure(
+            RuntimeError{RuntimeErrc::InvalidPermit});
+    }
+
     const auto completion_consumed = reservation.completion_.consume(
         *this,
         reservation.slot_,

@@ -371,6 +371,102 @@ struct PrepareRejected final {
 /// begin_prepare() 的同步结果：接受排队，或拒绝并返还全部输入。
 using PrepareSubmission = std::variant<PrepareAccepted, PrepareRejected>;
 
+/// 上层为何不能消费 Prepared state 启动 Run，而必须显式清理。
+enum class DiscardPreparedReason {
+    /// Prepare 返回的实际 Manifest 超出已准入 envelope 或身份/version cut。
+    ManifestOutsideAdmission,
+    /// begin_run() 同步拒绝并返还了 PreparedStartToken。
+    RunRejected
+};
+
+/// 显式 Prepared cleanup 的请求事实。
+struct DiscardPreparedRequest final {
+    /// 触发 cleanup 的稳定原因；Adapter 不解析上层诊断文本。
+    DiscardPreparedReason reason{DiscardPreparedReason::ManifestOutsideAdmission};
+};
+
+/// Prepared cleanup 的终态分类。
+enum class DiscardPreparedTerminalKind {
+    /// 对应 Prepared state 已真实释放，不再产生后续 callback。
+    Discarded,
+    /// Adapter 已结束本次 discard callback，但无法证明底层 cleanup 完成。
+    CleanupFailed
+};
+
+/// begin_discard_prepared() 接受后恰好回调一次的终态。
+struct DiscardPreparedTerminal final {
+    /// 被清理的 PreparedExecutionId。
+    PreparedExecutionId prepared{};
+    /// cleanup 是否闭合；CleanupFailed 要求上层继续隔离 owner。
+    DiscardPreparedTerminalKind kind{DiscardPreparedTerminalKind::CleanupFailed};
+    /// kind 为 CleanupFailed 时的稳定 Board 错误；成功时不得据此分支。
+    BoardError error{};
+};
+
+/// 接收 Prepared cleanup 唯一终态的接口。
+class DiscardPreparedSink {
+public:
+    virtual ~DiscardPreparedSink() = default;
+
+    /// @param terminal cleanup 唯一终态，所有权转移给接收方。
+    /// @note 只在 begin_discard_prepared() 返回 Accepted 后调用一次，且不得在
+    ///       submission 调用栈内联触发；回调返回后不得再调用该 sink。
+    virtual void on_terminal(DiscardPreparedTerminal&& terminal) noexcept = 0;
+};
+
+/// move-only 的 Prepared cleanup 回调注册。
+/// @note 不拥有 sink；sink 必须活到同步拒绝返还或唯一 terminal 回调返回。
+class DiscardPreparedSinkRegistration final {
+public:
+    /// @param sink 接收 cleanup 唯一终态的对象。
+    explicit DiscardPreparedSinkRegistration(DiscardPreparedSink& sink) noexcept
+        : sink_(&sink) {}
+    /// 移动注册但不移动 sink 对象；源注册随后失效。
+    /// @param other 待转移的注册；调用后 other.valid() 为 false。
+    DiscardPreparedSinkRegistration(
+        DiscardPreparedSinkRegistration&& other) noexcept;
+    /// 替换当前非 owning 注册并使源注册失效。
+    /// @param other 待转移的注册；调用后 other.valid() 为 false。
+    /// @return 当前注册对象；其生命周期由调用方管理。
+    DiscardPreparedSinkRegistration& operator=(
+        DiscardPreparedSinkRegistration&& other) noexcept;
+    DiscardPreparedSinkRegistration(const DiscardPreparedSinkRegistration&) = delete;
+    DiscardPreparedSinkRegistration& operator=(
+        const DiscardPreparedSinkRegistration&) = delete;
+
+    /// @return 注册尚未被移动消费时返回 true。
+    bool valid() const noexcept { return sink_ != nullptr; }
+    /// @return 已注册接收器；调用前必须保证 valid() 为 true。
+    DiscardPreparedSink& sink() const noexcept { return *sink_; }
+
+private:
+    DiscardPreparedSink* sink_{nullptr};
+};
+
+/// Prepared cleanup 已被 Adapter 接受的同步回执。
+struct DiscardPreparedAccepted final {
+    /// 已被接管、未来将产生唯一 terminal 的 PreparedExecutionId。
+    PreparedExecutionId prepared{};
+};
+
+/// Prepared cleanup 同步拒绝时返还的全部 move-only 输入。
+struct ReclaimedDiscardPreparedInputs final {
+    /// 未被 Adapter 消费、仍须转入 Drain/Quarantine 的 Prepared token。
+    PreparedStartToken prepared;
+    /// 未被 Adapter 消费、不会收到 callback 的注册。
+    DiscardPreparedSinkRegistration sink;
+};
+
+/// Prepared cleanup 未被接受；返回后不得调用对应 sink。
+struct DiscardPreparedRejected final {
+    BoardError error{};
+    ReclaimedDiscardPreparedInputs reclaimed;
+};
+
+/// begin_discard_prepared() 的同步封闭结果。
+using DiscardPreparedSubmission =
+    std::variant<DiscardPreparedAccepted, DiscardPreparedRejected>;
+
 /// 证明上层当前仍有能力持续接收采集数据的短期凭据。
 struct AcquisitionContinuationAttestation final {
     /// 对接收容量/上下文的摘要。
@@ -764,6 +860,29 @@ public:
         SweepIntent intent,
         PrepareAuthorization&& authorization,
         PrepareSinkRegistration&& sink) noexcept = 0;
+
+    /// 显式释放尚未启动 Run 的 Prepared state。
+    /// @param reservation 与产生 prepared 的 Prepare 相同且仍有效的 execution 租约。
+    /// @param prepared PrepareSucceeded 产生或 RunRejected 原样返还的 move-only token。
+    /// @param request 上层不能启动该 Prepared state 的稳定原因。
+    /// @param sink cleanup 唯一终态的回调注册。
+    /// @return Accepted 表示 Adapter 已接管 token 且未来恰好一次回调；Rejected
+    ///         表示未接管并原样返还 token/sink，随后绝不回调。
+    /// @note 合法同会话 token 的 cleanup 容量必须由 execution reservation 预留，
+    ///       不得因普通队列压力拒绝。默认实现只为尚未实现 discard 的 Adapter
+    ///       返回 Unsupported 并返还全部输入，调用者必须隔离而不能释放 owner。
+    virtual DiscardPreparedSubmission begin_discard_prepared(
+        const BoardExecutionReservation& reservation,
+        PreparedStartToken&& prepared,
+        DiscardPreparedRequest request,
+        DiscardPreparedSinkRegistration&& sink) noexcept {
+        (void)reservation;
+        (void)request;
+        return DiscardPreparedRejected{
+            BoardError{BoardErrc::Unsupported},
+            ReclaimedDiscardPreparedInputs{
+                std::move(prepared), std::move(sink)}};
+    }
 
     /// 启动一个已经 Prepare 成功的采集执行。
     /// @param reservation 与对应 Prepare 相同且仍有效的 Adapter execution 租约。

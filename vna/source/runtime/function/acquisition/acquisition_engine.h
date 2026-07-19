@@ -8,6 +8,7 @@
 #include "runtime/platform/board/board_port.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 
 namespace vna::acquisition {
@@ -20,6 +21,7 @@ namespace vna::acquisition {
 /// owner 时，本对象在 Quarantined terminal 后仍由 L2 保活，不能释放该资源组。
 class AcquisitionEngine final : public runtime::RuntimeWork,
                                 private board::PrepareSink,
+                                private board::DiscardPreparedSink,
                                 private board::BoardRunSink {
 public:
     /// 建立一个尚未启动的冻结采集工作。
@@ -95,6 +97,7 @@ private:
     enum class Phase {
         Ready,
         Preparing,
+        DiscardingPrepared,
         Acquiring,
         Draining,
         Terminal
@@ -108,6 +111,8 @@ private:
     };
 
     void on_terminal(board::PrepareTerminal&& terminal) noexcept override;
+    void on_terminal(
+        board::DiscardPreparedTerminal&& terminal) noexcept override;
     void on_phase(const board::BoardRunPhaseEvent& event) noexcept override;
     board::ChunkIngressDisposition on_chunk(
         board::ReceiverObservationChunk&& chunk) noexcept override;
@@ -123,6 +128,12 @@ private:
         AcquisitionFailurePhase phase,
         AcquisitionFailureReason reason,
         board::BoardError error) noexcept;
+    runtime::RuntimeWorkStep begin_prepared_discard(
+        board::PreparedStartToken&& prepared,
+        board::DiscardPreparedReason discard_reason,
+        AcquisitionFailurePhase failure_phase,
+        AcquisitionFailureReason failure_reason,
+        const board::BoardError* board_error) noexcept;
     runtime::RuntimeWorkStep wait_or_drain(
         runtime::ExecutionContext& context,
         AcquisitionFailurePhase phase) noexcept;
@@ -148,12 +159,24 @@ private:
     AcquisitionFailure failure_{};
     Phase phase_{Phase::Ready};
     board::PreparedExecutionId prepared_{};
+    board::ManifestId manifest_{};
+    board::BoardSessionId board_session_{};
+    std::uint64_t capability_revision_{0U};
     std::optional<board::PrepareTerminal> prepare_terminal_{};
+    std::optional<board::DiscardPreparedTerminal> discard_terminal_{};
     std::optional<board::BoardRunTerminal> run_terminal_{};
+    std::optional<board::PreparedManifestLease> prepared_manifest_{};
+    std::optional<board::PreparedStartToken> quarantined_prepared_{};
+    std::optional<board::DiscardPreparedSinkRegistration>
+        quarantined_discard_sink_{};
+    std::optional<board::StartAuthorization> rejected_start_authorization_{};
+    std::optional<board::RunDeliveryGrant> rejected_delivery_{};
+    std::optional<board::BoardRunSinkRegistration> rejected_run_sink_{};
     std::optional<NetworkObservationBuilder> builder_{};
     std::optional<AcquisitionSucceeded> success_{};
     std::optional<board::BoardPrepareDrainOwner> board_prepare_drain_owner_{};
     bool callback_contract_violation_{false};
+    bool discard_contract_violation_{false};
     DrainObligation drain_obligation_{DrainObligation::None};
 };
 
