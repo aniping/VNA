@@ -41,6 +41,9 @@ struct AOnlySweepRequest final {
     double stop_hz{0.0};
     /// 仅允许 Mock raw/diagnostic A-only purpose 的授权。
     AOnlyDiagnosticAuthorization authorization{};
+    /// 可选的 Board capability revision 前置条件；0 表示由 Kernel 冻结当前
+    /// revision，非 0 值必须与提交时读取的 capability cut 精确一致。
+    std::uint64_t expected_capability_revision{0U};
 };
 
 /// A-only 公共提交入口的有限执行配置。
@@ -59,6 +62,8 @@ enum class AOnlySubmitErrc {
     DiagnosticAuthorizationRequired,
     /// 点数、频率或有限执行 Profile 非法。
     InvalidRequest,
+    /// 请求指定的 capability revision 与当前 Board cut 不一致或当前 cut 无效。
+    RevisionConflict,
     /// Kernel 固定 Operation/Work 映射槽已满。
     ControllerCapacityExhausted,
     /// A/candidate/Buffer/Ingress/Board owner 聚合资源槽不足。
@@ -115,7 +120,8 @@ public:
     /// @param request 只读紧凑请求；不含 RuntimeWork、Board token 或输出数组，
     ///        调用返回后无需继续保活。
     /// @return Accepted 只携带可查询 OperationId；Rejected 携带类型化原因且不创建
-    ///         Operation/Event/Board 调用。调用不等待 Prepare、Run 或终态。
+    ///         Operation/Event/Board 调用；非 0 expected_capability_revision 不匹配
+    ///         时返回 RevisionConflict。调用不等待 Prepare、Run 或终态。
     AOnlySubmitResult submit_a_only(const AOnlySweepRequest& request) noexcept;
 
     /// 推进一项 Runtime 状态转换或交付一条可靠 completion mailbox 消息。

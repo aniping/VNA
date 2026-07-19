@@ -119,6 +119,10 @@ private:
     runtime::RuntimeWorkStep fail_board_rejection(
         AcquisitionFailurePhase phase,
         board::BoardError error) noexcept;
+    runtime::RuntimeWorkStep fail_board_terminal(
+        AcquisitionFailurePhase phase,
+        AcquisitionFailureReason reason,
+        board::BoardError error) noexcept;
     runtime::RuntimeWorkStep wait_or_drain(
         runtime::ExecutionContext& context,
         AcquisitionFailurePhase phase) noexcept;

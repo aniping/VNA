@@ -35,7 +35,7 @@ TEST(AcquisitionAdmissionContract, ManifestCanOnlyNarrowFrozenEnvelopeOnce) {
         plan_digest,
         capabilities,
         201U,
-        2U,
+        4U,
         1.0e6,
         201.0e6};
 
@@ -86,6 +86,67 @@ TEST(AcquisitionAdmissionContract, ManifestCanOnlyNarrowFrozenEnvelopeOnce) {
     }
     VNA_REQUIRE(pool.inspect().in_use == 0U);
     VNA_REQUIRE(pool.inspect().failure_finalizations == 2U);
+}
+
+TEST(
+    AcquisitionAdmissionContract,
+    ManifestNarrowingCountsChunksAndUsesTypedObservationIdentity) {
+    using namespace vna;
+
+    const core::StrongDigest plan_digest{0xA021U};
+    const board::CapabilitySnapshot capabilities{
+        board::BoardContractVersion{1U, 0U},
+        board::BoardSessionId{12U},
+        1U,
+        2U,
+        3U,
+        4U,
+        core::StrongDigest{0xCAAU},
+        201U};
+    const board::PreparedExecutionManifest one_observation{
+        board::ManifestId{23U},
+        board::PreparedExecutionId{24U},
+        capabilities.session_id,
+        capabilities.session_epoch,
+        capabilities.capability_revision,
+        capabilities.topology_epoch,
+        capabilities.operational_epoch,
+        plan_digest,
+        core::StrongDigest{0xABU},
+        65U,
+        1.0e6,
+        65.0e6,
+        std::array<
+            board::PreparedObservationSpec,
+            board::kMaximumPreparedObservations>{
+            board::PreparedObservationSpec{
+                board::ReceiverWave::IncidentA,
+                65U,
+                board::SourceStateId{1U},
+                board::ReceiverPathId{1U}}},
+        1U};
+
+    acquisition::AcquisitionAdmissionPool pool{2U};
+    auto insufficient = pool.reserve(acquisition::AcquisitionAdmissionPool::Claim{
+        plan_digest, capabilities, 65U, 1U, 1.0e6, 65.0e6});
+    VNA_REQUIRE(insufficient.has_value());
+    auto insufficient_lease = std::move(insufficient).take_value();
+    // 65 点需要两个最大 64 点的数据块；不能用“一个观测条目”冒充“一块”。
+    VNA_REQUIRE(!insufficient_lease.narrow_to(one_observation));
+
+    auto typed_manifest = one_observation;
+    typed_manifest.required_observations[1U] = board::PreparedObservationSpec{
+        board::ReceiverWave::IncidentA,
+        65U,
+        board::SourceStateId{2U},
+        board::ReceiverPathId{1U}};
+    typed_manifest.required_observation_count = 2U;
+    auto sufficient = pool.reserve(acquisition::AcquisitionAdmissionPool::Claim{
+        plan_digest, capabilities, 65U, 4U, 1.0e6, 65.0e6});
+    VNA_REQUIRE(sufficient.has_value());
+    auto sufficient_lease = std::move(sufficient).take_value();
+    // 相同 wave 但不同 source_state 是两项不同的合法观测。
+    VNA_REQUIRE(sufficient_lease.narrow_to(typed_manifest));
 }
 
 TEST(AcquisitionOwnershipContract, CandidateMovesUntilExplicitAbort) {

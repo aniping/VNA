@@ -17,6 +17,8 @@ constexpr std::size_t kMaximumMockSweepPoints = 201U;
 enum class MockPrepareBehavior {
     /// 接受请求，并在虚拟延时到期后回调成功终态。
     Succeed,
+    /// 接受请求，并在虚拟延时到期后以 cleanup evidence 回调失败终态。
+    Fail,
     /// 以 Unsupported 同步拒绝并返还全部输入。
     Reject
 };
@@ -29,6 +31,18 @@ enum class MockRunBehavior {
     Fail,
     /// 以 Unsupported 同步拒绝并返还全部输入。
     Reject
+};
+
+/// Mock Prepare 成功终态中实际 Manifest 的一致性故障剧本。
+enum class MockManifestBehavior {
+    /// 返回与接受时意图及能力 cut 完全匹配的正常 Manifest。
+    MatchIntent,
+    /// 返回高于授权 cut 的 capability revision，用于验证过期版本拒绝。
+    StaleCapabilityRevision,
+    /// 返回与授权 cut 不同的 BoardSessionId，用于验证身份不匹配拒绝。
+    MismatchedSession,
+    /// 返回大于请求保守点数 envelope 的实际点数，用于验证禁止扩容。
+    ExpandedPointEnvelope
 };
 
 /// Mock 成功 Run 的正式观测交付策略。
@@ -65,9 +79,13 @@ struct MockChunkDelivery final {
 
 /// 一次可重复 Mock 扫描的输入剧本。
 struct MockScenario final {
+    /// Prepare 是成功、异步失败还是同步拒绝；接受 Prepare 时按值冻结。
     MockPrepareBehavior prepare_behavior{MockPrepareBehavior::Succeed};
     /// Prepare 从接受到终态所需的虚拟毫秒数。
     VirtualDuration prepare_delay{1U};
+    /// PrepareSucceeded 中 Manifest 的一致性行为；接受 Prepare 时按值冻结。
+    MockManifestBehavior manifest_behavior{MockManifestBehavior::MatchIntent};
+    /// Run 是成功、异步失败还是同步拒绝；接受 Run 时按值冻结。
     MockRunBehavior run_behavior{MockRunBehavior::Succeed};
     /// Run 从接受到唯一终态的虚拟毫秒数；有效范围为 [300, 400]。
     VirtualDuration run_duration{350U};
@@ -119,7 +137,8 @@ public:
     virtual void load_profile(MockCapabilityProfile profile) noexcept = 0;
 
     /// 替换后续请求捕获的场景。
-    /// @param scenario 新剧本；控制器保存其副本，已接受的 Run 保留接受时捕获的旧剧本。
+    /// @param scenario 新剧本；控制器保存其副本，已接受的 Prepare/Run 保留
+    ///        接受时捕获的旧剧本。
     virtual void load_scenario(MockScenario scenario) noexcept = 0;
 
     /// 推进虚拟时间并同步触发所有到期的 Prepare/Run 回调。

@@ -48,6 +48,16 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
     }
 
     const auto capabilities = board_execution_.capabilities();
+    const bool capability_cut_valid = capabilities.session_id.valid() &&
+        capabilities.capability_revision != 0U &&
+        capabilities.topology_epoch != 0U &&
+        capabilities.operational_epoch != 0U;
+    if (!capability_cut_valid ||
+        (request.expected_capability_revision != 0U &&
+         request.expected_capability_revision !=
+             capabilities.capability_revision)) {
+        return reject(AOnlySubmitErrc::RevisionConflict);
+    }
     const auto board_now = board_execution_.monotonic_tick();
     const bool request_is_valid = request.point_count > 0U &&
         request.point_count <= capabilities.maximum_points &&
@@ -167,7 +177,15 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
             acquisition::AcquisitionFailure{
                 acquisition::AcquisitionFailurePhase::RuntimeDispatch,
                 acquisition::AcquisitionFailureReason::
-                    RuntimeDispatchContractViolation});
+                    RuntimeDispatchContractViolation,
+                board::PrepareCallId{},
+                board::PreparedExecutionId{},
+                board::BoardRunId{},
+                board::RunGeneration{},
+                false,
+                board::BoardErrc::ContractViolation,
+                acquisition::AcquisitionRetryClass::AfterRecovery,
+                acquisition::AcquisitionSafetyImpact::NoRunAccepted});
         (void)slot.engine->finalize_failure_owners();
         slot.release_pending = true;
         release_completed_slots();
@@ -198,7 +216,15 @@ void InstrumentKernel::on_runtime_terminal(
                 acquisition::AcquisitionFailure{
                     acquisition::AcquisitionFailurePhase::CandidateSealing,
                     acquisition::AcquisitionFailureReason::
-                        IncompleteObservationSet});
+                        IncompleteObservationSet,
+                    board::PrepareCallId{},
+                    board::PreparedExecutionId{},
+                    board::BoardRunId{},
+                    board::RunGeneration{},
+                    false,
+                    board::BoardErrc::ContractViolation,
+                    acquisition::AcquisitionRetryClass::AfterRecovery,
+                    acquisition::AcquisitionSafetyImpact::RunTerminalObserved});
             if (committed.has_value()) {
                 (void)slot.engine->finalize_failure_owners();
                 slot.release_pending = true;
@@ -227,7 +253,15 @@ void InstrumentKernel::on_runtime_terminal(
             slot.operation,
             acquisition::AcquisitionFailure{
                 acquisition::AcquisitionFailurePhase::PublicationCommit,
-                acquisition::AcquisitionFailureReason::StoreCommitRejected});
+                acquisition::AcquisitionFailureReason::StoreCommitRejected,
+                board::PrepareCallId{},
+                board::PreparedExecutionId{},
+                board::BoardRunId{},
+                board::RunGeneration{},
+                false,
+                board::BoardErrc::ContractViolation,
+                acquisition::AcquisitionRetryClass::AfterRecovery,
+                acquisition::AcquisitionSafetyImpact::RunTerminalObserved});
         if (!failed.has_value()) {
             slot.pending_success.emplace(std::move(*success));
             return;

@@ -670,6 +670,139 @@ TEST(AOnlySweepContract, ExplicitDiagnosticAuthorizationPrecedesAccepted) {
     VNA_REQUIRE(acquisition_resources.inspect().failure_finalizations == 1U);
 }
 
+TEST(AOnlySweepContract, StaleExpectedCapabilityRevisionRejectsBeforeAdmission) {
+    using namespace vna;
+
+    ManualRuntimeClock clock;
+    runtime::OperationRuntime runtime{1U, clock};
+    store::InstrumentStore store{1U};
+    acquisition::AcquisitionAdmissionPool acquisition_resources{1U};
+    board::MockBoardProvider provider{
+        board::MockCapabilityProfile{201U}, board::MockScenario{}};
+    auto opened_result = provider.open_controlled(
+        board::BoardOpenRequest{1U, board::BoardContractVersion{1U, 0U}});
+    VNA_REQUIRE(opened_result.has_value());
+    auto opened = std::move(opened_result).take_value();
+    instrument::InstrumentKernel kernel{
+        runtime,
+        store,
+        opened.board.execution(),
+        acquisition_resources,
+        clock,
+        instrument::AOnlyKernelProfile{1000U, 64U}};
+
+    instrument::AOnlySweepRequest request{
+        3U,
+        1.0e6,
+        3.0e6,
+        instrument::AOnlyDiagnosticAuthorization::issue_for_mock_diagnostics()};
+    request.expected_capability_revision =
+        std::numeric_limits<std::uint64_t>::max();
+    const auto rejected = kernel.submit_a_only(request);
+
+    VNA_REQUIRE(!rejected.has_value());
+    VNA_REQUIRE(
+        rejected.error().code == instrument::AOnlySubmitErrc::RevisionConflict);
+    VNA_REQUIRE(store.inspect().visible_operations == 0U);
+    VNA_REQUIRE(store.inspect().events == 0U);
+    VNA_REQUIRE(store.inspect().reserved_lifecycles == 0U);
+    VNA_REQUIRE(runtime.inspect().reserved == 0U);
+    VNA_REQUIRE(runtime.inspect().queued == 0U);
+    VNA_REQUIRE(acquisition_resources.inspect().in_use == 0U);
+    const auto observations = opened.control->observations();
+    VNA_REQUIRE(observations.acquired_execution_reservations == 0U);
+    VNA_REQUIRE(observations.accepted_prepare_calls == 0U);
+    VNA_REQUIRE(observations.prepare_terminal_callbacks == 0U);
+}
+
+TEST(AOnlySweepContract, RuntimeCapacityFailureLeavesNoVisibleOrBoardFacts) {
+    using namespace vna;
+
+    ManualRuntimeClock clock;
+    runtime::OperationRuntime runtime{0U, clock};
+    store::InstrumentStore store{1U};
+    acquisition::AcquisitionAdmissionPool acquisition_resources{1U};
+    board::MockBoardProvider provider{
+        board::MockCapabilityProfile{201U}, board::MockScenario{}};
+    auto opened_result = provider.open_controlled(
+        board::BoardOpenRequest{1U, board::BoardContractVersion{1U, 0U}});
+    VNA_REQUIRE(opened_result.has_value());
+    auto opened = std::move(opened_result).take_value();
+    instrument::InstrumentKernel kernel{
+        runtime,
+        store,
+        opened.board.execution(),
+        acquisition_resources,
+        clock,
+        instrument::AOnlyKernelProfile{1000U, 64U}};
+
+    const auto rejected = kernel.submit_a_only(instrument::AOnlySweepRequest{
+        3U,
+        1.0e6,
+        3.0e6,
+        instrument::AOnlyDiagnosticAuthorization::issue_for_mock_diagnostics()});
+
+    VNA_REQUIRE(!rejected.has_value());
+    VNA_REQUIRE(
+        rejected.error().code ==
+        instrument::AOnlySubmitErrc::RuntimeAdmissionRejected);
+    VNA_REQUIRE(store.inspect().visible_operations == 0U);
+    VNA_REQUIRE(store.inspect().reserved_lifecycles == 0U);
+    VNA_REQUIRE(store.inspect().events == 0U);
+    VNA_REQUIRE(runtime.inspect().reserved == 0U);
+    VNA_REQUIRE(runtime.inspect().queued == 0U);
+    VNA_REQUIRE(acquisition_resources.inspect().in_use == 0U);
+    const auto observations = opened.control->observations();
+    VNA_REQUIRE(observations.acquired_execution_reservations == 1U);
+    VNA_REQUIRE(observations.released_execution_reservations == 1U);
+    VNA_REQUIRE(observations.accepted_prepare_calls == 0U);
+    VNA_REQUIRE(observations.prepare_terminal_callbacks == 0U);
+}
+
+TEST(AOnlySweepContract, StoreCapacityFailureReturnsEveryEarlierReservation) {
+    using namespace vna;
+
+    ManualRuntimeClock clock;
+    runtime::OperationRuntime runtime{1U, clock};
+    store::InstrumentStore store{0U};
+    acquisition::AcquisitionAdmissionPool acquisition_resources{1U};
+    board::MockBoardProvider provider{
+        board::MockCapabilityProfile{201U}, board::MockScenario{}};
+    auto opened_result = provider.open_controlled(
+        board::BoardOpenRequest{1U, board::BoardContractVersion{1U, 0U}});
+    VNA_REQUIRE(opened_result.has_value());
+    auto opened = std::move(opened_result).take_value();
+    instrument::InstrumentKernel kernel{
+        runtime,
+        store,
+        opened.board.execution(),
+        acquisition_resources,
+        clock,
+        instrument::AOnlyKernelProfile{1000U, 64U}};
+
+    const auto rejected = kernel.submit_a_only(instrument::AOnlySweepRequest{
+        3U,
+        1.0e6,
+        3.0e6,
+        instrument::AOnlyDiagnosticAuthorization::issue_for_mock_diagnostics()});
+
+    VNA_REQUIRE(!rejected.has_value());
+    VNA_REQUIRE(
+        rejected.error().code ==
+        instrument::AOnlySubmitErrc::StoreAdmissionRejected);
+    VNA_REQUIRE(store.inspect().visible_operations == 0U);
+    VNA_REQUIRE(store.inspect().reserved_lifecycles == 0U);
+    VNA_REQUIRE(store.inspect().events == 0U);
+    VNA_REQUIRE(runtime.inspect().reserved == 0U);
+    VNA_REQUIRE(runtime.inspect().queued == 0U);
+    VNA_REQUIRE(acquisition_resources.inspect().in_use == 0U);
+    const auto observations = opened.control->observations();
+    VNA_REQUIRE(observations.acquired_execution_reservations == 1U);
+    VNA_REQUIRE(observations.released_execution_reservations == 1U);
+    VNA_REQUIRE(observations.accepted_prepare_calls == 0U);
+    VNA_REQUIRE(observations.prepare_terminal_callbacks == 0U);
+}
+
 TEST(AOnlySweepContract, MockRunFailsAtScheduledThreeHundredFiftyMilliseconds) {
     using namespace vna;
 
@@ -760,6 +893,12 @@ TEST(AOnlySweepContract, MockRunFailsAtScheduledThreeHundredFiftyMilliseconds) {
     VNA_REQUIRE(
         event->failure.reason ==
         acquisition::AcquisitionFailureReason::BoardTerminalFailed);
+    VNA_REQUIRE(
+        event->failure.retry ==
+        acquisition::AcquisitionRetryClass::AfterRecovery);
+    VNA_REQUIRE(
+        event->failure.safety ==
+        acquisition::AcquisitionSafetyImpact::RunTerminalObserved);
     VNA_REQUIRE(event->failure.run.valid());
     VNA_REQUIRE(event->failure.generation.valid());
     VNA_REQUIRE(store.inspect_publications().completed_sweeps == 0U);
@@ -769,6 +908,308 @@ TEST(AOnlySweepContract, MockRunFailsAtScheduledThreeHundredFiftyMilliseconds) {
     VNA_REQUIRE(acquisition_resources.inspect().in_use == 0U);
     VNA_REQUIRE(acquisition_resources.inspect().failure_finalizations == 1U);
     VNA_REQUIRE(!kernel.run_one());
+}
+
+TEST(AOnlySweepContract, PrepareSynchronousRejectionProducesNoCallbackOrRun) {
+    using namespace vna;
+
+    ManualRuntimeClock clock;
+    runtime::OperationRuntime runtime{1U, clock};
+    store::InstrumentStore store{1U};
+    acquisition::AcquisitionAdmissionPool acquisition_resources{1U};
+    board::MockScenario scenario{};
+    scenario.prepare_behavior = board::MockPrepareBehavior::Reject;
+    board::MockBoardProvider provider{
+        board::MockCapabilityProfile{201U}, scenario};
+    auto opened_result = provider.open_controlled(
+        board::BoardOpenRequest{1U, board::BoardContractVersion{1U, 0U}});
+    VNA_REQUIRE(opened_result.has_value());
+    auto opened = std::move(opened_result).take_value();
+    instrument::InstrumentKernel kernel{
+        runtime,
+        store,
+        opened.board.execution(),
+        acquisition_resources,
+        clock,
+        instrument::AOnlyKernelProfile{1000U, 64U}};
+
+    const auto submitted = kernel.submit_a_only(instrument::AOnlySweepRequest{
+        3U,
+        1.0e6,
+        3.0e6,
+        instrument::AOnlyDiagnosticAuthorization::issue_for_mock_diagnostics()});
+    VNA_REQUIRE(submitted.has_value());
+    const auto operation_id = submitted.value().operation;
+
+    VNA_REQUIRE(kernel.run_one());
+    VNA_REQUIRE(
+        store.inspect_operation(operation_id)->state ==
+        store::OperationState::Accepted);
+    VNA_REQUIRE(acquisition_resources.inspect().in_use == 1U);
+    const auto before_commit = opened.control->observations();
+    VNA_REQUIRE(before_commit.rejected_prepare_calls == 1U);
+    VNA_REQUIRE(before_commit.prepare_terminal_callbacks == 0U);
+    VNA_REQUIRE(before_commit.accepted_run_calls == 0U);
+    VNA_REQUIRE(before_commit.run_phase_callbacks == 0U);
+    VNA_REQUIRE(before_commit.run_chunk_callbacks == 0U);
+    VNA_REQUIRE(before_commit.run_terminal_callbacks == 0U);
+
+    VNA_REQUIRE(kernel.run_one());
+    const auto event = store.latest_event();
+    VNA_REQUIRE(event.has_value());
+    VNA_REQUIRE(event->state == store::OperationState::Failed);
+    VNA_REQUIRE(event->has_acquisition_failure);
+    VNA_REQUIRE(
+        event->failure.phase == acquisition::AcquisitionFailurePhase::Prepare);
+    VNA_REQUIRE(
+        event->failure.reason ==
+        acquisition::AcquisitionFailureReason::BoardRejected);
+    VNA_REQUIRE(event->failure.prepare_call.valid());
+    VNA_REQUIRE(!event->failure.prepared.valid());
+    VNA_REQUIRE(event->failure.has_board_error);
+    VNA_REQUIRE(event->failure.board_error == board::BoardErrc::Unsupported);
+    VNA_REQUIRE(
+        event->failure.retry ==
+        acquisition::AcquisitionRetryClass::DoNotRetryWithoutChange);
+    VNA_REQUIRE(
+        event->failure.safety ==
+        acquisition::AcquisitionSafetyImpact::NoRunAccepted);
+    VNA_REQUIRE(store.inspect_publications().completed_sweeps == 0U);
+    VNA_REQUIRE(acquisition_resources.inspect().in_use == 0U);
+    VNA_REQUIRE(acquisition_resources.inspect().failure_finalizations == 1U);
+    VNA_REQUIRE(
+        opened.control->observations().released_execution_reservations == 1U);
+}
+
+TEST(AOnlySweepContract, RunSynchronousRejectionProducesNoRunCallbackOrA) {
+    using namespace vna;
+
+    ManualRuntimeClock clock;
+    runtime::OperationRuntime runtime{1U, clock};
+    store::InstrumentStore store{1U};
+    acquisition::AcquisitionAdmissionPool acquisition_resources{1U};
+    board::MockScenario scenario{};
+    scenario.prepare_delay = 0U;
+    scenario.run_behavior = board::MockRunBehavior::Reject;
+    board::MockBoardProvider provider{
+        board::MockCapabilityProfile{201U}, scenario};
+    auto opened_result = provider.open_controlled(
+        board::BoardOpenRequest{1U, board::BoardContractVersion{1U, 0U}});
+    VNA_REQUIRE(opened_result.has_value());
+    auto opened = std::move(opened_result).take_value();
+    instrument::InstrumentKernel kernel{
+        runtime,
+        store,
+        opened.board.execution(),
+        acquisition_resources,
+        clock,
+        instrument::AOnlyKernelProfile{1000U, 64U}};
+
+    const auto submitted = kernel.submit_a_only(instrument::AOnlySweepRequest{
+        3U,
+        1.0e6,
+        3.0e6,
+        instrument::AOnlyDiagnosticAuthorization::issue_for_mock_diagnostics()});
+    VNA_REQUIRE(submitted.has_value());
+    const auto operation_id = submitted.value().operation;
+
+    VNA_REQUIRE(kernel.run_one());
+    opened.control->advance(0U);
+    VNA_REQUIRE(kernel.run_one());
+    VNA_REQUIRE(
+        store.inspect_operation(operation_id)->state ==
+        store::OperationState::Accepted);
+    VNA_REQUIRE(acquisition_resources.inspect().in_use == 1U);
+    const auto before_commit = opened.control->observations();
+    VNA_REQUIRE(before_commit.prepare_terminal_callbacks == 1U);
+    VNA_REQUIRE(before_commit.rejected_run_calls == 1U);
+    VNA_REQUIRE(before_commit.run_phase_callbacks == 0U);
+    VNA_REQUIRE(before_commit.run_chunk_callbacks == 0U);
+    VNA_REQUIRE(before_commit.run_terminal_callbacks == 0U);
+
+    VNA_REQUIRE(kernel.run_one());
+    const auto event = store.latest_event();
+    VNA_REQUIRE(event.has_value());
+    VNA_REQUIRE(event->state == store::OperationState::Failed);
+    VNA_REQUIRE(event->has_acquisition_failure);
+    VNA_REQUIRE(
+        event->failure.phase == acquisition::AcquisitionFailurePhase::Run);
+    VNA_REQUIRE(
+        event->failure.reason ==
+        acquisition::AcquisitionFailureReason::BoardRejected);
+    VNA_REQUIRE(event->failure.prepare_call.valid());
+    VNA_REQUIRE(event->failure.prepared.valid());
+    VNA_REQUIRE(event->failure.run.valid());
+    VNA_REQUIRE(event->failure.generation.valid());
+    VNA_REQUIRE(event->failure.has_board_error);
+    VNA_REQUIRE(event->failure.board_error == board::BoardErrc::Unsupported);
+    VNA_REQUIRE(
+        event->failure.retry ==
+        acquisition::AcquisitionRetryClass::DoNotRetryWithoutChange);
+    VNA_REQUIRE(
+        event->failure.safety ==
+        acquisition::AcquisitionSafetyImpact::NoRunAccepted);
+    VNA_REQUIRE(store.inspect_publications().completed_sweeps == 0U);
+    VNA_REQUIRE(acquisition_resources.inspect().in_use == 0U);
+    VNA_REQUIRE(acquisition_resources.inspect().failure_finalizations == 1U);
+    VNA_REQUIRE(
+        opened.control->observations().released_execution_reservations == 1U);
+}
+
+TEST(AOnlySweepContract, AcceptedPrepareFailureWaitsForCleanupTerminal) {
+    using namespace vna;
+
+    ManualRuntimeClock clock;
+    runtime::OperationRuntime runtime{1U, clock};
+    store::InstrumentStore store{1U};
+    acquisition::AcquisitionAdmissionPool acquisition_resources{1U};
+    board::MockScenario scenario{};
+    scenario.prepare_behavior = board::MockPrepareBehavior::Fail;
+    scenario.prepare_delay = 25U;
+    board::MockBoardProvider provider{
+        board::MockCapabilityProfile{201U}, scenario};
+    auto opened_result = provider.open_controlled(
+        board::BoardOpenRequest{1U, board::BoardContractVersion{1U, 0U}});
+    VNA_REQUIRE(opened_result.has_value());
+    auto opened = std::move(opened_result).take_value();
+    instrument::InstrumentKernel kernel{
+        runtime,
+        store,
+        opened.board.execution(),
+        acquisition_resources,
+        clock,
+        instrument::AOnlyKernelProfile{1000U, 64U}};
+
+    const auto submitted = kernel.submit_a_only(instrument::AOnlySweepRequest{
+        3U,
+        1.0e6,
+        3.0e6,
+        instrument::AOnlyDiagnosticAuthorization::issue_for_mock_diagnostics()});
+    VNA_REQUIRE(submitted.has_value());
+    const auto operation_id = submitted.value().operation;
+    VNA_REQUIRE(kernel.run_one());
+    VNA_REQUIRE(opened.control->observations().accepted_prepare_calls == 1U);
+
+    opened.control->advance(24U);
+    VNA_REQUIRE(kernel.run_one());
+    VNA_REQUIRE(
+        store.inspect_operation(operation_id)->state ==
+        store::OperationState::Accepted);
+    VNA_REQUIRE(store.inspect().events == 0U);
+    VNA_REQUIRE(acquisition_resources.inspect().in_use == 1U);
+    VNA_REQUIRE(opened.control->observations().prepare_terminal_callbacks == 0U);
+
+    opened.control->advance(1U);
+    VNA_REQUIRE(opened.control->observations().prepare_terminal_callbacks == 1U);
+    VNA_REQUIRE(
+        store.inspect_operation(operation_id)->state ==
+        store::OperationState::Accepted);
+    VNA_REQUIRE(acquisition_resources.inspect().in_use == 1U);
+    VNA_REQUIRE(kernel.run_one());
+    VNA_REQUIRE(
+        store.inspect_operation(operation_id)->state ==
+        store::OperationState::Accepted);
+    VNA_REQUIRE(acquisition_resources.inspect().in_use == 1U);
+
+    VNA_REQUIRE(kernel.run_one());
+    const auto event = store.latest_event();
+    VNA_REQUIRE(event.has_value());
+    VNA_REQUIRE(event->state == store::OperationState::Failed);
+    VNA_REQUIRE(event->has_acquisition_failure);
+    VNA_REQUIRE(
+        event->failure.phase == acquisition::AcquisitionFailurePhase::Prepare);
+    VNA_REQUIRE(
+        event->failure.reason ==
+        acquisition::AcquisitionFailureReason::BoardPrepareFailed);
+    VNA_REQUIRE(event->failure.prepare_call.valid());
+    VNA_REQUIRE(event->failure.has_board_error);
+    VNA_REQUIRE(
+        event->failure.retry ==
+        acquisition::AcquisitionRetryClass::AfterResourceRelease);
+    VNA_REQUIRE(
+        event->failure.safety ==
+        acquisition::AcquisitionSafetyImpact::NoRunAccepted);
+    VNA_REQUIRE(opened.control->observations().accepted_run_calls == 0U);
+    VNA_REQUIRE(store.inspect_publications().completed_sweeps == 0U);
+    VNA_REQUIRE(acquisition_resources.inspect().in_use == 0U);
+    VNA_REQUIRE(acquisition_resources.inspect().failure_finalizations == 1U);
+    VNA_REQUIRE(
+        opened.control->observations().released_execution_reservations == 1U);
+}
+
+TEST(AOnlySweepContract, InvalidActualManifestFailsLocallyBeforeRun) {
+    using namespace vna;
+
+    const std::array invalid_manifests{
+        board::MockManifestBehavior::StaleCapabilityRevision,
+        board::MockManifestBehavior::MismatchedSession,
+        board::MockManifestBehavior::ExpandedPointEnvelope};
+    for (const auto behavior : invalid_manifests) {
+        SCOPED_TRACE(static_cast<int>(behavior));
+        ManualRuntimeClock clock;
+        runtime::OperationRuntime runtime{1U, clock};
+        store::InstrumentStore store{1U};
+        acquisition::AcquisitionAdmissionPool acquisition_resources{1U};
+        board::MockScenario scenario{};
+        scenario.prepare_delay = 0U;
+        scenario.manifest_behavior = behavior;
+        board::MockBoardProvider provider{
+            board::MockCapabilityProfile{201U}, scenario};
+        auto opened_result = provider.open_controlled(
+            board::BoardOpenRequest{1U, board::BoardContractVersion{1U, 0U}});
+        VNA_REQUIRE(opened_result.has_value());
+        auto opened = std::move(opened_result).take_value();
+        instrument::InstrumentKernel kernel{
+            runtime,
+            store,
+            opened.board.execution(),
+            acquisition_resources,
+            clock,
+            instrument::AOnlyKernelProfile{1000U, 64U}};
+
+        const auto submitted = kernel.submit_a_only(instrument::AOnlySweepRequest{
+            3U,
+            1.0e6,
+            3.0e6,
+            instrument::AOnlyDiagnosticAuthorization::
+                issue_for_mock_diagnostics()});
+        VNA_REQUIRE(submitted.has_value());
+        const auto operation_id = submitted.value().operation;
+        VNA_REQUIRE(kernel.run_one());
+        opened.control->advance(0U);
+        VNA_REQUIRE(kernel.run_one());
+        VNA_REQUIRE(
+            store.inspect_operation(operation_id)->state ==
+            store::OperationState::Accepted);
+        VNA_REQUIRE(opened.control->observations().accepted_run_calls == 0U);
+        VNA_REQUIRE(opened.control->observations().rejected_run_calls == 0U);
+        VNA_REQUIRE(acquisition_resources.inspect().in_use == 1U);
+
+        VNA_REQUIRE(kernel.run_one());
+        const auto event = store.latest_event();
+        VNA_REQUIRE(event.has_value());
+        VNA_REQUIRE(event->state == store::OperationState::Failed);
+        VNA_REQUIRE(event->has_acquisition_failure);
+        VNA_REQUIRE(
+            event->failure.phase ==
+            acquisition::AcquisitionFailurePhase::ManifestFinalization);
+        VNA_REQUIRE(
+            event->failure.reason ==
+            acquisition::AcquisitionFailureReason::ManifestOutsideAdmission);
+        VNA_REQUIRE(event->failure.prepare_call.valid());
+        VNA_REQUIRE(event->failure.prepared.valid());
+        VNA_REQUIRE(
+            event->failure.retry ==
+            acquisition::AcquisitionRetryClass::AfterStateRefresh);
+        VNA_REQUIRE(
+            event->failure.safety ==
+            acquisition::AcquisitionSafetyImpact::NoRunAccepted);
+        VNA_REQUIRE(store.inspect_publications().completed_sweeps == 0U);
+        VNA_REQUIRE(acquisition_resources.inspect().in_use == 0U);
+        VNA_REQUIRE(acquisition_resources.inspect().failure_finalizations == 1U);
+        VNA_REQUIRE(
+            opened.control->observations().released_execution_reservations == 1U);
+    }
 }
 
 TEST(AOnlySweepContract, ContinuationExpiryIsRelativeToCurrentBoardTick) {

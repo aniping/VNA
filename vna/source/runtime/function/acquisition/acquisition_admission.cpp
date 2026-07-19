@@ -99,22 +99,34 @@ bool AcquisitionAdmissionPool::Lease::narrow_to(
     }
 
     const auto& capabilities = claim_.capabilities;
+    std::uint32_t required_chunk_count{0U};
     bool observation_map_valid = manifest.required_observation_count > 0U &&
-        manifest.required_observation_count <= claim_.maximum_chunks &&
         manifest.required_observation_count <=
             manifest.required_observations.size();
     for (std::size_t index = 0U;
          observation_map_valid && index < manifest.required_observation_count;
          ++index) {
-        observation_map_valid =
-            manifest.required_observations[index].point_count ==
-            manifest.actual_point_count;
+        const auto& observation = manifest.required_observations[index];
+        const auto chunk_capacity =
+            static_cast<std::uint32_t>(board::kMaximumContractChunkSamples);
+        // 商用/Mock profile 当前远小于 uint32 上限，但 Board seam 仍不得让
+        // 恶意 point_count 通过“加 capacity-1”发生整数回绕。
+        const auto chunks_for_observation =
+            observation.point_count / chunk_capacity +
+            (observation.point_count % chunk_capacity == 0U ? 0U : 1U);
+        required_chunk_count += chunks_for_observation;
+        observation_map_valid = observation.source_state.valid() &&
+            observation.receiver_path.valid() &&
+            observation.point_count == manifest.actual_point_count &&
+            required_chunk_count <= claim_.maximum_chunks;
         for (std::size_t previous = 0U;
              observation_map_valid && previous < index;
              ++previous) {
-            observation_map_valid =
-                manifest.required_observations[previous].wave !=
-                manifest.required_observations[index].wave;
+            const auto& candidate = manifest.required_observations[previous];
+            observation_map_valid = candidate.source_state !=
+                    observation.source_state ||
+                candidate.receiver_path != observation.receiver_path ||
+                candidate.wave != observation.wave;
         }
     }
 

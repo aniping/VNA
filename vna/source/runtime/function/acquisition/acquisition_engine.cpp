@@ -4,6 +4,82 @@
 #include <utility>
 #include <variant>
 
+namespace {
+
+vna::acquisition::AcquisitionRetryClass retry_for_board_error(
+    vna::board::BoardErrc error) noexcept {
+    using vna::acquisition::AcquisitionRetryClass;
+    using vna::board::BoardErrc;
+    switch (error) {
+        case BoardErrc::StaleSessionEpoch:
+        case BoardErrc::StaleCapability:
+        case BoardErrc::StaleTopologyEpoch:
+        case BoardErrc::StaleOperationalEpoch:
+            return AcquisitionRetryClass::AfterStateRefresh;
+        case BoardErrc::Busy:
+        case BoardErrc::ResourceExhausted:
+            return AcquisitionRetryClass::AfterResourceRelease;
+        case BoardErrc::ContractViolation:
+        case BoardErrc::Closed:
+            return AcquisitionRetryClass::AfterRecovery;
+        case BoardErrc::InvalidIntent:
+        case BoardErrc::Unsupported:
+        case BoardErrc::AuthorizationMismatch:
+            return AcquisitionRetryClass::DoNotRetryWithoutChange;
+    }
+    return AcquisitionRetryClass::AfterRecovery;
+}
+
+vna::acquisition::AcquisitionRetryClass retry_for_failure(
+    vna::acquisition::AcquisitionFailureReason reason) noexcept {
+    using vna::acquisition::AcquisitionFailureReason;
+    using vna::acquisition::AcquisitionRetryClass;
+    switch (reason) {
+        case AcquisitionFailureReason::StopRequested:
+            return AcquisitionRetryClass::ExplicitResubmission;
+        case AcquisitionFailureReason::DeadlineExpired:
+        case AcquisitionFailureReason::BudgetExhausted:
+            return AcquisitionRetryClass::AfterResourceRelease;
+        case AcquisitionFailureReason::ManifestOutsideAdmission:
+            return AcquisitionRetryClass::AfterStateRefresh;
+        case AcquisitionFailureReason::InvalidAdmissionResources:
+        case AcquisitionFailureReason::BoardRejected:
+        case AcquisitionFailureReason::BoardPrepareFailed:
+        case AcquisitionFailureReason::BoardTerminalFailed:
+        case AcquisitionFailureReason::BoardPrepareDraining:
+        case AcquisitionFailureReason::BoardContractViolation:
+        case AcquisitionFailureReason::IncompleteObservationSet:
+        case AcquisitionFailureReason::StoreCommitRejected:
+        case AcquisitionFailureReason::RuntimeDispatchContractViolation:
+            return AcquisitionRetryClass::AfterRecovery;
+    }
+    return AcquisitionRetryClass::AfterRecovery;
+}
+
+vna::acquisition::AcquisitionSafetyImpact safety_for_failure(
+    vna::acquisition::AcquisitionFailurePhase phase,
+    vna::acquisition::AcquisitionFailureReason reason) noexcept {
+    using vna::acquisition::AcquisitionFailurePhase;
+    using vna::acquisition::AcquisitionFailureReason;
+    using vna::acquisition::AcquisitionSafetyImpact;
+    if (reason == AcquisitionFailureReason::BoardPrepareDraining ||
+        reason == AcquisitionFailureReason::BoardContractViolation) {
+        return AcquisitionSafetyImpact::ResourceIsolationRequired;
+    }
+    if (phase == AcquisitionFailurePhase::Run &&
+        reason == AcquisitionFailureReason::BoardRejected) {
+        return AcquisitionSafetyImpact::NoRunAccepted;
+    }
+    if (phase == AcquisitionFailurePhase::Run ||
+        phase == AcquisitionFailurePhase::CandidateSealing ||
+        phase == AcquisitionFailurePhase::PublicationCommit) {
+        return AcquisitionSafetyImpact::RunTerminalObserved;
+    }
+    return AcquisitionSafetyImpact::NoRunAccepted;
+}
+
+}  // namespace
+
 namespace vna::acquisition {
 
 AcquisitionEngine::AcquisitionEngine(
@@ -112,8 +188,10 @@ runtime::RuntimeWorkStep AcquisitionEngine::resume(
         auto terminal = std::move(*prepare_terminal_);
         prepare_terminal_.reset();
         if (auto* failed = std::get_if<board::PrepareFailed>(&terminal)) {
-            return fail_board_rejection(
-                AcquisitionFailurePhase::Prepare, failed->error);
+            return fail_board_terminal(
+                AcquisitionFailurePhase::Prepare,
+                AcquisitionFailureReason::BoardPrepareFailed,
+                failed->error);
         }
         if (std::holds_alternative<board::PrepareDraining>(terminal)) {
             auto draining =
@@ -122,7 +200,14 @@ runtime::RuntimeWorkStep AcquisitionEngine::resume(
             failure_ = AcquisitionFailure{
                 AcquisitionFailurePhase::Prepare,
                 AcquisitionFailureReason::BoardPrepareDraining,
-                prepare_call_};
+                prepare_call_,
+                prepared_,
+                run_,
+                generation_,
+                false,
+                board::BoardErrc::ContractViolation,
+                AcquisitionRetryClass::AfterRecovery,
+                AcquisitionSafetyImpact::ResourceIsolationRequired};
             phase_ = Phase::Draining;
             drain_obligation_ = DrainObligation::Quarantine;
             return runtime::RuntimeWorkStep::draining(drain_);
@@ -359,7 +444,9 @@ runtime::RuntimeWorkStep AcquisitionEngine::fail(
         run_,
         generation_,
         false,
-        board::BoardErrc::ContractViolation};
+        board::BoardErrc::ContractViolation,
+        retry_for_failure(reason),
+        safety_for_failure(phase, reason)};
     phase_ = Phase::Terminal;
     return runtime::RuntimeWorkStep::failed();
 }
@@ -375,7 +462,28 @@ runtime::RuntimeWorkStep AcquisitionEngine::fail_board_rejection(
         run_,
         generation_,
         true,
-        error.code};
+        error.code,
+        retry_for_board_error(error.code),
+        AcquisitionSafetyImpact::NoRunAccepted};
+    phase_ = Phase::Terminal;
+    return runtime::RuntimeWorkStep::failed();
+}
+
+runtime::RuntimeWorkStep AcquisitionEngine::fail_board_terminal(
+    AcquisitionFailurePhase phase,
+    AcquisitionFailureReason reason,
+    board::BoardError error) noexcept {
+    failure_ = AcquisitionFailure{
+        phase,
+        reason,
+        prepare_call_,
+        prepared_,
+        run_,
+        generation_,
+        true,
+        error.code,
+        retry_for_board_error(error.code),
+        safety_for_failure(phase, reason)};
     phase_ = Phase::Terminal;
     return runtime::RuntimeWorkStep::failed();
 }
@@ -404,7 +512,11 @@ runtime::RuntimeWorkStep AcquisitionEngine::wait_or_drain(
         prepare_call_,
         prepared_,
         run_,
-        generation_};
+        generation_,
+        false,
+        board::BoardErrc::ContractViolation,
+        retry_for_failure(reason),
+        AcquisitionSafetyImpact::ResourceIsolationRequired};
     phase_ = Phase::Draining;
     drain_obligation_ = phase == AcquisitionFailurePhase::Prepare
         ? DrainObligation::PrepareTerminal
@@ -423,7 +535,11 @@ runtime::RuntimeWorkStep AcquisitionEngine::drain_contract_violation(
         prepare_call_,
         prepared_,
         run_,
-        generation_};
+        generation_,
+        false,
+        board::BoardErrc::ContractViolation,
+        AcquisitionRetryClass::AfterRecovery,
+        AcquisitionSafetyImpact::ResourceIsolationRequired};
     phase_ = Phase::Draining;
     drain_obligation_ = obligation;
     return runtime::RuntimeWorkStep::draining(drain_);

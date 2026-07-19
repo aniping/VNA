@@ -36,6 +36,8 @@ enum class AcquisitionFailureReason {
     InvalidAdmissionResources,
     /// Board 同步拒绝了 Prepare 或 Run。
     BoardRejected,
+    /// Board 接受 Prepare 后通过携带 cleanup evidence 的唯一终态报告失败。
+    BoardPrepareFailed,
     /// Board 通过唯一异步终态报告 Run 失败。
     BoardTerminalFailed,
     /// Board Prepare 已移交仍在排空的资源 owner，执行容量必须隔离保留。
@@ -52,6 +54,34 @@ enum class AcquisitionFailureReason {
     RuntimeDispatchContractViolation
 };
 
+/// 调用者处理 A-only 采集失败时采用的稳定重试分类。
+enum class AcquisitionRetryClass {
+    /// 原请求或能力不受支持；修改请求、配置或实现前不得原样重试。
+    DoNotRetryWithoutChange,
+    /// 版本或实际执行 cut 已变化；重新读取能力并重新规划后才可重试。
+    AfterStateRefresh,
+    /// 容量或异步 owner 尚未释放；观察资源终态后才可重试。
+    AfterResourceRelease,
+    /// 停止或取消由调用者发起；只有新的显式请求才能重新开始。
+    ExplicitResubmission,
+    /// Board/Runtime 契约或执行失败；完成诊断、恢复或隔离处置后才可重试。
+    AfterRecovery
+};
+
+/// A-only 失败时已经取得的执行生命周期证据。
+///
+/// 该分类只描述 Mock-only 上层流程观察到的“Run 是否接受/终态是否到达”，
+/// 不是物理 RF-off、互锁或真实单板安全证明。Real Board 仍必须通过独立
+/// SafetyLane、abort/readback 和 HIL 验收。
+enum class AcquisitionSafetyImpact {
+    /// Board Run 从未被接受；不据此推断真实硬件没有其他 RF 活动。
+    NoRunAccepted,
+    /// 匹配 Run terminal 已到达；terminal 本身不等价于物理 RF-off readback。
+    RunTerminalObserved,
+    /// 存在尚未闭合或违反契约的异步义务，相关资源必须继续隔离。
+    ResourceIsolationRequired
+};
+
 /// 可由 L4 交付并由 L5 原样保存的类型化采集失败事实。
 struct AcquisitionFailure final {
     /// 失败发生的 Acquisition 状态机阶段。
@@ -66,9 +96,16 @@ struct AcquisitionFailure final {
     board::BoardRunId run{};
     /// 与 run 配对的 Run generation。
     board::RunGeneration generation{};
-    /// 同步 BoardError 有效时为 true；异步失败终态不伪造 BoardError。
+    /// 同步拒绝或 PrepareFailed terminal 携带 BoardError 时为 true；
+    /// 只有 RunTerminalKind 的失败不伪造 BoardError。
     bool has_board_error{false};
+    /// has_board_error 为 true 时保存稳定 Board 错误码；否则不得据此分支。
     board::BoardErrc board_error{board::BoardErrc::ContractViolation};
+    /// 无需解析诊断文本即可执行的重试前置条件。
+    AcquisitionRetryClass retry{AcquisitionRetryClass::AfterRecovery};
+    /// 当前失败已经取得的执行生命周期证据；不宣称物理 RF 安全。
+    AcquisitionSafetyImpact safety{
+        AcquisitionSafetyImpact::ResourceIsolationRequired};
 };
 
 /// L4 成功终态移交给 L2 的完整 publication 与 purpose-specific owner 集合。

@@ -321,6 +321,8 @@ struct PendingPrepare final {
     SweepIntent intent{};
     PrepareAuthorization authorization;
     PrepareSinkRegistration sink;
+    MockPrepareBehavior behavior{MockPrepareBehavior::Succeed};
+    MockManifestBehavior manifest_behavior{MockManifestBehavior::MatchIntent};
     VirtualDuration due_at{0U};
 };
 
@@ -461,6 +463,8 @@ public:
             std::move(intent),
             std::move(authorization),
             std::move(sink),
+            scenario_.prepare_behavior,
+            scenario_.manifest_behavior,
             now_ + scenario_.prepare_delay});
         return PrepareAccepted{call};
     }
@@ -611,6 +615,17 @@ private:
         // 但同一 reservation 不能再次 Prepare。
         auto pending = std::move(*pending_prepare_);
         pending_prepare_.reset();
+        if (pending.behavior == MockPrepareBehavior::Fail) {
+            // PrepareFailed 自带 cleanup evidence，因此回调前可结束 Mock 的
+            // Prepare 资源义务；上层仍必须等该 terminal 后才能提交 Failed。
+            execution_reservation_phase_ = MockExecutionReservationPhase::Terminal;
+            PrepareTerminal terminal = PrepareFailed{
+                PrepareCleanupEvidence{},
+                BoardError{BoardErrc::ResourceExhausted}};
+            ++observations_.prepare_terminal_callbacks;
+            pending.sink.sink().on_terminal(std::move(terminal));
+            return;
+        }
         execution_reservation_phase_ = MockExecutionReservationPhase::Prepared;
         const auto prepared_id = PreparedExecutionId{next_prepared_id_++};
         const core::StrongDigest manifest_digest{
@@ -646,6 +661,24 @@ private:
                     SourceStateId{1U},
                     ReceiverPathId{2U}}},
             2U};
+        switch (pending.manifest_behavior) {
+            case MockManifestBehavior::MatchIntent:
+                break;
+            case MockManifestBehavior::StaleCapabilityRevision:
+                ++manifest.capability_revision;
+                break;
+            case MockManifestBehavior::MismatchedSession:
+                manifest.session_id = BoardSessionId{
+                    manifest.session_id.value() + 1U};
+                break;
+            case MockManifestBehavior::ExpandedPointEnvelope:
+                ++manifest.actual_point_count;
+                manifest.required_observations[0U].point_count =
+                    manifest.actual_point_count;
+                manifest.required_observations[1U].point_count =
+                    manifest.actual_point_count;
+                break;
+        }
         active_manifest_ = manifest;
         // 清单摘要把后续 PreparedStartToken/StartAuthorization 绑定到本次 Prepare。
         PrepareTerminal terminal = PrepareSucceeded{PreparedExecution{
