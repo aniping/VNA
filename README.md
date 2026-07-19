@@ -30,6 +30,8 @@
 - 正式 chunk 通过固定容量 `AcquisitionIngress` 把 move-only `AcquisitionChunkLease` 从 Board callback 转交给唯一长期 owner `NetworkObservationBuilder`；拒绝也会消费 payload，回调不生成轴、不写 Store；
 - Builder 按 Manifest 中 `source state + receiver path + wave` 的观测集合和点覆盖重组乱序块，不依赖 callback 顺序或固定 a/b 数组位置；只有实际轴、全部必需覆盖、质量和唯一 Completed terminal 均闭合后才密封 `CandidateCommitLease`，缺少必需观测时不发布部分 A；
 - L2 在 Runtime Completed 后才把 candidate 交给 Store；Store 在一个 revision 内共同发布不可变 `CompletedSweepBundle`、Completed Operation、status/fence 和完成 Event，receipt 返回后才终结 A-only completion 与 disabled Preview owner；
+- Store 成功发布可在有 schema 的 validation 或本地 write staging 阶段被确定性拒绝；两类普通拒绝都在同一个 L2 completion 回合使用 Accepted 时安装的终态预留提交 state-only Failed，A、Completed Event/status/fence 全部不逃逸，candidate 随后唯一 abort，completion/disabled Preview owner 只在失败 commit receipt 后终结；
+- 若连预留的 state-only Failed 都因显式 Store integrity fault 无法提交，Kernel 进入可查询的 `StoreFailStop`，保留 candidate、Board/采集 owner 并拒绝新扫描；当前未实现自动或人工恢复命令，不能用析构或重新提交绕过隔离；
 - 公开 A 查询返回值副本，可读取实际轴、原始复数值、逐点质量、LogicalSweepId 及单元素 BoardRunEvidence；证据冻结 Manifest、Run/generation、按 callback 顺序记录的 chunk identity/coverage/sequence 和唯一 terminal，不暴露 Store 内部裸 Buffer。连续成功扫描使用不同 Snapshot/LogicalSweep ID，后续提交不修改先前历史；A-only 成功仍不发布 B、Stage、C 或空后继 handoff。
 
 当前明确未实现：
@@ -54,7 +56,7 @@ cmake --build --preset mingw-debug
 ctest --preset mingw-debug
 ```
 
-测试全程使用虚拟时间，不依赖 wall-clock sleep。`BUILD_TESTING=ON` 时，CMake 从仓库内 `vna/3rdparty/packages/googletest-v1.17.0.zip` 解压固定版本 GoogleTest，并通过 `gtest_discover_tests()` 注册独立测试用例，不需要构建机访问外网；Runtime 的不可达 dispatch 防御分支故障注入也只在该组合中条件编译。生产/RTOS 配置设置 `BUILD_TESTING=OFF` 后不会解压、构建或链接 GoogleTest，也不包含该测试字段、friend 或 dispatch 分支。
+测试全程使用虚拟时间，不依赖 wall-clock sleep。`BUILD_TESTING=ON` 时，CMake 从仓库内 `vna/3rdparty/packages/googletest-v1.17.0.zip` 解压固定版本 GoogleTest，并通过 `gtest_discover_tests()` 注册独立测试用例，不需要构建机访问外网；Runtime dispatch 与 Store validation/write/integrity 故障注入也只在该组合中条件编译。生产/RTOS 配置设置 `BUILD_TESTING=OFF` 后不会解压、构建或链接 GoogleTest，也不包含这些测试字段、friend、宏或分支。
 
 `AOnlySubmissionPerformance.RecordsMinimumAndProductMaximumBaseline` 固定执行 8 次 warm-up 和 64 次记录，分别报告 1 点与当前 Mock 产品上限 201 点请求从 submit 到 Accepted 的 median/p95。该结果只用于同机构建比较，不设绝对时延门禁；门禁是提交期间无 Board 等待、无逐点频率轴/数据初始化和大块复制。
 

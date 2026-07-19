@@ -73,7 +73,9 @@ enum class AOnlySubmitErrc {
     /// Store 无法预留 terminal/status/fence/Event 生命周期容量。
     StoreAdmissionRejected,
     /// Store 拒绝把完整预留安装为 Accepted，例如 OperationId 冲突。
-    StoreInitialCommitRejected
+    StoreInitialCommitRejected,
+    /// Kernel 已检测到 Store 终态预留不变量失效，禁止接受新的仪器操作。
+    InstrumentFailStop
 };
 
 /// A-only 提交拒绝结果。
@@ -105,6 +107,26 @@ struct AcceptedAOnlyOperation final {
 
 /// A-only 公共提交的 Accepted/Rejected 封闭结果。
 using AOnlySubmitResult = core::Result<AcceptedAOnlyOperation, AOnlySubmitError>;
+
+/// InstrumentKernel 是否仍允许接受新业务操作。
+enum class InstrumentIntegrityState {
+    /// Store 终态提交不变量保持成立。
+    Healthy,
+    /// 已安装的 Store 终态预留无法提交，只能由尚未实现的恢复流程解除。
+    StoreFailStop
+};
+
+/// Kernel 完整性状态的只读类型化快照。
+struct InstrumentIntegritySnapshot final {
+    /// 当前是否处于 Store fail-stop。
+    InstrumentIntegrityState state{InstrumentIntegrityState::Healthy};
+    /// 触发 fail-stop 的 Operation；Healthy 时无效。
+    store::OperationId operation{};
+    /// Store 是否返回了可保存的类型化错误。
+    bool has_store_error{false};
+    /// has_store_error 为 true 时的 Store 错误；只用于诊断，不作为恢复能力。
+    store::StoreError store_error{};
+};
 
 /// Web/SCPI 之下共享的最小 L2 仪器业务入口。
 ///
@@ -143,6 +165,12 @@ public:
     /// @return 有工作被推进时返回 true；当前 receiver 无待办时返回 false。
     bool run_one() noexcept;
 
+    /// 查询是否因 Store 终态不变量失效而停止接受新操作。
+    /// @return 值快照；不暴露 candidate、owner 或可执行恢复能力。
+    InstrumentIntegritySnapshot inspect_integrity() const noexcept {
+        return integrity_;
+    }
+
 private:
     /// A-only 最多包含 a/b 两项 201 点观测；Claim、Pool 与 Ingress 共用此上界。
     static constexpr std::size_t kAOnlyChunkCapacity =
@@ -166,6 +194,11 @@ private:
         runtime::RuntimeDrainTerminal terminal) noexcept override;
     std::size_t find_free_slot() const noexcept;
     std::size_t find_slot(runtime::WorkId work) const noexcept;
+    bool accept_state_only_failure_commit(
+        store::OperationId operation,
+        const core::Result<
+            store::TerminalCommitReceipt,
+            store::StoreError>& result) noexcept;
     void release_completed_slots() noexcept;
 
     runtime::OperationRuntime& runtime_;
@@ -182,6 +215,7 @@ private:
     std::uint64_t next_work_id_{1U};
     std::uint64_t next_completed_sweep_id_{1U};
     std::uint64_t next_logical_sweep_id_{1U};
+    InstrumentIntegritySnapshot integrity_{};
 };
 
 }  // namespace vna::instrument

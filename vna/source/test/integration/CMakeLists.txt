@@ -18,3 +18,10 @@ vna_add_test(
     vna::runtime
     vna::board_mock
 )
+
+vna_add_test(
+    vna_store_commit_recovery_contract_tests
+    store_commit_recovery_contract_tests.cpp
+    vna::runtime
+    vna::board_mock
+)

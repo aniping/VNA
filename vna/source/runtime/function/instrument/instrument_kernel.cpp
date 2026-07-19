@@ -35,6 +35,7 @@ acquisition::AcquisitionRetryClass retry_for_submit_error(
             return acquisition::AcquisitionRetryClass::AfterRecovery;
         case AOnlySubmitErrc::DiagnosticAuthorizationRequired:
         case AOnlySubmitErrc::InvalidRequest:
+        case AOnlySubmitErrc::InstrumentFailStop:
             return acquisition::AcquisitionRetryClass::DoNotRetryWithoutChange;
     }
     return acquisition::AcquisitionRetryClass::AfterRecovery;
@@ -73,6 +74,9 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
                 : 0U,
             request.expected_capability_revision});
     };
+    if (integrity_.state == InstrumentIntegrityState::StoreFailStop) {
+        return reject(AOnlySubmitErrc::InstrumentFailStop);
+    }
     if (!request.authorization.valid()) {
         return reject(AOnlySubmitErrc::DiagnosticAuthorizationRequired);
     }
@@ -219,7 +223,7 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
                 board::BoardErrc::ContractViolation,
                 acquisition::AcquisitionRetryClass::AfterRecovery,
                 acquisition::AcquisitionSafetyImpact::NoRunAccepted});
-        if (failed.has_value()) {
+        if (accept_state_only_failure_commit(operation, failed)) {
             (void)slot.engine->finalize_failure_owners();
             slot.release_pending = true;
             release_completed_slots();
@@ -262,7 +266,8 @@ void InstrumentKernel::on_runtime_terminal(
                     board::BoardErrc::ContractViolation,
                     acquisition::AcquisitionRetryClass::AfterRecovery,
                     acquisition::AcquisitionSafetyImpact::RunTerminalObserved});
-            if (committed.has_value()) {
+            if (accept_state_only_failure_commit(
+                    slot.operation, committed)) {
                 (void)slot.engine->finalize_failure_owners();
                 slot.release_pending = true;
             }
@@ -299,19 +304,24 @@ void InstrumentKernel::on_runtime_terminal(
                 board::BoardErrc::ContractViolation,
                 acquisition::AcquisitionRetryClass::AfterRecovery,
                 acquisition::AcquisitionSafetyImpact::RunTerminalObserved});
-        if (!failed.has_value()) {
+        if (!accept_state_only_failure_commit(slot.operation, failed)) {
             slot.pending_success.emplace(std::move(*success));
             return;
         }
-        (void)success->candidate.abort();
-        (void)success->completion_owners.finalize_failed();
+        if (!success->candidate.abort() ||
+            !success->completion_owners.finalize_failed()) {
+            // Store 失败事实已经可见，但任一 move-only owner 没有完成唯一终结
+            // 时仍须保活隔离；不能仅靠局部析构把资源误报为已回收。
+            slot.pending_success.emplace(std::move(*success));
+            return;
+        }
         slot.release_pending = true;
         return;
     }
 
     const auto committed = store_.commit_acquisition_failed(
         slot.operation, slot.engine->failure());
-    if (!committed.has_value()) {
+    if (!accept_state_only_failure_commit(slot.operation, committed)) {
         return;
     }
 
@@ -354,6 +364,31 @@ std::size_t InstrumentKernel::find_slot(runtime::WorkId work) const noexcept {
         }
     }
     return kMaximumAOnlyOperations;
+}
+
+bool InstrumentKernel::accept_state_only_failure_commit(
+    store::OperationId operation,
+    const core::Result<
+        store::TerminalCommitReceipt,
+        store::StoreError>& result) noexcept {
+    if (result.has_value() &&
+        result.value().state == store::OperationState::Failed &&
+        result.value().disposition ==
+            store::TerminalCommitDisposition::Committed) {
+        return true;
+    }
+
+    // Accepted 时安装的终态 reservation 本应保证该提交不依赖新容量。失败或
+    // AlreadyTerminal 均表示 Store 事实不变量已破坏；保留 candidate/owner，
+    // 阻止新操作，并等待本票之外的显式恢复流程。
+    integrity_ = InstrumentIntegritySnapshot{
+        InstrumentIntegrityState::StoreFailStop,
+        operation,
+        true,
+        result.has_value()
+            ? store::StoreError{store::StoreErrc::IntegrityFault}
+            : result.error()};
+    return false;
 }
 
 void InstrumentKernel::release_completed_slots() noexcept {

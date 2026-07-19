@@ -30,7 +30,13 @@ enum class StoreErrc {
     /// 找不到要提交终态的操作。
     OperationNotFound,
     /// A candidate 无效，或其 WorkId/plan digest 与 Accepted Operation 不匹配。
-    InvalidCandidate
+    InvalidCandidate,
+    /// A candidate 通过身份关联后，被有 schema 的领域校验规则拒绝。
+    CandidateValidationRejected,
+    /// A candidate 已在本地完成 staging，但正式 revision 切换前写入被拒绝。
+    CandidateWriteRejected,
+    /// 已安装的生命周期终态预留仍无法完成 state-only 提交，Store 不变量失效。
+    IntegrityFault
 };
 
 /// Store 接口返回的类型化错误。
@@ -101,6 +107,9 @@ struct PublicationCountSnapshot final {
 };
 
 class InstrumentStore;
+#if defined(VNA_ENABLE_STORE_CONTRACT_TEST_HOOKS)
+class InstrumentStoreContractTestAccess;
+#endif
 
 /// move-only 的生命周期终态容量预留。
 ///
@@ -297,6 +306,9 @@ public:
 
 private:
     friend class LifecycleTerminalReservation;
+#if defined(VNA_ENABLE_STORE_CONTRACT_TEST_HOOKS)
+    friend class InstrumentStoreContractTestAccess;
+#endif
 
     enum class SlotState {
         Empty,
@@ -337,6 +349,12 @@ private:
     std::uint64_t next_event_id_{1U};
     InstrumentStatusSnapshot status_{};
     PublicationCountSnapshot publications_{};
+#if defined(VNA_ENABLE_STORE_CONTRACT_TEST_HOOKS)
+    /// 只在合同测试组合存在；由 friend 设置并由下一次合法成功提交消费一次。
+    std::optional<StoreErrc> next_completed_sweep_commit_fault_{};
+    /// 只在合同测试组合存在；模拟已安装终态预留无法完成 state-only 失败提交。
+    bool fail_next_acquisition_failure_commit_{false};
+#endif
 };
 
 }  // namespace vna::store

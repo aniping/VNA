@@ -142,6 +142,13 @@ core::Result<TerminalCommitReceipt, StoreError>
 InstrumentStore::commit_acquisition_failed(
     OperationId operation,
     acquisition::AcquisitionFailure failure) noexcept {
+#if defined(VNA_ENABLE_STORE_CONTRACT_TEST_HOOKS)
+    if (fail_next_acquisition_failure_commit_) {
+        fail_next_acquisition_failure_commit_ = false;
+        return core::Result<TerminalCommitReceipt, StoreError>::failure(
+            StoreError{StoreErrc::IntegrityFault});
+    }
+#endif
     return commit_terminal_impl(
         operation, OperationState::Failed, &failure);
 }
@@ -169,9 +176,27 @@ CompletedSweepCommitResult InstrumentStore::commit_completed_sweep(
             return reject(StoreErrc::InvalidCandidate);
         }
 
+#if defined(VNA_ENABLE_STORE_CONTRACT_TEST_HOOKS)
+        if (next_completed_sweep_commit_fault_ ==
+            StoreErrc::CandidateValidationRejected) {
+            next_completed_sweep_commit_fault_.reset();
+            return reject(StoreErrc::CandidateValidationRejected);
+        }
+#endif
+
         const auto terminal_revision = revision_ + 1U;
         CompletedSweepBundle completed{
             operation, terminal_revision, candidate};
+
+#if defined(VNA_ENABLE_STORE_CONTRACT_TEST_HOOKS)
+        if (next_completed_sweep_commit_fault_ ==
+            StoreErrc::CandidateWriteRejected) {
+            // completed 只在栈上完成 staging；revision 与所有公开 Slot 字段尚未
+            // 切换，因此拒绝后 candidate 仍由返回分支唯一持有且正式事实为零。
+            next_completed_sweep_commit_fault_.reset();
+            return reject(StoreErrc::CandidateWriteRejected);
+        }
+#endif
 
         // 所有有界字段准备完成后才切换 revision；本同步函数不会在中途暴露 Slot。
         revision_ = terminal_revision;
