@@ -256,7 +256,7 @@ TEST(BoardAdapterContract, ExecutionReservationCannotBeReusedAcrossPhases) {
 
     MockScenario scenario{};
     scenario.prepare_delay = 1U;
-    scenario.run_delay = 1U;
+    scenario.run_duration = 350U;
     MockBoardProvider provider{MockCapabilityProfile{201U}, scenario};
     auto opened_result = provider.open_controlled(
         BoardOpenRequest{1U, BoardContractVersion{1U, 0U}});
@@ -334,7 +334,7 @@ TEST(BoardAdapterContract, ExecutionReservationCannotBeReusedAcrossPhases) {
         PrepareSinkRegistration{duplicate_running_sink});
     VNA_REQUIRE(std::holds_alternative<PrepareRejected>(duplicate_running));
 
-    opened.control->advance(1U);
+    opened.control->advance(350U);
     VNA_REQUIRE(run_sink.terminal_count == 1U);
 
     RecordingPrepareSink duplicate_terminal_sink;
@@ -363,7 +363,7 @@ TEST(BoardAdapterContract, RunRejectsPreparedIdentityNotIssuedByItsReservation) 
 
     MockScenario scenario{};
     scenario.prepare_delay = 1U;
-    scenario.run_delay = 1U;
+    scenario.run_duration = 350U;
     MockBoardProvider provider{MockCapabilityProfile{201U}, scenario};
     auto opened_result = provider.open_controlled(
         BoardOpenRequest{1U, BoardContractVersion{1U, 0U}});
@@ -500,7 +500,7 @@ TEST(BoardAdapterContract, AcceptedRunEmitsDeterministicWavesAndOneTerminal) {
 
     MockScenario scenario{};
     scenario.prepare_delay = 2U;
-    scenario.run_delay = 5U;
+    scenario.run_duration = 350U;
     scenario.incident_a[0U] = ComplexSample{1.0F, 0.0F};
     scenario.incident_a[1U] = ComplexSample{1.0F, 0.1F};
     scenario.incident_a[2U] = ComplexSample{1.0F, 0.2F};
@@ -560,7 +560,7 @@ TEST(BoardAdapterContract, AcceptedRunEmitsDeterministicWavesAndOneTerminal) {
     VNA_REQUIRE(run_sink.chunk_count == 0U);
     VNA_REQUIRE(run_sink.terminal_count == 0U);
 
-    opened.control->advance(4U);
+    opened.control->advance(349U);
     VNA_REQUIRE(run_sink.terminal_count == 0U);
     opened.control->advance(1U);
     VNA_REQUIRE(run_sink.phase_count == 2U);

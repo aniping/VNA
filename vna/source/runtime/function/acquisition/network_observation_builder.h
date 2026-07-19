@@ -17,8 +17,6 @@ enum class NetworkObservationErrc {
     InvalidManifest,
     /// 数据块身份、序号、点范围或 payload 与 Manifest/Run 不匹配。
     InvalidChunk,
-    /// 相同必需观测被交付多次。
-    DuplicateObservation,
     /// Run terminal 身份、数量或种类违反契约。
     InvalidTerminal,
     /// 成功 terminal 到达时仍缺少必需观测或完整点覆盖。
@@ -34,8 +32,9 @@ struct NetworkObservationError final {
 
 /// 按 Prepared Manifest 必需观测图组装单板完整接收机波量的唯一长期 owner。
 ///
-/// 当前工单只接受每项观测一个完整块；多块、乱序和重叠账本由工单 04 扩展。
-/// Builder 取得每个 AcquisitionChunkLease 后，Adapter 不再拥有其 payload。
+/// Builder 以 Manifest 的 typed observation set 为唯一形状来源，按 point range
+/// 组装乱序数据块；callback 顺序只进入证据账本，不决定最终点位置。Builder 取得
+/// 每个 AcquisitionChunkLease 后，Adapter 不再拥有其 payload。
 class NetworkObservationBuilder final {
 public:
     /// 建立与一次实际 Prepared execution 和 Run 绑定的空 Builder。
@@ -91,8 +90,16 @@ public:
 private:
     bool manifest_is_valid() const noexcept;
     std::optional<std::size_t> find_observation(
+        board::SourceStateId source_state,
+        board::ReceiverPathId receiver_path,
         board::ReceiverWave wave) const noexcept;
     bool sequence_already_used(board::ChunkSequence sequence) const noexcept;
+    bool overlaps_existing(
+        const CandidateObservationLease& observation,
+        std::uint32_t point_begin,
+        std::uint32_t point_count) const noexcept;
+    bool has_complete_coverage(
+        const CandidateObservationLease& observation) const noexcept;
     NetworkObservationError remember(NetworkObservationErrc code) noexcept;
 
     board::PreparedExecutionManifest manifest_{};
@@ -101,6 +108,8 @@ private:
     std::array<
         std::optional<CandidateObservationLease>,
         board::kMaximumPreparedObservations> observations_{};
+    std::array<BoardChunkEvidence, board::kMaximumRunChunks> chunk_ledger_{};
+    std::uint32_t chunk_count_{0U};
     std::optional<board::BoardRunTerminal> terminal_{};
     std::optional<NetworkObservationError> error_{};
     bool sealed_{false};

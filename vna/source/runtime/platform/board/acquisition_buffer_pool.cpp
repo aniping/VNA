@@ -31,8 +31,8 @@ AcquisitionBufferPool::reserve_delivery(
         return fail(AcquisitionBufferPoolErrc::ResourceExhausted);
     }
 
-    std::array<std::size_t, kMaximumPreparedObservations> indices{};
-    std::array<std::uint64_t, kMaximumPreparedObservations> generations{};
+    std::array<std::size_t, kMaximumRunChunks> indices{};
+    std::array<std::uint64_t, kMaximumRunChunks> generations{};
     std::size_t selected{0U};
     for (std::size_t index = 0U;
          index < capacity_ && selected < buffer_count;

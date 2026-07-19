@@ -123,8 +123,9 @@ public:
     bool run_one() noexcept;
 
 private:
-    /// 当前 A-only 单块清单固定需要 a/b 两个 chunk；Claim、Pool 与 Ingress 共用。
-    static constexpr std::size_t kAOnlyChunkCapacity = 2U;
+    /// A-only 最多包含 a/b 两项 201 点观测；Claim、Pool 与 Ingress 共用此上界。
+    static constexpr std::size_t kAOnlyChunkCapacity =
+        2U * board::kMaximumChunksPerObservation;
 
     struct Slot final {
         bool active{false};
@@ -153,7 +154,7 @@ private:
     runtime::RuntimeMonotonicClock& clock_;
     AOnlyKernelProfile profile_{};
     runtime::RuntimeCompletionReceiver completion_receiver_;
-    /// 单板一次只允许一项 execution，A-only 因而固定预留 a/b 两个回退槽。
+    /// 单板一次只允许一项 execution，A-only 为 a/b 的最坏分块数原子预留槽位。
     board::AcquisitionBufferPool acquisition_buffers_{kAOnlyChunkCapacity};
     std::array<Slot, kMaximumAOnlyOperations> slots_{};
     std::uint64_t next_operation_id_{1U};

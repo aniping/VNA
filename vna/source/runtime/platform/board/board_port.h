@@ -25,6 +25,10 @@ using ManifestId = core::StrongId<struct ManifestIdTag>;
 using BoardRunId = core::StrongId<struct BoardRunIdTag>;
 using RunGeneration = core::StrongId<struct RunGenerationTag>;
 using ChunkSequence = core::StrongId<struct ChunkSequenceTag>;
+/// Prepared Manifest 和数据块共同使用的激励状态身份；0 表示无效。
+using SourceStateId = core::StrongId<struct SourceStateIdTag>;
+/// Prepared Manifest 和数据块共同使用的接收路径身份；0 表示无效。
+using ReceiverPathId = core::StrongId<struct ReceiverPathIdTag>;
 
 /// 上层和单板适配器共同支持的契约版本。
 struct BoardContractVersion final {
@@ -204,6 +208,10 @@ struct PreparedObservationSpec final {
     ReceiverWave wave{ReceiverWave::IncidentA};
     /// 本观测必须覆盖的完整点数。
     std::uint32_t point_count{0U};
+    /// 产生该观测的激励状态；同一波量可由不同激励状态分别出现。
+    SourceStateId source_state{1U};
+    /// 采集该观测的接收路径；与 source_state/wave 共同构成唯一身份。
+    ReceiverPathId receiver_path{1U};
 };
 
 /// Prepare 成功后由适配器确认的实际执行参数和版本证据。
@@ -443,6 +451,11 @@ struct ComplexSample final {
 
 /// 单个 BoardPort 数据块在当前契约中可携带的最大复数点数。
 constexpr std::size_t kMaximumContractChunkSamples = 64U;
+/// 当前产品切片中一项 201 点观测最多拆分成的数据块数。
+constexpr std::size_t kMaximumChunksPerObservation = 4U;
+/// 单次 Run 对全部必需观测允许交付的最大有界数据块数。
+constexpr std::size_t kMaximumRunChunks =
+    kMaximumPreparedObservations * kMaximumChunksPerObservation;
 
 /// 独占携带一块接收机采样数据的 move-only BufferPool 租约。
 ///
@@ -548,15 +561,15 @@ private:
     RunDeliveryGrant(
         std::uint64_t grant_id,
         AcquisitionBufferPool& buffer_pool,
-        std::array<std::size_t, kMaximumPreparedObservations> reserved_slots,
-        std::array<std::uint64_t, kMaximumPreparedObservations> generations,
+        std::array<std::size_t, kMaximumRunChunks> reserved_slots,
+        std::array<std::uint64_t, kMaximumRunChunks> generations,
         std::size_t reserved_count) noexcept;
     void invalidate() noexcept;
 
     std::uint64_t grant_id_{0U};
     AcquisitionBufferPool* buffer_pool_{nullptr};
-    std::array<std::size_t, kMaximumPreparedObservations> reserved_slots_{};
-    std::array<std::uint64_t, kMaximumPreparedObservations> generations_{};
+    std::array<std::size_t, kMaximumRunChunks> reserved_slots_{};
+    std::array<std::uint64_t, kMaximumRunChunks> generations_{};
     std::size_t reserved_count_{0U};
     std::size_t issued_count_{0U};
     bool valid_{false};
@@ -598,6 +611,10 @@ struct ReceiverObservationChunk final {
     /// move-only 样本数据；on_chunk() 接收方取得其所有权。
     AcquisitionChunkLease payload;
     ChunkQuality quality{};
+    /// 产生本块的激励状态，必须匹配 Manifest 中对应观测。
+    SourceStateId source_state{1U};
+    /// 采集本块的接收路径，必须匹配 Manifest 中对应观测。
+    ReceiverPathId receiver_path{1U};
 };
 
 /// 上层接收数据块后立即反馈给单板的流控决定。

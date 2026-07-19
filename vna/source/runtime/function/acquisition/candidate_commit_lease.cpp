@@ -71,8 +71,18 @@ bool CandidateCommitLease::valid() const noexcept {
     }
     for (std::size_t index = 0U; index < observation_count_; ++index) {
         if (!observations_[index].has_value() ||
-            !observations_[index]->payload.valid()) {
+            observations_[index]->chunk_count == 0U ||
+            observations_[index]->chunk_count >
+                observations_[index]->chunks.size()) {
             return false;
+        }
+        for (std::size_t chunk_index = 0U;
+             chunk_index < observations_[index]->chunk_count;
+             ++chunk_index) {
+            if (!observations_[index]->chunks[chunk_index].has_value() ||
+                !observations_[index]->chunks[chunk_index]->payload.valid()) {
+                return false;
+            }
         }
     }
     return true;

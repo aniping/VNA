@@ -198,6 +198,122 @@ PrepareSinkRegistration& PrepareSinkRegistration::operator=(
 namespace {
 
 constexpr BoardSessionId kMockSessionId{1U};
+constexpr VirtualDuration kMinimumMockRunDuration{300U};
+constexpr VirtualDuration kMaximumMockRunDuration{400U};
+
+struct ResolvedDeliveryPlan final {
+    std::array<MockChunkDelivery, kMaximumRunChunks> deliveries{};
+    std::uint32_t count{0U};
+    bool valid{false};
+};
+
+const PreparedObservationSpec* find_required_observation(
+    const PreparedExecutionManifest& manifest,
+    const MockChunkDelivery& delivery) noexcept {
+    for (std::size_t index = 0U;
+         index < manifest.required_observation_count;
+         ++index) {
+        const auto& required = manifest.required_observations[index];
+        if (required.source_state == delivery.source_state &&
+            required.receiver_path == delivery.receiver_path &&
+            required.wave == delivery.wave) {
+            return &required;
+        }
+    }
+    return nullptr;
+}
+
+ResolvedDeliveryPlan resolve_delivery_plan(
+    const PreparedExecutionManifest& manifest,
+    const MockScenario& scenario) noexcept {
+    ResolvedDeliveryPlan result{};
+    if (scenario.run_duration < kMinimumMockRunDuration ||
+        scenario.run_duration > kMaximumMockRunDuration ||
+        scenario.chunk_delivery_count > result.deliveries.size()) {
+        return result;
+    }
+
+    if (scenario.run_behavior == MockRunBehavior::Fail) {
+        result.valid = true;
+        return result;
+    }
+
+    if (scenario.chunk_delivery_count > 0U) {
+        result.count = scenario.chunk_delivery_count;
+        for (std::size_t index = 0U; index < result.count; ++index) {
+            result.deliveries[index] = scenario.chunk_deliveries[index];
+        }
+    } else {
+        // 默认剧本仍完全由 Manifest 决定形状；每项观测按 64 点上限切块，
+        // OmitResponse 只改变交付集合，供后续完整覆盖校验证明 terminal 不充分。
+        std::uint32_t total_chunks{0U};
+        for (std::size_t index = 0U;
+             index < manifest.required_observation_count;
+             ++index) {
+            const auto& required = manifest.required_observations[index];
+            if (scenario.observation_behavior ==
+                    MockObservationBehavior::OmitResponseButComplete &&
+                required.wave == ReceiverWave::ResponseB) {
+                continue;
+            }
+            total_chunks += static_cast<std::uint32_t>(
+                (required.point_count + kMaximumContractChunkSamples - 1U) /
+                kMaximumContractChunkSamples);
+        }
+        if (total_chunks == 0U || total_chunks > result.deliveries.size()) {
+            return result;
+        }
+
+        for (std::size_t index = 0U;
+             index < manifest.required_observation_count;
+             ++index) {
+            const auto& required = manifest.required_observations[index];
+            if (scenario.observation_behavior ==
+                    MockObservationBehavior::OmitResponseButComplete &&
+                required.wave == ReceiverWave::ResponseB) {
+                continue;
+            }
+            std::uint32_t point_begin{0U};
+            while (point_begin < required.point_count) {
+                const auto remaining = required.point_count - point_begin;
+                const auto point_count = static_cast<std::uint32_t>(
+                    remaining < kMaximumContractChunkSamples
+                        ? remaining
+                        : kMaximumContractChunkSamples);
+                const auto offset =
+                    scenario.run_duration * (result.count + 1U) /
+                    (total_chunks + 1U);
+                result.deliveries[result.count] = MockChunkDelivery{
+                    required.source_state,
+                    required.receiver_path,
+                    required.wave,
+                    point_begin,
+                    point_count,
+                    offset,
+                    required.wave == ReceiverWave::IncidentA
+                        ? scenario.incident_quality
+                        : scenario.response_quality};
+                ++result.count;
+                point_begin += point_count;
+            }
+        }
+    }
+
+    for (std::size_t index = 0U; index < result.count; ++index) {
+        const auto& delivery = result.deliveries[index];
+        const auto* required = find_required_observation(manifest, delivery);
+        if (required == nullptr || !delivery.source_state.valid() ||
+            !delivery.receiver_path.valid() || delivery.point_count == 0U ||
+            delivery.point_count > kMaximumContractChunkSamples ||
+            delivery.offset >= scenario.run_duration ||
+            delivery.point_begin >= required->point_count ||
+            delivery.point_count > required->point_count - delivery.point_begin) {
+            return ResolvedDeliveryPlan{};
+        }
+    }
+    result.valid = true;
+    return result;
+}
 
 struct PendingPrepare final {
     // begin_prepare() 接受后，Mock 独占保存全部 move-only 输入直到 due_at。
@@ -219,7 +335,16 @@ struct PendingRun final {
     /// 与 PreparedStartToken 同源的实际清单；Run 输出只能由它决定形状。
     PreparedExecutionManifest manifest{};
     MockScenario scenario{};
-    VirtualDuration due_at{0U};
+    /// 接受时冻结的 Manifest-derived 或显式确定性交付计划。
+    std::array<MockChunkDelivery, kMaximumRunChunks> deliveries{};
+    std::uint32_t delivery_count{0U};
+    /// 每项计划是否已在对应 offset 到期时尝试交付。
+    std::array<bool, kMaximumRunChunks> delivery_attempted{};
+    VirtualDuration accepted_at{0U};
+    VirtualDuration terminal_at{0U};
+    std::uint32_t delivered_chunks{0U};
+    bool phases_delivered{false};
+    bool delivery_failed{false};
 };
 
 enum class MockExecutionReservationPhase {
@@ -382,7 +507,7 @@ public:
         }
         if (scenario_.run_behavior == MockRunBehavior::Succeed &&
             (active_manifest_.actual_point_count == 0U ||
-             active_manifest_.actual_point_count > kMaximumContractChunkSamples ||
+             active_manifest_.actual_point_count > kMaximumMockSweepPoints ||
              active_manifest_.required_observation_count == 0U ||
              active_manifest_.required_observation_count >
                  active_manifest_.required_observations.size())) {
@@ -403,9 +528,13 @@ public:
         if (!authorization_matches) {
             return reject(BoardErrc::AuthorizationMismatch, true);
         }
+        const auto delivery_plan =
+            resolve_delivery_plan(active_manifest_, scenario_);
+        if (!delivery_plan.valid) {
+            return reject(BoardErrc::ContractViolation, true);
+        }
         if (scenario_.run_behavior == MockRunBehavior::Succeed &&
-            delivery.remaining_fallback_capacity() <
-                active_manifest_.required_observation_count) {
+            delivery.remaining_fallback_capacity() < delivery_plan.count) {
             return reject(BoardErrc::ResourceExhausted, true);
         }
 
@@ -421,7 +550,14 @@ public:
             std::move(sink),
             active_manifest_,
             scenario_,
-            now_ + scenario_.run_delay});
+            delivery_plan.deliveries,
+            delivery_plan.count,
+            {},
+            now_,
+            now_ + scenario_.run_duration,
+            0U,
+            false,
+            false});
         return RunAccepted{run, generation};
     }
 
@@ -440,8 +576,8 @@ public:
             complete_prepare();
         }
 
-        if (pending_run_.has_value() && pending_run_->due_at <= now_) {
-            complete_run();
+        if (pending_run_.has_value()) {
+            progress_run();
         }
     }
 
@@ -500,9 +636,15 @@ private:
                 PreparedObservationSpec,
                 kMaximumPreparedObservations>{
                 PreparedObservationSpec{
-                    ReceiverWave::IncidentA, pending.intent.point_count},
+                    ReceiverWave::IncidentA,
+                    pending.intent.point_count,
+                    SourceStateId{1U},
+                    ReceiverPathId{1U}},
                 PreparedObservationSpec{
-                    ReceiverWave::ResponseB, pending.intent.point_count}},
+                    ReceiverWave::ResponseB,
+                    pending.intent.point_count,
+                    SourceStateId{1U},
+                    ReceiverPathId{2U}}},
             2U};
         active_manifest_ = manifest;
         // 清单摘要把后续 PreparedStartToken/StartAuthorization 绑定到本次 Prepare。
@@ -513,83 +655,114 @@ private:
         pending.sink.sink().on_terminal(std::move(terminal));
     }
 
-    void complete_run() noexcept {
+    void progress_run() noexcept {
         if (!pending_run_.has_value()) {
             return;
         }
 
-        // 与 Prepare 相同，回调前先清空 pending，保证回调重入不会观察到 Busy。
-        auto pending = std::move(*pending_run_);
-        pending_run_.reset();
-        execution_reservation_phase_ = MockExecutionReservationPhase::Terminal;
+        auto& pending = *pending_run_;
         auto& sink = pending.sink.sink();
+        if (!pending.phases_delivered) {
+            // Accepted 仅登记任务；首次显式推进虚拟时间才发阶段，绝不内联回调。
+            pending.phases_delivered = true;
+            ++observations_.run_phase_callbacks;
+            sink.on_phase(BoardRunPhaseEvent{
+                pending.run, pending.generation, BoardRunPhase::Starting});
+            ++observations_.run_phase_callbacks;
+            sink.on_phase(BoardRunPhaseEvent{
+                pending.run, pending.generation, BoardRunPhase::Acquiring});
+        }
 
-        ++observations_.run_phase_callbacks;
-        sink.on_phase(BoardRunPhaseEvent{
-            pending.run, pending.generation, BoardRunPhase::Starting});
-        ++observations_.run_phase_callbacks;
-        sink.on_phase(BoardRunPhaseEvent{
-            pending.run, pending.generation, BoardRunPhase::Acquiring});
+        if (pending.scenario.run_behavior == MockRunBehavior::Succeed &&
+            !pending.delivery_failed) {
+            while (!pending.delivery_failed) {
+                // advance() 可以一次跨过多个 offset；仍须按虚拟事件时刻排序，
+                // 相同 offset 再按剧本下标稳定排序，避免推进粒度改变 callback 序列。
+                std::size_t selected = pending.delivery_count;
+                for (std::size_t index = 0U;
+                     index < pending.delivery_count;
+                     ++index) {
+                    if (pending.delivery_attempted[index] ||
+                        pending.accepted_at +
+                                pending.deliveries[index].offset >
+                            now_) {
+                        continue;
+                    }
+                    if (selected == pending.delivery_count ||
+                        pending.deliveries[index].offset <
+                            pending.deliveries[selected].offset) {
+                        selected = index;
+                    }
+                }
+                if (selected == pending.delivery_count) {
+                    break;
+                }
 
-        if (pending.scenario.run_behavior == MockRunBehavior::Fail) {
-            // 延迟失败剧本只报告资源终态，不制造空数据块或部分正式观测。
-            pending.delivery.retire();
-            ++observations_.run_terminal_callbacks;
-            sink.on_terminal(BoardRunTerminal{
-                pending.run,
-                pending.generation,
-                RunTerminalKind::Failed,
-                0U});
+                const auto index = selected;
+                const auto& delivery = pending.deliveries[index];
+                // 尝试标志必须先于回调设置，防止回调重入造成同一计划项重复交付。
+                pending.delivery_attempted[index] = true;
+                std::array<ComplexSample, kMaximumContractChunkSamples>
+                    source_chunk{};
+                const auto& source = delivery.wave == ReceiverWave::IncidentA
+                    ? pending.scenario.incident_a
+                    : pending.scenario.response_b;
+                for (std::size_t point = 0U;
+                     point < delivery.point_count;
+                     ++point) {
+                    source_chunk[point] = source[delivery.point_begin + point];
+                }
+                auto payload = pending.delivery.copy_fallback(
+                    source_chunk, delivery.point_count);
+                if (!payload.has_value()) {
+                    pending.delivery_failed = true;
+                    break;
+                }
+                const auto sequence = ChunkSequence{
+                    static_cast<std::uint64_t>(pending.delivered_chunks) + 1U};
+                ReceiverObservationChunk chunk{
+                    pending.manifest.id,
+                    pending.manifest.prepared_id,
+                    pending.run,
+                    pending.generation,
+                    sequence,
+                    delivery.wave,
+                    delivery.point_begin,
+                    std::move(payload).take_value(),
+                    delivery.quality,
+                    delivery.source_state,
+                    delivery.receiver_path};
+                ++observations_.run_chunk_callbacks;
+                ++pending.delivered_chunks;
+                if (sink.on_chunk(std::move(chunk)) !=
+                    ChunkIngressDisposition::Accepted) {
+                    pending.delivery_failed = true;
+                    break;
+                }
+            }
+        }
+
+        if (now_ < pending.terminal_at) {
             return;
         }
 
-        RunTerminalKind terminal_kind = RunTerminalKind::Completed;
-        std::uint32_t delivered_chunks = 0U;
-        for (std::size_t index = 0U;
-             index < pending.manifest.required_observation_count;
-             ++index) {
-            const auto& required = pending.manifest.required_observations[index];
-            if (pending.scenario.observation_behavior ==
-                    MockObservationBehavior::OmitResponseButComplete &&
-                required.wave == ReceiverWave::ResponseB) {
-                continue;
-            }
-            const auto& samples = required.wave == ReceiverWave::IncidentA
-                ? pending.scenario.incident_a
-                : pending.scenario.response_b;
-            const auto quality = required.wave == ReceiverWave::IncidentA
-                ? pending.scenario.incident_quality
-                : pending.scenario.response_quality;
-            auto payload = pending.delivery.copy_fallback(
-                samples, required.point_count);
-            if (!payload.has_value()) {
-                terminal_kind = RunTerminalKind::Failed;
-                break;
-            }
-            ReceiverObservationChunk chunk{
-                pending.manifest.id,
-                pending.manifest.prepared_id,
-                pending.run,
-                pending.generation,
-                ChunkSequence{index + 1U},
-                required.wave,
-                0U,
-                std::move(payload).take_value(),
-                quality};
-            ++observations_.run_chunk_callbacks;
-            ++delivered_chunks;
-            if (sink.on_chunk(std::move(chunk)) !=
-                ChunkIngressDisposition::Accepted) {
-                terminal_kind = RunTerminalKind::Failed;
-                break;
-            }
-        }
-
-        // 先注销交付许可再发唯一终态；终态之后本 Run 不再持有交付预算。
-        pending.delivery.retire();
+        // 与 Prepare 相同，唯一终态回调前先清空 pending；终态之后不再交付块，
+        // 且未转换为 lease 的预留槽在 callback 前全部归还。
+        auto completed = std::move(*pending_run_);
+        pending_run_.reset();
+        execution_reservation_phase_ = MockExecutionReservationPhase::Terminal;
+        completed.delivery.retire();
+        const auto terminal_kind =
+            completed.scenario.run_behavior == MockRunBehavior::Succeed &&
+                !completed.delivery_failed
+            ? RunTerminalKind::Completed
+            : RunTerminalKind::Failed;
         ++observations_.run_terminal_callbacks;
-        sink.on_terminal(BoardRunTerminal{
-            pending.run, pending.generation, terminal_kind, delivered_chunks});
+        completed.sink.sink().on_terminal(BoardRunTerminal{
+            completed.run,
+            completed.generation,
+            terminal_kind,
+            completed.delivered_chunks});
     }
 
     void rebuild_capabilities() noexcept {

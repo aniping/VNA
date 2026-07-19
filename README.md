@@ -4,15 +4,15 @@
 
 ## 当前状态
 
-候选分层架构 v0.1、跨层 Interface、Board Adapter、端到端数据流/生命周期契约与 176 项商用功能矩阵已经完成文档基线，其中商用功能已完成官方证据归类。C++17/MinGW A-only 成功/失败纵切已经闭合：公共 `InstrumentKernel` 接收类型化 raw/diagnostic 请求，依次经过固定容量 Runtime、L4 Acquisition、Mock Board Prepare/Run 和 Store 原子终态提交；成功路径发布第一份正式 A 层 `CompletedSweepBundle`。这些代码用于关闭关键数据与所有权契约，还不是整机产品规格或完整业务实现。
+候选分层架构 v0.1、跨层 Interface、Board Adapter、端到端数据流/生命周期契约与 176 项商用功能矩阵已经完成文档基线，其中商用功能已完成官方证据归类。C++17/MinGW A-only 成功/失败纵切已经闭合：公共 `InstrumentKernel` 接收类型化 raw/diagnostic 请求，依次经过固定容量 Runtime、L4 Acquisition、Mock Board Prepare/Run 和 Store 原子终态提交；成功路径发布按 Operation 查询的不可变 A 层 `CompletedSweepBundle` 历史。当前代码用于关闭关键数据与所有权契约，还不是整机产品规格或完整业务实现。
 
 ## 当前可执行纵切
 
 已实现：
 
 - `BoardProvider → OpenedBoard.Execution` 的 discover/open/cached capability、prepare 与 run；
-- `MockBoardControl` 虚拟时间，以及确定性的 receiver-wave `a/b` chunk 与类型化质量标志；
-- Mock Run 可按剧本从 `RunAccepted` 起在 300～400ms 内延迟失败；标称测试值为 350ms，该时间不包含提交或 Prepare；
+- `MockBoardControl` 虚拟时间，以及确定性的 receiver-wave 多块交付计划、实际点范围与类型化质量标志；
+- Mock Run 从 `RunAccepted` 起采用 300～400ms 的剧本时长；成功块按确定性 offset 在窗口内分批交付，成功或失败的唯一 terminal 位于窗口末端，标称测试值为 350ms，该时间不包含提交或 Prepare；
 - prepare/run 同步 Rejected 时归还全部 move-only 输入且零 callback；
 - Accepted 后非内联回调、唯一 terminal 和 terminal 后零回调；
 - Runtime 在 `reserve_work` 时同时冻结有限 deadline/budget，并绑定 `receiver + WorkId + generation + completion mailbox`；不同控制消费者不能误取彼此终态，Accepted 后的 dispatch 不再申请完成容量；
@@ -26,20 +26,20 @@
 - `PrepareDraining` 会把具名 Board drain owner 与本地/Board 容量一起转入 `Quarantined`；当前 seam 没有后续排空证明，因此 Kernel 持续隔离整组 owner，绝不谎报 `Drained` 或复用容量；
 - Mock 延迟失败路径在同一 Store revision 原子写入 Failed Operation、status、fence 和类型化 Event，且 A/B/Stage/C 正式发布计数保持为 0；
 - Prepared Manifest 以有界 required observation map 声明本轮必需接收机波量；Mock 成功输出的点数、身份与形状只从该实际清单派生，不再使用独立场景点数；
-- Kernel 在首次派发前从固定 `AcquisitionBufferPool` 原子预留 a/b 两个回退槽并把它们绑定到 `RunDeliveryGrant`；Mock 用不可转移源数组模拟底软，在 callback 前只复制一次到 Pool，之后 `AcquisitionChunkLease` 只移动槽位指针和 generation；
+- Kernel 在首次派发前从固定 `AcquisitionBufferPool` 为 a/b 两项 201 点观测原子预留最坏 8 个回退槽并绑定到 `RunDeliveryGrant`；Mock 用不可转移源数组模拟底软，每个块在 callback 前只复制一次到 Pool，之后 `AcquisitionChunkLease` 只移动槽位指针和 generation；
 - 正式 chunk 通过固定容量 `AcquisitionIngress` 把 move-only `AcquisitionChunkLease` 从 Board callback 转交给唯一长期 owner `NetworkObservationBuilder`；拒绝也会消费 payload，回调不生成轴、不写 Store；
-- Builder 只在实际轴、全部必需 a/b 点覆盖、质量和唯一 Completed terminal 均闭合后密封 `CandidateCommitLease`；成功 terminal 但缺少 b 波会形成类型化失败且不发布部分 A；
+- Builder 按 Manifest 中 `source state + receiver path + wave` 的观测集合和点覆盖重组乱序块，不依赖 callback 顺序或固定 a/b 数组位置；只有实际轴、全部必需覆盖、质量和唯一 Completed terminal 均闭合后才密封 `CandidateCommitLease`，缺少必需观测时不发布部分 A；
 - L2 在 Runtime Completed 后才把 candidate 交给 Store；Store 在一个 revision 内共同发布不可变 `CompletedSweepBundle`、Completed Operation、status/fence 和完成 Event，receipt 返回后才终结 A-only completion 与 disabled Preview owner；
-- 公开 A 查询返回值副本，可读取实际轴、a/b 复数值、逐点质量、LogicalSweepId 及单元素 BoardRunEvidence，不暴露 Store 内部裸 Buffer；A-only 成功仍不发布 B、Stage、C 或空后继 handoff。
+- 公开 A 查询返回值副本，可读取实际轴、原始复数值、逐点质量、LogicalSweepId 及单元素 BoardRunEvidence；证据冻结 Manifest、Run/generation、按 callback 顺序记录的 chunk identity/coverage/sequence 和唯一 terminal，不暴露 Store 内部裸 Buffer。连续成功扫描使用不同 Snapshot/LogicalSweep ID，后续提交不修改先前历史；A-only 成功仍不发布 B、Stage、C 或空后继 handoff。
 
 当前明确未实现：
 
 - Board Safety/Maintenance、完整 discard/abort/排空恢复/Replay 和真实底软 Adapter；
-- 乱序多块观测与连续不可变历史、B/C 处理链、校准、Trace/Marker/Limit、Diagram、文件与诊断；
+- B/C 处理链、校准、Trace/Marker/Limit、Diagram、文件与诊断；
 - Web、SCPI、cpp-httplib、Eigen3 和 JSON；
 - 公司 AArch64 SDK 编译与目标机/HIL 验证。
 
-当前 Pool 单槽和 Mock 源数组最多携带 64 个复数样本，单块纵切的 Ingress 静态深度等于 Manifest 最大必需观测数，实际 A-only 准入深度为 2；这些都是本纵切的临时上界，不是产品点数上限。多 chunk、底软回调后立即复用源内存及 BufferPool/Ingress 容量压力分别由后续工单验收，不能把当前 Mock 约束带入真实板卡能力声明。
+当前单个 Pool 槽最多携带 64 个复数样本，Mock 波形源和正式 A 快照上限为 201 点；一项观测最多 4 块，当前 a/b A-only 在首次派发前统一准入 8 块。底软回调后立即复用源内存以及 BufferPool/Ingress 容量压力矩阵仍由后续工单验收，不能把当前 Mock 产品切片带入真实板卡能力声明。
 
 当前可执行产品组合只包含 `VnaBoardMock`，没有 Real Board Adapter、SafetyLane、RF-off/readback 或 HIL 证据。A-only 授权明确命名为 Mock diagnostics；不得把该纵切连接真实 RF 或宣称具备生产安全能力。
 

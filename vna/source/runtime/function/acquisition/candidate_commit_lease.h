@@ -24,6 +24,22 @@ using LogicalSweepId = core::StrongId<struct LogicalSweepIdTag>;
 /// 单个 A 快照在当前产品配置中允许的最大点数。
 constexpr std::size_t kMaximumCompletedSweepPoints = 201U;
 
+/// 一个已接受 Board chunk 的稳定来源与覆盖账本项；不持有样本内存。
+struct BoardChunkEvidence final {
+    /// 产生该数据块的激励状态。
+    board::SourceStateId source_state{};
+    /// 采集该数据块的接收路径。
+    board::ReceiverPathId receiver_path{};
+    /// 原始接收机波量身份。
+    board::ReceiverWave wave{board::ReceiverWave::IncidentA};
+    /// Board 在当前 Run 内签发的非 0 序号。
+    board::ChunkSequence sequence{};
+    /// 本块在完整观测中的零基起点。
+    std::uint32_t point_begin{0U};
+    /// 本块覆盖的连续点数。
+    std::uint32_t point_count{0U};
+};
+
 /// 单板 Run 对一份完整 A candidate 的有界来源证据。
 struct BoardRunEvidence final {
     /// Prepare 返回且经本地收窄接受的实际执行清单。
@@ -38,20 +54,38 @@ struct BoardRunEvidence final {
     std::uint32_t response_points{0U};
     /// terminal 前实际交付的数据块数。
     std::uint32_t delivered_chunks{0U};
+    /// 按 callback 到达顺序冻结的 chunk 身份、序号与覆盖账本。
+    std::array<BoardChunkEvidence, board::kMaximumRunChunks> chunks{};
+    /// chunks 中有效账本项数量。
+    std::uint32_t chunk_count{0U};
+    /// 经 Builder 验证并冻结的唯一 Run terminal。
+    board::BoardRunTerminal terminal{};
     /// 已验证恰好一个匹配的 Completed terminal。
     bool unique_success_terminal{false};
 };
 
-/// Builder 已接管的一项必需观测及其唯一 payload owner。
-struct CandidateObservationLease final {
-    /// Manifest 中对应的观测声明。
-    board::PreparedObservationSpec spec{};
+/// Builder 已接管的一块候选观测及其唯一 payload owner。
+struct CandidateObservationChunkLease final {
     /// 本块的非 0 序号。
     board::ChunkSequence sequence{};
+    /// 本块第一个样本在完整观测中的零基点索引。
+    std::uint32_t point_begin{0U};
     /// 唯一拥有正式复数样本的 move-only lease。
     board::AcquisitionChunkLease payload;
     /// 与本块所有点同路传播的质量标志。
     board::ChunkQuality quality{};
+};
+
+/// Builder 已接管的一项必需观测及其全部有界 payload owner。
+struct CandidateObservationLease final {
+    /// Manifest 中对应的观测声明。
+    board::PreparedObservationSpec spec{};
+    /// 按 callback 到达顺序保存的数据块；最终复制按 point_begin 定位。
+    std::array<
+        std::optional<CandidateObservationChunkLease>,
+        board::kMaximumChunksPerObservation> chunks{};
+    /// chunks 中有效 owner 数量。
+    std::uint32_t chunk_count{0U};
 };
 
 /// 从 Acquisition worker return 持续到 Store commit 或显式 abort 的候选租约。

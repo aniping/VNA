@@ -21,11 +21,19 @@ CompletedSweepBundle::CompletedSweepBundle(
          ++observation_index) {
         const auto& source = *candidate.observations_[observation_index];
         auto& destination = observations_[observation_index];
+        destination.source_state = source.spec.source_state;
+        destination.receiver_path = source.spec.receiver_path;
         destination.wave = source.spec.wave;
         destination.point_count = source.spec.point_count;
-        for (std::size_t point = 0U; point < source.payload.size(); ++point) {
-            destination.values[point] = source.payload[point];
-            destination.quality_flags[point] = source.quality.flags;
+        for (std::size_t chunk_index = 0U;
+             chunk_index < source.chunk_count;
+             ++chunk_index) {
+            const auto& chunk = *source.chunks[chunk_index];
+            for (std::size_t point = 0U; point < chunk.payload.size(); ++point) {
+                const auto destination_point = chunk.point_begin + point;
+                destination.values[destination_point] = chunk.payload[point];
+                destination.quality_flags[destination_point] = chunk.quality.flags;
+            }
         }
     }
 }

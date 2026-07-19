@@ -10,6 +10,9 @@ namespace vna::board {
 /// Mock 单板使用的离散虚拟毫秒；不读取 wall clock，也不调用 sleep。
 using VirtualDuration = std::uint64_t;
 
+/// Mock 波形源支持的最大实际点数，与当前 A-only 产品切片一致。
+constexpr std::size_t kMaximumMockSweepPoints = 201U;
+
 /// Mock 对 Prepare 请求的同步处理策略。
 enum class MockPrepareBehavior {
     /// 接受请求，并在虚拟延时到期后回调成功终态。
@@ -20,9 +23,9 @@ enum class MockPrepareBehavior {
 
 /// Mock 对 Run 请求的同步处理策略。
 enum class MockRunBehavior {
-    /// 接受请求，并在虚拟延时到期后交付阶段、A/B 数据和终态。
+    /// 接受请求，在运行窗口内按计划交付 A/B 数据，并在窗口末端报告成功终态。
     Succeed,
-    /// 接受请求，并在虚拟延时到期后交付阶段和失败终态，不交付数据块。
+    /// 接受请求，在运行窗口末端报告失败终态，不交付数据块。
     Fail,
     /// 以 Unsupported 同步拒绝并返还全部输入。
     Reject
@@ -42,25 +45,47 @@ struct MockCapabilityProfile final {
     std::uint32_t maximum_points{201U};
 };
 
+/// Mock 在一次 Run 窗口内交付一个确定性数据块的计划项。
+struct MockChunkDelivery final {
+    /// 数据块对应的激励状态，必须匹配 Prepared Manifest。
+    SourceStateId source_state{1U};
+    /// 数据块对应的接收路径，必须匹配 Prepared Manifest。
+    ReceiverPathId receiver_path{1U};
+    /// 从 incident_a 或 response_b 选择数据源的原始波量身份。
+    ReceiverWave wave{ReceiverWave::IncidentA};
+    /// 本块第一个样本在完整观测中的零基点索引。
+    std::uint32_t point_begin{0U};
+    /// 本块有效点数，范围为 [1, kMaximumContractChunkSamples]。
+    std::uint32_t point_count{0U};
+    /// 相对 Run 接受时刻的虚拟毫秒偏移，必须小于 run_duration。
+    VirtualDuration offset{0U};
+    /// 随本块传播到逐点 Quality Plane 的质量标志。
+    ChunkQuality quality{};
+};
+
 /// 一次可重复 Mock 扫描的输入剧本。
 struct MockScenario final {
     MockPrepareBehavior prepare_behavior{MockPrepareBehavior::Succeed};
     /// Prepare 从接受到终态所需的虚拟毫秒数。
     VirtualDuration prepare_delay{1U};
     MockRunBehavior run_behavior{MockRunBehavior::Succeed};
-    /// Run 从接受到开始交付事件所需的虚拟毫秒数。
-    VirtualDuration run_delay{1U};
+    /// Run 从接受到唯一终态的虚拟毫秒数；有效范围为 [300, 400]。
+    VirtualDuration run_duration{350U};
     /// 成功 Run 如何交付 Manifest 要求的观测；接受 Run 时按值冻结。
     MockObservationBehavior observation_behavior{
         MockObservationBehavior::Complete};
     /// 将作为 IncidentA 数据块交付的确定性复数样本。
-    std::array<ComplexSample, kMaximumContractChunkSamples> incident_a{};
+    std::array<ComplexSample, kMaximumMockSweepPoints> incident_a{};
     /// 将作为 ResponseB 数据块交付的确定性复数样本。
-    std::array<ComplexSample, kMaximumContractChunkSamples> response_b{};
+    std::array<ComplexSample, kMaximumMockSweepPoints> response_b{};
     /// A 波数据块携带的质量标记。
     ChunkQuality incident_quality{};
     /// B 波数据块携带的质量标记。
     ChunkQuality response_quality{};
+    /// 可选的显式交付计划；count 为 0 时由 Manifest 确定性生成完整分块。
+    std::array<MockChunkDelivery, kMaximumRunChunks> chunk_deliveries{};
+    /// chunk_deliveries 中有效计划项数量，范围为 [0, kMaximumRunChunks]。
+    std::uint32_t chunk_delivery_count{0U};
 };
 
 /// Mock 从创建以来发生的契约事件计数快照。

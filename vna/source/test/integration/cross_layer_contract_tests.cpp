@@ -343,7 +343,7 @@ SubmissionTimingSample measure_a_only_submission(std::uint32_t point_count) {
     board::MockScenario scenario{};
     scenario.run_behavior = board::MockRunBehavior::Fail;
     scenario.prepare_delay = 0U;
-    scenario.run_delay = 0U;
+    scenario.run_duration = 350U;
     board::MockBoardProvider provider{
         board::MockCapabilityProfile{201U}, scenario};
     auto opened_result = provider.open_controlled(
@@ -615,7 +615,7 @@ TEST(AOnlySweepContract, ExplicitDiagnosticAuthorizationPrecedesAccepted) {
     board::MockScenario scenario{};
     scenario.run_behavior = board::MockRunBehavior::Fail;
     scenario.prepare_delay = 0U;
-    scenario.run_delay = 0U;
+    scenario.run_duration = 350U;
     board::MockBoardProvider provider{
         board::MockCapabilityProfile{201U}, scenario};
     auto opened_result = provider.open_controlled(
@@ -663,7 +663,7 @@ TEST(AOnlySweepContract, ExplicitDiagnosticAuthorizationPrecedesAccepted) {
     VNA_REQUIRE(kernel.run_one());
     opened.control->advance(0U);
     VNA_REQUIRE(kernel.run_one());
-    opened.control->advance(0U);
+    opened.control->advance(350U);
     VNA_REQUIRE(kernel.run_one());
     VNA_REQUIRE(kernel.run_one());
     VNA_REQUIRE(acquisition_resources.inspect().in_use == 0U);
@@ -680,7 +680,7 @@ TEST(AOnlySweepContract, MockRunFailsAtScheduledThreeHundredFiftyMilliseconds) {
     board::MockScenario scenario{};
     scenario.prepare_delay = 5U;
     scenario.run_behavior = board::MockRunBehavior::Fail;
-    scenario.run_delay = 350U;
+    scenario.run_duration = 350U;
     board::MockBoardProvider provider{
         board::MockCapabilityProfile{201U}, scenario};
     auto opened_result = provider.open_controlled(
@@ -781,7 +781,7 @@ TEST(AOnlySweepContract, ContinuationExpiryIsRelativeToCurrentBoardTick) {
     board::MockScenario scenario{};
     scenario.prepare_delay = 0U;
     scenario.run_behavior = board::MockRunBehavior::Fail;
-    scenario.run_delay = 0U;
+    scenario.run_duration = 350U;
     board::MockBoardProvider provider{
         board::MockCapabilityProfile{201U}, scenario};
     auto opened_result = provider.open_controlled(
@@ -807,7 +807,7 @@ TEST(AOnlySweepContract, ContinuationExpiryIsRelativeToCurrentBoardTick) {
     opened.control->advance(0U);
     VNA_REQUIRE(kernel.run_one());
     VNA_REQUIRE(opened.control->observations().accepted_run_calls == 1U);
-    opened.control->advance(0U);
+    opened.control->advance(350U);
     VNA_REQUIRE(kernel.run_one());
     VNA_REQUIRE(kernel.run_one());
     const auto event = store.latest_event();
@@ -872,7 +872,7 @@ TEST(AOnlySweepContract, BoardCapacityIsReservedBeforeFirstDispatch) {
     board::MockScenario scenario{};
     scenario.prepare_delay = 0U;
     scenario.run_behavior = board::MockRunBehavior::Fail;
-    scenario.run_delay = 350U;
+    scenario.run_duration = 350U;
     board::MockBoardProvider provider{
         board::MockCapabilityProfile{201U}, scenario};
     auto opened_result = provider.open_controlled(

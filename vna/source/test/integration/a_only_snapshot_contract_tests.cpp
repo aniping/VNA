@@ -20,7 +20,7 @@ TEST(AOnlySnapshotContract, PublishesManifestDrivenImmutableAAtRunTerminal) {
     board::MockScenario scenario{};
     scenario.prepare_delay = 1U;
     scenario.run_behavior = board::MockRunBehavior::Succeed;
-    scenario.run_delay = 350U;
+    scenario.run_duration = 350U;
     scenario.incident_a[0U] = board::ComplexSample{1.0F, 0.25F};
     scenario.incident_a[1U] = board::ComplexSample{2.0F, -0.5F};
     scenario.incident_a[2U] = board::ComplexSample{3.0F, 0.75F};
@@ -156,7 +156,7 @@ TEST(AOnlySnapshotContract, CompletedTerminalCannotPublishMissingRequiredWave) {
     board::MockScenario scenario{};
     scenario.prepare_delay = 1U;
     scenario.run_behavior = board::MockRunBehavior::Succeed;
-    scenario.run_delay = 1U;
+    scenario.run_duration = 350U;
     scenario.observation_behavior =
         board::MockObservationBehavior::OmitResponseButComplete;
     scenario.incident_a[0U] = board::ComplexSample{1.0F, 0.0F};
@@ -192,7 +192,7 @@ TEST(AOnlySnapshotContract, CompletedTerminalCannotPublishMissingRequiredWave) {
     VNA_REQUIRE(kernel.run_one());
     opened.control->advance(1U);
     VNA_REQUIRE(kernel.run_one());
-    opened.control->advance(1U);
+    opened.control->advance(350U);
     VNA_REQUIRE(kernel.run_one());
     VNA_REQUIRE(kernel.run_one());
 

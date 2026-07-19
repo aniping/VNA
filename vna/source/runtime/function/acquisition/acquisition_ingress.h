@@ -8,9 +8,9 @@
 
 namespace vna::acquisition {
 
-/// 当前单块纵切允许的最大正式 chunk 队列深度；多块扩容由工单 04 重新签字。
+/// 单次 Run 允许的最大正式 chunk 队列深度；构造实例可选择更小固定容量。
 constexpr std::size_t kMaximumAcquisitionIngressChunks =
-    board::kMaximumPreparedObservations;
+    board::kMaximumRunChunks;
 
 /// Board callback 与 Runtime 驱动 Builder 之间的固定容量 move-only Ingress。
 ///

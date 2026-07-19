@@ -30,9 +30,8 @@ struct AcquisitionBufferPoolError final {
 /// copy_fallback() 在回调前复制一次，后续层只移动指向槽位的 lease。
 class AcquisitionBufferPool final {
 public:
-    /// 单个 Pool 可静态持有的最大数据块数；A-only 当前实际配置使用 2。
-    static constexpr std::size_t kMaximumBuffers =
-        kMaximumPreparedObservations;
+    /// 单个 Pool 可静态持有的最大 Run 数据块数；实例仍可选择更小固定容量。
+    static constexpr std::size_t kMaximumBuffers = kMaximumRunChunks;
 
     /// Pool 当前资源占用与回退复制次数的只读快照。
     struct Snapshot final {

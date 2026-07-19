@@ -71,8 +71,8 @@ void AcquisitionChunkLease::invalidate() noexcept {
 RunDeliveryGrant::RunDeliveryGrant(
     std::uint64_t grant_id,
     AcquisitionBufferPool& buffer_pool,
-    std::array<std::size_t, kMaximumPreparedObservations> reserved_slots,
-    std::array<std::uint64_t, kMaximumPreparedObservations> generations,
+    std::array<std::size_t, kMaximumRunChunks> reserved_slots,
+    std::array<std::uint64_t, kMaximumRunChunks> generations,
     std::size_t reserved_count) noexcept
     : grant_id_(grant_id),
       buffer_pool_(&buffer_pool),

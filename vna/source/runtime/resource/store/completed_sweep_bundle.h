@@ -15,6 +15,10 @@ using OperationId = core::StrongId<struct OperationIdTag>;
 
 /// 一项已发布接收机波量及其逐点质量副本。
 struct CompletedReceiverObservation final {
+    /// 产生该观测的激励状态。
+    board::SourceStateId source_state{};
+    /// 采集该观测的接收路径。
+    board::ReceiverPathId receiver_path{};
     /// 接收机波量身份。
     board::ReceiverWave wave{board::ReceiverWave::IncidentA};
     /// values/quality_flags 中有效点数。
