@@ -13,8 +13,9 @@ namespace vna::acquisition {
 ///
 /// 每个槽位把 A 输出/candidate metadata、Buffer、Ingress、A-only completion、
 /// disabled Preview 和一次性精确收窄能力建模为分别具名的 move-only RAII
-/// owner。Board Prepare/Run call、队列和 callback sink 容量由同一提交另外取得的
-/// board::BoardExecutionReservation 真实预占，二者都必须早于首次 dispatch。
+/// owner。Board Prepare/Run/Prepared-discard call、队列和 callback sink/terminal
+/// route 容量由同一提交另外取得的 board::BoardExecutionReservation 真实预占，
+/// 二者都必须早于首次 dispatch。
 class AcquisitionAdmissionPool final {
     enum class LocalResource : std::uint16_t {
         AOutput = 1U << 0U,

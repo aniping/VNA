@@ -6,14 +6,15 @@ namespace vna::board {
 
 class BoardExecutionPort;
 
-/// 标识一项由具体 Board Adapter 预占的 Prepare/Run 执行槽。
+/// 标识一项由具体 Board Adapter 预占的 Prepare/Run/Prepared-discard 执行槽。
 using BoardExecutionReservationId =
     core::StrongId<struct BoardExecutionReservationIdTag>;
 
 /// 在首次 Runtime dispatch 前取得的单板执行容量 owner。
 ///
-/// 租约覆盖同一次逻辑扫描的 Prepare/Run 排队容量及其 callback registration
-/// 容量，并按 Reserved→Preparing→Prepared→Running→Terminal 一次性消费。
+/// 租约覆盖同一次逻辑扫描的 Prepare/Run/Prepared-discard 排队容量及其 callback
+/// registration/terminal route，并从 Reserved 经 Preparing、Prepared 后只进入
+/// Running 或 Discarding，最终到达 Terminal，一次性消费。
 /// 对象为 move-only；析构请求签发它的 BoardExecutionPort 归还槽位，但若仍有
 /// Accepted callback 或已 Quarantined，Adapter 必须保留容量而不能危险复用。
 class BoardExecutionReservation final {

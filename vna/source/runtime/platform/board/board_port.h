@@ -376,7 +376,9 @@ enum class DiscardPreparedReason {
     /// Prepare 返回的实际 Manifest 超出已准入 envelope 或身份/version cut。
     ManifestOutsideAdmission,
     /// begin_run() 同步拒绝并返还了 PreparedStartToken。
-    RunRejected
+    RunRejected,
+    /// Runtime stop、deadline 或 budget 已关闭，Prepared state 不得再进入 Run。
+    ExecutionStoppedBeforeRun
 };
 
 /// 显式 Prepared cleanup 的请求事实。
@@ -406,6 +408,7 @@ struct DiscardPreparedTerminal final {
 /// 接收 Prepared cleanup 唯一终态的接口。
 class DiscardPreparedSink {
 public:
+    /// 销毁接收接口；Accepted 后必须等唯一 terminal 回调返回才能销毁实现对象。
     virtual ~DiscardPreparedSink() = default;
 
     /// @param terminal cleanup 唯一终态，所有权转移给接收方。
@@ -430,9 +433,14 @@ public:
     /// @return 当前注册对象；其生命周期由调用方管理。
     DiscardPreparedSinkRegistration& operator=(
         DiscardPreparedSinkRegistration&& other) noexcept;
-    DiscardPreparedSinkRegistration(const DiscardPreparedSinkRegistration&) = delete;
+    /// 注册代表一次性 callback 路由，禁止复制产生两个潜在接收者。
+    /// @param other 禁止复制的源注册；编译器拒绝调用且其状态不变。
+    DiscardPreparedSinkRegistration(
+        const DiscardPreparedSinkRegistration& other) = delete;
+    /// 注册禁止复制赋值；只能显式移动并使源注册失效。
+    /// @param other 禁止复制的源注册；编译器拒绝调用且其状态不变。
     DiscardPreparedSinkRegistration& operator=(
-        const DiscardPreparedSinkRegistration&) = delete;
+        const DiscardPreparedSinkRegistration& other) = delete;
 
     /// @return 注册尚未被移动消费时返回 true。
     bool valid() const noexcept { return sink_ != nullptr; }
@@ -821,7 +829,7 @@ struct RunRejected final {
 /// begin_run() 的同步结果：接受排队，或拒绝并返还全部输入。
 using RunSubmission = std::variant<RunAccepted, RunRejected>;
 
-/// 单板执行面接口，负责 Prepare/Run 两阶段异步扫描协议。
+/// 单板执行面接口，负责 Prepare/Run 与未启动 Run 的 Prepared discard 协议。
 ///
 /// 同步返回 Accepted 只表示适配器取得了输入所有权，最终结果通过 sink 回调；
 /// 同步返回 Rejected 时适配器没有取得所有权，必须在结果中返还全部 move-only 输入。
@@ -837,7 +845,8 @@ public:
     virtual std::uint64_t monotonic_tick() const noexcept = 0;
 
     /// 在上层发布 Accepted Operation 和首次 Runtime dispatch 前预占执行容量。
-    /// @return 成功时返回覆盖同一次 Prepare/Run call、排队和 callback sink 槽的
+    /// @return 成功时返回覆盖同一次 Prepare/Run/Prepared-discard call、排队和
+    ///         callback sink/terminal route 槽的
     ///         move-only owner；容量不足时返回 ResourceExhausted 且不改变状态。
     ///         返回对象及其后续移动目标都不得比当前 BoardExecutionPort 活得更久。
     virtual core::Result<BoardExecutionReservation, BoardError>
@@ -845,7 +854,8 @@ public:
 
     /// 请求单板验证并准备一项冻结扫描意图。
     /// @param reservation 当前 execution 实例在首次 dispatch 前签发、且覆盖本次
-    ///        Prepare/Run 队列与 callback registration 容量的有效租约。
+    ///        Prepare/Run/Prepared-discard 队列与 callback registration 容量的
+    ///        有效租约。
     /// @param call 非 0 且由上层分配的 Prepare 调用 ID。
     /// @param intent 要准备的扫描意图，按值传入以便拒绝时完整返还。
     /// @param authorization 与当前能力版本及 intent.digest 匹配的一次性授权。
@@ -916,7 +926,8 @@ protected:
     }
 
     /// 判断租约是否由当前 execution 实例签发且尚未被移动或释放。
-    /// @param reservation 调用者随 Prepare/Run 提供的非 owning 租约引用。
+    /// @param reservation 调用者随 Prepare/Run/Prepared-discard 提供的非 owning
+    ///        租约引用。
     /// @return owner 与当前实例相同且身份非 0 时返回 true；Adapter 仍须校验
     ///         该身份对应当前活动槽位。
     bool owns_execution_reservation(

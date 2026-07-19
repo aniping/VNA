@@ -1,5 +1,9 @@
 #pragma once
 
+#if !defined(VNA_ENABLE_RUNTIME_CONTRACT_TEST_HOOKS)
+#error "Runtime contract test access requires the test-only Runtime build flag"
+#endif
+
 #include "runtime/function/operation/operation_runtime.h"
 
 namespace vna::runtime {

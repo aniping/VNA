@@ -206,25 +206,25 @@ runtime::RuntimeWorkStep AcquisitionEngine::resume(
         if (!prepare_terminal_.has_value()) {
             return wait_or_drain(context, AcquisitionFailurePhase::Prepare);
         }
+
+        std::optional<AcquisitionFailureReason> transition_failure;
         if (context.stop().stop_requested()) {
-            return fail(
-                AcquisitionFailurePhase::Prepare,
-                AcquisitionFailureReason::StopRequested);
-        }
-        if (context.deadline().expired()) {
-            return fail(
-                AcquisitionFailurePhase::Prepare,
-                AcquisitionFailureReason::DeadlineExpired);
-        }
-        if (!consume_transition_budget(context)) {
-            return fail(
-                AcquisitionFailurePhase::Prepare,
-                AcquisitionFailureReason::BudgetExhausted);
+            transition_failure = AcquisitionFailureReason::StopRequested;
+        } else if (context.deadline().expired()) {
+            transition_failure = AcquisitionFailureReason::DeadlineExpired;
+        } else if (!consume_transition_budget(context)) {
+            transition_failure = AcquisitionFailureReason::BudgetExhausted;
         }
 
         auto terminal = std::move(*prepare_terminal_);
         prepare_terminal_.reset();
         if (auto* failed = std::get_if<board::PrepareFailed>(&terminal)) {
+            // PrepareFailed 自带 cleanup evidence；即使 Runtime 门禁同时关闭，
+            // 也已安全消费 terminal 中的资源，不需要 Prepared discard。
+            if (transition_failure.has_value()) {
+                return fail(
+                    AcquisitionFailurePhase::Prepare, *transition_failure);
+            }
             return fail_board_terminal(
                 AcquisitionFailurePhase::Prepare,
                 AcquisitionFailureReason::BoardPrepareFailed,
@@ -257,6 +257,16 @@ runtime::RuntimeWorkStep AcquisitionEngine::resume(
         manifest_ = manifest.id;
         board_session_ = manifest.session_id;
         capability_revision_ = manifest.capability_revision;
+        if (transition_failure.has_value()) {
+            // PrepareSucceeded 已经签发 Prepared token。Runtime stop/deadline/budget
+            // 只能阻止 Run，不能把该 token 当作普通本地对象析构掉。
+            return begin_prepared_discard(
+                std::move(prepared.start_token),
+                board::DiscardPreparedReason::ExecutionStoppedBeforeRun,
+                AcquisitionFailurePhase::Prepare,
+                *transition_failure,
+                nullptr);
+        }
         if (!resources_.narrow_to(manifest)) {
             return begin_prepared_discard(
                 std::move(prepared.start_token),

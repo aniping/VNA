@@ -41,8 +41,9 @@ public:
     /// @param drain Runtime 需要两阶段完成时使用的具名 Drain ID。
     /// @param resources 首次派发前取得的全部采集关键资源；转移所有权并保持到
     ///        普通失败终态提交后、Drain 真实资源终态，或 Quarantine 隔离期结束。
-    /// @param board_reservation 首次派发前从目标 Adapter 取得的 Prepare/Run
-    ///        call、队列和 callback sink 容量；转移所有权并保持到真实终态。
+    /// @param board_reservation 首次派发前从目标 Adapter 取得的
+    ///        Prepare/Run/Prepared-discard call、队列和 callback sink/terminal
+    ///        route 容量；转移所有权并保持到真实终态。
     AcquisitionEngine(
         board::BoardExecutionPort& execution,
         board::SweepIntent intent,

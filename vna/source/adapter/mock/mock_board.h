@@ -145,11 +145,11 @@ public:
     virtual void load_profile(MockCapabilityProfile profile) noexcept = 0;
 
     /// 替换后续请求捕获的场景。
-    /// @param scenario 新剧本；控制器保存其副本，已接受的 Prepare/Run 保留
-    ///        接受时捕获的旧剧本。
+    /// @param scenario 新剧本；控制器保存其副本，已接受的
+    ///        Prepare/Run/Prepared-discard 保留接受时捕获的旧剧本与 delay。
     virtual void load_scenario(MockScenario scenario) noexcept = 0;
 
-    /// 推进虚拟时间并同步触发所有到期的 Prepare/Run 回调。
+    /// 推进虚拟时间并同步触发所有到期的 Prepare/Run/Prepared-discard 回调。
     /// @param delta 非负虚拟时间增量；0 也会处理已经到期的请求。
     virtual void advance(VirtualDuration delta) noexcept = 0;
 

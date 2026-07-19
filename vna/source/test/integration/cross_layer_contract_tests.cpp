@@ -1257,6 +1257,68 @@ TEST(AOnlySweepContract, AcceptedPrepareFailureWaitsForCleanupTerminal) {
         opened.control->observations().released_execution_reservations == 1U);
 }
 
+TEST(AOnlySweepContract, PrepareSuccessAfterBudgetExhaustionIsDiscarded) {
+    using namespace vna;
+
+    ManualRuntimeClock clock;
+    runtime::OperationRuntime runtime{1U, clock};
+    store::InstrumentStore store{1U};
+    acquisition::AcquisitionAdmissionPool acquisition_resources{1U};
+    board::MockScenario scenario{};
+    scenario.prepare_delay = 0U;
+    scenario.discard_delay = 1U;
+    board::MockBoardProvider provider{
+        board::MockCapabilityProfile{201U}, scenario};
+    auto opened_result = provider.open_controlled(
+        board::BoardOpenRequest{1U, board::BoardContractVersion{1U, 0U}});
+    VNA_REQUIRE(opened_result.has_value());
+    auto opened = std::move(opened_result).take_value();
+    instrument::InstrumentKernel kernel{
+        runtime,
+        store,
+        opened.board.execution(),
+        acquisition_resources,
+        clock,
+        instrument::AOnlyKernelProfile{1000U, 1U}};
+
+    const auto submitted = kernel.submit_a_only(instrument::AOnlySweepRequest{
+        3U,
+        1.0e6,
+        3.0e6,
+        instrument::AOnlyDiagnosticAuthorization::issue_for_mock_diagnostics()});
+    VNA_REQUIRE(submitted.has_value());
+    const auto operation_id = submitted.value().operation;
+    VNA_REQUIRE(kernel.run_one());
+    opened.control->advance(0U);
+    VNA_REQUIRE(opened.control->observations().prepare_terminal_callbacks == 1U);
+
+    // start() 已消费唯一预算；PrepareSucceeded 仍携带必须显式处置的 token。
+    // resume() 不能用 BudgetExhausted 普通失败绕过 Prepared discard。
+    VNA_REQUIRE(kernel.run_one());
+    VNA_REQUIRE(opened.control->observations().accepted_discard_calls == 1U);
+    VNA_REQUIRE(opened.control->observations().discard_terminal_callbacks == 0U);
+    VNA_REQUIRE(
+        store.inspect_operation(operation_id)->state ==
+        store::OperationState::Accepted);
+    VNA_REQUIRE(acquisition_resources.inspect().in_use == 1U);
+    VNA_REQUIRE(!opened.board.execution().reserve_execution().has_value());
+
+    opened.control->advance(1U);
+    VNA_REQUIRE(opened.control->observations().discard_terminal_callbacks == 1U);
+    VNA_REQUIRE(kernel.run_one());
+    VNA_REQUIRE(kernel.run_one());
+    const auto event = store.latest_event();
+    VNA_REQUIRE(event.has_value());
+    VNA_REQUIRE(
+        event->failure.reason ==
+        acquisition::AcquisitionFailureReason::BudgetExhausted);
+    VNA_REQUIRE(
+        event->failure.safety ==
+        acquisition::AcquisitionSafetyImpact::NoRunAccepted);
+    VNA_REQUIRE(acquisition_resources.inspect().in_use == 0U);
+    VNA_REQUIRE(opened.board.execution().reserve_execution().has_value());
+}
+
 TEST(AOnlySweepContract, InvalidActualManifestFailsLocallyBeforeRun) {
     using namespace vna;
 
