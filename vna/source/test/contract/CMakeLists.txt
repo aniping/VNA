@@ -15,3 +15,9 @@ vna_add_test(
     store_contract_tests.cpp
     vna::runtime
 )
+
+vna_add_test(
+    vna_acquisition_contract_tests
+    acquisition_contract_tests.cpp
+    vna::runtime
+)

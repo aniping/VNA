@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-候选分层架构 v0.1、跨层 Interface、Board Adapter、端到端数据流/生命周期契约与 176 项商用功能矩阵已经完成文档基线，其中商用功能已完成官方证据归类。第一条 C++17/MinGW 可执行纵切已经建立：包含 BoardPort 公共类型、`MockBoardProvider`、固定容量 `OperationRuntime`、最小 `InstrumentStore` 生命周期提交和 L2 `SweepAdmissionController`。这些代码用于关闭关键所有权契约，还不是整机产品规格或完整业务实现。
+候选分层架构 v0.1、跨层 Interface、Board Adapter、端到端数据流/生命周期契约与 176 项商用功能矩阵已经完成文档基线，其中商用功能已完成官方证据归类。第一条 C++17/MinGW A-only 失败纵切已经闭合：公共 `InstrumentKernel` 接收类型化 raw/diagnostic 请求，依次经过固定容量 Runtime、L4 Acquisition、Mock Board Prepare/Run 和 Store 原子失败提交。这些代码用于关闭关键所有权契约，还不是整机产品规格或完整业务实现。
 
 ## 当前可执行纵切
 
@@ -12,6 +12,7 @@
 
 - `BoardProvider → OpenedBoard.Execution` 的 discover/open/cached capability、prepare 与 run；
 - `MockBoardControl` 虚拟时间，以及确定性的 receiver-wave `a/b` chunk 与类型化质量标志；
+- Mock Run 可按剧本从 `RunAccepted` 起在 300～400ms 内延迟失败；标称测试值为 350ms，该时间不包含提交或 Prepare；
 - prepare/run 同步 Rejected 时归还全部 move-only 输入且零 callback；
 - Accepted 后非内联回调、唯一 terminal 和 terminal 后零回调；
 - Runtime 在 `reserve_work` 时同时冻结有限 deadline/budget，并绑定 `receiver + WorkId + generation + completion mailbox`；不同控制消费者不能误取彼此终态，Accepted 后的 dispatch 不再申请完成容量；
@@ -19,15 +20,22 @@
 - 工作返回 `Running` 或尚有 completion 待交付时继续占用 slot；返回 `Draining` 后保持容量占用，直到同一注册收到对应 Drain 终态；
 - Store 在 Operation 可见前预留 terminal capacity，初始 commit 失败不派发，已安装 reservation 可在容量压力下提交终态；
 - L2 先提交 Accepted Operation、再 dispatch，Runtime completion 再提交 L5 权威终态的跨层合同测试。
+- 公共 A-only 提交只返回 `OperationId`，不接受 `RuntimeWork`、Board token 或输出数组；无 diagnostic 授权、资源不足或初始 commit 失败均不创建幽灵 Operation/Event，也不调用 Board；
+- A-only 上层资源以七个具名 move-only RAII owner 在首次 dispatch 前全量准入；Mock Adapter 还会真实预占同一次 Prepare/Run 的 call、队列和 callback sink execution 槽，并强制其按 `Reserved → Preparing → Prepared → Running → Terminal` 一次性消费；非法 call/sink、跨阶段复用或第二项并发提交均同步零 callback/零幽灵拒绝；实际 Manifest 只能一次性消费精确收窄 capability，不能扩大频率/点数 envelope；
+- Adapter 返回错误的 `PrepareAccepted`/`RunAccepted` 身份时，Acquisition 会提交类型化失败并进入对应 terminal 的 Drain；只有携带清理证据的 `PrepareFailed` 或匹配的 Run terminal 可以解除 owner，`PrepareSucceeded`/`PrepareDraining` 因仍代表底板资源而转入 `Quarantined`；
+- `PrepareDraining` 会把具名 Board drain owner 与本地/Board 容量一起转入 `Quarantined`；当前 seam 没有后续排空证明，因此 Kernel 持续隔离整组 owner，绝不谎报 `Drained` 或复用容量；
+- Mock 延迟失败路径在同一 Store revision 原子写入 Failed Operation、status、fence 和类型化 Event，且 A/B/Stage/C 正式发布计数保持为 0。
 
 当前明确未实现：
 
-- Board Safety/Maintenance、discard/abort/Drain/Replay 和真实底软 Adapter；
-- A Builder、B/C 处理链、校准、Trace/Marker/Limit、Diagram、文件与诊断；
+- Board Safety/Maintenance、完整 discard/abort/排空恢复/Replay 和真实底软 Adapter；
+- 成功 A candidate/Builder 与不可变 CompletedSweepBundle（下一工单）、B/C 处理链、校准、Trace/Marker/Limit、Diagram、文件与诊断；
 - Web、SCPI、cpp-httplib、Eigen3 和 JSON；
 - 公司 AArch64 SDK 编译与目标机/HIL 验证。
 
 当前 Mock 单个 contract chunk 使用 64 个复数样本的有界 backing；这是首条合同测试的临时上界，不是产品点数上限。接入正式 BufferPool/Ingress seam 后才能扩大或实现多 chunk，不能把它带入真实板卡能力声明。
+
+当前可执行产品组合只包含 `VnaBoardMock`，没有 Real Board Adapter、SafetyLane、RF-off/readback 或 HIL 证据。A-only 授权明确命名为 Mock diagnostics；不得把该纵切连接真实 RF 或宣称具备生产安全能力。
 
 ## MinGW 构建与测试
 
@@ -41,6 +49,8 @@ ctest --preset mingw-debug
 
 测试全程使用虚拟时间，不依赖 wall-clock sleep。`BUILD_TESTING=ON` 时，CMake 从仓库内 `vna/3rdparty/packages/googletest-v1.17.0.zip` 解压固定版本 GoogleTest，并通过 `gtest_discover_tests()` 注册独立测试用例，不需要构建机访问外网；生产/RTOS 配置设置 `BUILD_TESTING=OFF` 后不会解压、构建或链接 GoogleTest。
 
+`AOnlySubmissionPerformance.RecordsMinimumAndProductMaximumBaseline` 固定执行 8 次 warm-up 和 64 次记录，分别报告 1 点与当前 Mock 产品上限 201 点请求从 submit 到 Accepted 的 median/p95。该结果只用于同机构建比较，不设绝对时延门禁；门禁是提交期间无 Board 等待、无逐点频率轴/数据初始化和大块复制。
+
 ## 源码组织
 
 工程采用 Piccolo 风格的运行时主干：根 CMake 只组合 `vna`，`vna/CMakeLists.txt` 再组合三方库、Runtime、Board Adapter 和测试。当前实现位于：
@@ -49,6 +59,7 @@ ctest --preset mingw-debug
 - `vna/source/runtime/platform`：平台与 Board seam；
 - `vna/source/runtime/resource`：权威事实存储；
 - `vna/source/runtime/function`：Operation 与 Instrument 工作流；
+- `vna/source/runtime/function/acquisition`：A-only 资源准入与分步 AcquisitionEngine；
 - `vna/source/adapter`：Mock 及未来真实单板 Adapter；
 - `vna/source/test`：GoogleTest contract/integration 测试。
 

@@ -7,7 +7,7 @@
 
 namespace vna::board {
 
-/// Mock 单板使用的离散虚拟时间单位；只要求同一场景内相对值一致。
+/// Mock 单板使用的离散虚拟毫秒；不读取 wall clock，也不调用 sleep。
 using VirtualDuration = std::uint64_t;
 
 /// Mock 对 Prepare 请求的同步处理策略。
@@ -22,6 +22,8 @@ enum class MockPrepareBehavior {
 enum class MockRunBehavior {
     /// 接受请求，并在虚拟延时到期后交付阶段、A/B 数据和终态。
     Succeed,
+    /// 接受请求，并在虚拟延时到期后交付阶段和失败终态，不交付数据块。
+    Fail,
     /// 以 Unsupported 同步拒绝并返还全部输入。
     Reject
 };
@@ -35,10 +37,10 @@ struct MockCapabilityProfile final {
 /// 一次可重复 Mock 扫描的输入剧本。
 struct MockScenario final {
     MockPrepareBehavior prepare_behavior{MockPrepareBehavior::Succeed};
-    /// Prepare 从接受到终态所需的虚拟时间增量。
+    /// Prepare 从接受到终态所需的虚拟毫秒数。
     VirtualDuration prepare_delay{1U};
     MockRunBehavior run_behavior{MockRunBehavior::Succeed};
-    /// Run 从接受到开始交付事件所需的虚拟时间增量。
+    /// Run 从接受到开始交付事件所需的虚拟毫秒数。
     VirtualDuration run_delay{1U};
     /// 每种接收机波形交付的有效点数，最大为 kMaximumContractChunkSamples。
     std::uint32_t point_count{3U};
@@ -54,6 +56,12 @@ struct MockScenario final {
 
 /// Mock 从创建以来发生的契约事件计数快照。
 struct MockObservationSnapshot final {
+    /// submit 准入阶段成功取得的实际 execution 槽累计数。
+    std::uint32_t acquired_execution_reservations{0U};
+    /// 因 execution 槽已被占用而拒绝的预留请求累计数。
+    std::uint32_t rejected_execution_reservations{0U};
+    /// RAII owner 终结后实际归还的 execution 槽累计数。
+    std::uint32_t released_execution_reservations{0U};
     std::uint32_t accepted_prepare_calls{0U};
     std::uint32_t rejected_prepare_calls{0U};
     std::uint32_t prepare_terminal_callbacks{0U};

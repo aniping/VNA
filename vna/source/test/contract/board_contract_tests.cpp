@@ -16,6 +16,11 @@ static_assert(!std::is_copy_constructible_v<vna::board::PreparedStartToken>);
 static_assert(!std::is_copy_constructible_v<vna::board::StartAuthorization>);
 static_assert(!std::is_copy_constructible_v<vna::board::RunDeliveryGrant>);
 static_assert(!std::is_copy_constructible_v<vna::board::AcquisitionChunkLease>);
+static_assert(
+    !std::is_copy_constructible_v<vna::board::BoardExecutionReservation>);
+static_assert(
+    !std::is_move_assignable_v<vna::board::BoardExecutionReservation>);
+static_assert(!std::is_copy_constructible_v<vna::board::BoardPrepareDrainOwner>);
 static_assert(std::is_nothrow_move_constructible_v<vna::board::AcquisitionChunkLease>);
 
 class RecordingPrepareSink final : public vna::board::PrepareSink {
@@ -92,11 +97,15 @@ TEST(BoardAdapterContract, RejectedPrepareReturnsEveryInputAndNeverCallsBack) {
     VNA_REQUIRE(opened_result.has_value());
     auto opened = std::move(opened_result).take_value();
     VNA_REQUIRE(opened.control != nullptr);
+    auto reservation_result = opened.board.execution().reserve_execution();
+    VNA_REQUIRE(reservation_result.has_value());
+    auto reservation = std::move(reservation_result).take_value();
 
     const auto capability = opened.board.execution().capabilities();
     const SweepIntent intent{3U, 1.0e6, 3.0e6, vna::core::StrongDigest{0x1234U}};
     RecordingPrepareSink sink;
     auto submission = opened.board.execution().begin_prepare(
+        reservation,
         PrepareCallId{7U},
         intent,
         matching_prepare_authorization(capability, intent.digest),
@@ -129,6 +138,9 @@ TEST(BoardAdapterContract, StalePrepareAuthorizationIsRejectedWithoutSideEffects
         BoardOpenRequest{1U, BoardContractVersion{1U, 0U}});
     VNA_REQUIRE(opened_result.has_value());
     auto opened = std::move(opened_result).take_value();
+    auto reservation_result = opened.board.execution().reserve_execution();
+    VNA_REQUIRE(reservation_result.has_value());
+    auto reservation = std::move(reservation_result).take_value();
 
     const auto capability = opened.board.execution().capabilities();
     const SweepIntent intent{3U, 1.0e6, 3.0e6, vna::core::StrongDigest{0x5678U}};
@@ -142,6 +154,7 @@ TEST(BoardAdapterContract, StalePrepareAuthorizationIsRejectedWithoutSideEffects
         intent.digest);
 
     auto submission = opened.board.execution().begin_prepare(
+        reservation,
         PrepareCallId{8U},
         intent,
         std::move(stale_authorization),
@@ -179,6 +192,231 @@ TEST(BoardAdapterContract, CapabilityChangePreservesInitialSnapshotAndAdvancesRe
     VNA_REQUIRE(current.digest != initial.digest);
 }
 
+TEST(BoardAdapterContract, InvalidPrepareCallOrSinkIsRejectedWithoutCallback) {
+    using namespace vna::board;
+
+    MockBoardProvider provider{
+        MockCapabilityProfile{201U},
+        MockScenario{MockPrepareBehavior::Succeed, 1U}};
+    auto opened_result = provider.open_controlled(
+        BoardOpenRequest{1U, BoardContractVersion{1U, 0U}});
+    VNA_REQUIRE(opened_result.has_value());
+    auto opened = std::move(opened_result).take_value();
+    const auto capability = opened.board.execution().capabilities();
+    const SweepIntent intent{
+        3U, 1.0e6, 3.0e6, vna::core::StrongDigest{0x6789U}};
+
+    RecordingPrepareSink zero_call_sink;
+    {
+        auto reserved = opened.board.execution().reserve_execution();
+        VNA_REQUIRE(reserved.has_value());
+        auto reservation = std::move(reserved).take_value();
+        auto submission = opened.board.execution().begin_prepare(
+            reservation,
+            PrepareCallId{},
+            intent,
+            matching_prepare_authorization(capability, intent.digest),
+            PrepareSinkRegistration{zero_call_sink});
+        VNA_REQUIRE(std::holds_alternative<PrepareRejected>(submission));
+        VNA_REQUIRE(
+            std::get<PrepareRejected>(submission).error.code ==
+            BoardErrc::ContractViolation);
+    }
+
+    RecordingPrepareSink invalid_sink_target;
+    {
+        auto reserved = opened.board.execution().reserve_execution();
+        VNA_REQUIRE(reserved.has_value());
+        auto reservation = std::move(reserved).take_value();
+        PrepareSinkRegistration invalid_sink{invalid_sink_target};
+        auto consumed_sink = std::move(invalid_sink);
+        (void)consumed_sink;
+        auto submission = opened.board.execution().begin_prepare(
+            reservation,
+            PrepareCallId{67U},
+            intent,
+            matching_prepare_authorization(capability, intent.digest),
+            std::move(invalid_sink));
+        VNA_REQUIRE(std::holds_alternative<PrepareRejected>(submission));
+        VNA_REQUIRE(
+            std::get<PrepareRejected>(submission).error.code ==
+            BoardErrc::ContractViolation);
+    }
+
+    opened.control->advance(100U);
+    VNA_REQUIRE(zero_call_sink.terminal_count == 0U);
+    VNA_REQUIRE(invalid_sink_target.terminal_count == 0U);
+    VNA_REQUIRE(opened.control->observations().accepted_prepare_calls == 0U);
+    VNA_REQUIRE(opened.control->observations().rejected_prepare_calls == 2U);
+}
+
+TEST(BoardAdapterContract, ExecutionReservationCannotBeReusedAcrossPhases) {
+    using namespace vna::board;
+
+    MockScenario scenario{};
+    scenario.prepare_delay = 1U;
+    scenario.run_delay = 1U;
+    scenario.point_count = 3U;
+    MockBoardProvider provider{MockCapabilityProfile{201U}, scenario};
+    auto opened_result = provider.open_controlled(
+        BoardOpenRequest{1U, BoardContractVersion{1U, 0U}});
+    VNA_REQUIRE(opened_result.has_value());
+    auto opened = std::move(opened_result).take_value();
+    auto reserved = opened.board.execution().reserve_execution();
+    VNA_REQUIRE(reserved.has_value());
+    auto reservation = std::move(reserved).take_value();
+    const auto capability = opened.board.execution().capabilities();
+    const SweepIntent intent{
+        3U, 1.0e6, 3.0e6, vna::core::StrongDigest{0x6868U}};
+
+    RecordingPrepareSink prepare_sink;
+    auto first_prepare = opened.board.execution().begin_prepare(
+        reservation,
+        PrepareCallId{68U},
+        intent,
+        matching_prepare_authorization(capability, intent.digest),
+        PrepareSinkRegistration{prepare_sink});
+    VNA_REQUIRE(std::holds_alternative<PrepareAccepted>(first_prepare));
+
+    RecordingPrepareSink duplicate_pending_sink;
+    auto duplicate_pending = opened.board.execution().begin_prepare(
+        reservation,
+        PrepareCallId{69U},
+        intent,
+        matching_prepare_authorization(capability, intent.digest),
+        PrepareSinkRegistration{duplicate_pending_sink});
+    VNA_REQUIRE(std::holds_alternative<PrepareRejected>(duplicate_pending));
+    VNA_REQUIRE(
+        std::get<PrepareRejected>(duplicate_pending).error.code ==
+        BoardErrc::ContractViolation);
+
+    opened.control->advance(1U);
+    auto terminal = std::move(*prepare_sink.terminal);
+    auto prepared = std::get<PrepareSucceeded>(std::move(terminal)).execution;
+    const auto& manifest = prepared.manifest.manifest();
+
+    RecordingPrepareSink duplicate_prepared_sink;
+    auto duplicate_prepared = opened.board.execution().begin_prepare(
+        reservation,
+        PrepareCallId{70U},
+        intent,
+        matching_prepare_authorization(capability, intent.digest),
+        PrepareSinkRegistration{duplicate_prepared_sink});
+    VNA_REQUIRE(std::holds_alternative<PrepareRejected>(duplicate_prepared));
+
+    RecordingRunSink run_sink;
+    auto run_submission = opened.board.execution().begin_run(
+        reservation,
+        BoardRunId{68U},
+        RunGeneration{1U},
+        std::move(prepared.start_token),
+        StartAuthorization::issue(
+            capability.session_id,
+            manifest.prepared_id,
+            manifest.manifest_digest,
+            capability.operational_epoch,
+            AcquisitionContinuationAttestation{
+                vna::core::StrongDigest{0x6869U}, 100U}),
+        RunDeliveryGrant{68U},
+        BoardRunSinkRegistration{run_sink});
+    VNA_REQUIRE(std::holds_alternative<RunAccepted>(run_submission));
+
+    RecordingPrepareSink duplicate_running_sink;
+    auto duplicate_running = opened.board.execution().begin_prepare(
+        reservation,
+        PrepareCallId{71U},
+        intent,
+        matching_prepare_authorization(capability, intent.digest),
+        PrepareSinkRegistration{duplicate_running_sink});
+    VNA_REQUIRE(std::holds_alternative<PrepareRejected>(duplicate_running));
+
+    opened.control->advance(1U);
+    VNA_REQUIRE(run_sink.terminal_count == 1U);
+
+    RecordingPrepareSink duplicate_terminal_sink;
+    auto duplicate_terminal = opened.board.execution().begin_prepare(
+        reservation,
+        PrepareCallId{72U},
+        intent,
+        matching_prepare_authorization(capability, intent.digest),
+        PrepareSinkRegistration{duplicate_terminal_sink});
+    VNA_REQUIRE(std::holds_alternative<PrepareRejected>(duplicate_terminal));
+
+    const auto observations = opened.control->observations();
+    VNA_REQUIRE(observations.accepted_prepare_calls == 1U);
+    VNA_REQUIRE(observations.rejected_prepare_calls == 4U);
+    VNA_REQUIRE(observations.prepare_terminal_callbacks == 1U);
+    VNA_REQUIRE(observations.accepted_run_calls == 1U);
+    VNA_REQUIRE(observations.run_terminal_callbacks == 1U);
+    VNA_REQUIRE(duplicate_pending_sink.terminal_count == 0U);
+    VNA_REQUIRE(duplicate_prepared_sink.terminal_count == 0U);
+    VNA_REQUIRE(duplicate_running_sink.terminal_count == 0U);
+    VNA_REQUIRE(duplicate_terminal_sink.terminal_count == 0U);
+}
+
+TEST(BoardAdapterContract, RunRejectsPreparedIdentityNotIssuedByItsReservation) {
+    using namespace vna::board;
+
+    MockScenario scenario{};
+    scenario.prepare_delay = 1U;
+    scenario.run_delay = 1U;
+    scenario.point_count = 3U;
+    MockBoardProvider provider{MockCapabilityProfile{201U}, scenario};
+    auto opened_result = provider.open_controlled(
+        BoardOpenRequest{1U, BoardContractVersion{1U, 0U}});
+    VNA_REQUIRE(opened_result.has_value());
+    auto opened = std::move(opened_result).take_value();
+    auto reserved = opened.board.execution().reserve_execution();
+    VNA_REQUIRE(reserved.has_value());
+    auto reservation = std::move(reserved).take_value();
+    const auto capability = opened.board.execution().capabilities();
+    const SweepIntent intent{
+        3U, 1.0e6, 3.0e6, vna::core::StrongDigest{0x7878U}};
+
+    RecordingPrepareSink prepare_sink;
+    auto prepare_submission = opened.board.execution().begin_prepare(
+        reservation,
+        PrepareCallId{78U},
+        intent,
+        matching_prepare_authorization(capability, intent.digest),
+        PrepareSinkRegistration{prepare_sink});
+    VNA_REQUIRE(std::holds_alternative<PrepareAccepted>(prepare_submission));
+    opened.control->advance(1U);
+    VNA_REQUIRE(prepare_sink.terminal.has_value());
+    const auto& actual_manifest = std::get<PrepareSucceeded>(
+        *prepare_sink.terminal).execution.manifest.manifest();
+
+    // 伪造 token 与授权彼此自洽，但它们不是当前 reservation 的 Prepare 产物。
+    const PreparedExecutionId forged_prepared{actual_manifest.prepared_id.value() + 1U};
+    const vna::core::StrongDigest forged_digest{
+        actual_manifest.manifest_digest.value ^ 0xFFFFU};
+    RecordingRunSink run_sink;
+    auto run_submission = opened.board.execution().begin_run(
+        reservation,
+        BoardRunId{78U},
+        RunGeneration{1U},
+        PreparedStartToken{
+            capability.session_id, forged_prepared, forged_digest},
+        StartAuthorization::issue(
+            capability.session_id,
+            forged_prepared,
+            forged_digest,
+            capability.operational_epoch,
+            AcquisitionContinuationAttestation{
+                vna::core::StrongDigest{0x7879U}, 100U}),
+        RunDeliveryGrant{78U},
+        BoardRunSinkRegistration{run_sink});
+
+    VNA_REQUIRE(std::holds_alternative<RunRejected>(run_submission));
+    const auto& rejected = std::get<RunRejected>(run_submission);
+    VNA_REQUIRE(rejected.error.code == BoardErrc::AuthorizationMismatch);
+    VNA_REQUIRE(run_sink.terminal_count == 0U);
+    const auto observations = opened.control->observations();
+    VNA_REQUIRE(observations.accepted_run_calls == 0U);
+    VNA_REQUIRE(observations.rejected_run_calls == 1U);
+    VNA_REQUIRE(observations.run_terminal_callbacks == 0U);
+}
+
 TEST(BoardAdapterContract, InvalidSweepIntentIsRejectedBeforePrepareIsAccepted) {
     using namespace vna::board;
 
@@ -189,11 +427,15 @@ TEST(BoardAdapterContract, InvalidSweepIntentIsRejectedBeforePrepareIsAccepted) 
         BoardOpenRequest{1U, BoardContractVersion{1U, 0U}});
     VNA_REQUIRE(opened_result.has_value());
     auto opened = std::move(opened_result).take_value();
+    auto reservation_result = opened.board.execution().reserve_execution();
+    VNA_REQUIRE(reservation_result.has_value());
+    auto reservation = std::move(reservation_result).take_value();
 
     const auto capability = opened.board.execution().capabilities();
     const SweepIntent intent{4U, 3.0e6, 1.0e6, vna::core::StrongDigest{0x7777U}};
     RecordingPrepareSink sink;
     auto submission = opened.board.execution().begin_prepare(
+        reservation,
         PrepareCallId{81U},
         intent,
         matching_prepare_authorization(capability, intent.digest),
@@ -219,11 +461,15 @@ TEST(BoardAdapterContract, AcceptedPrepareIsNonInlineAndHasOneTerminal) {
         BoardOpenRequest{1U, BoardContractVersion{1U, 0U}});
     VNA_REQUIRE(opened_result.has_value());
     auto opened = std::move(opened_result).take_value();
+    auto reservation_result = opened.board.execution().reserve_execution();
+    VNA_REQUIRE(reservation_result.has_value());
+    auto reservation = std::move(reservation_result).take_value();
 
     const auto capability = opened.board.execution().capabilities();
     const SweepIntent intent{3U, 1.0e6, 3.0e6, vna::core::StrongDigest{0x9ABCU}};
     RecordingPrepareSink sink;
     auto submission = opened.board.execution().begin_prepare(
+        reservation,
         PrepareCallId{9U},
         intent,
         matching_prepare_authorization(capability, intent.digest),
@@ -267,11 +513,15 @@ TEST(BoardAdapterContract, AcceptedRunEmitsDeterministicWavesAndOneTerminal) {
         BoardOpenRequest{1U, BoardContractVersion{1U, 0U}});
     VNA_REQUIRE(opened_result.has_value());
     auto opened = std::move(opened_result).take_value();
+    auto reservation_result = opened.board.execution().reserve_execution();
+    VNA_REQUIRE(reservation_result.has_value());
+    auto reservation = std::move(reservation_result).take_value();
 
     const auto capability = opened.board.execution().capabilities();
     const SweepIntent intent{3U, 1.0e6, 3.0e6, vna::core::StrongDigest{0xBCDEU}};
     RecordingPrepareSink prepare_sink;
     auto prepare_submission = opened.board.execution().begin_prepare(
+        reservation,
         PrepareCallId{10U},
         intent,
         matching_prepare_authorization(capability, intent.digest),
@@ -291,6 +541,7 @@ TEST(BoardAdapterContract, AcceptedRunEmitsDeterministicWavesAndOneTerminal) {
         capability.operational_epoch,
         AcquisitionContinuationAttestation{vna::core::StrongDigest{0xC017U}, 100U});
     auto run_submission = opened.board.execution().begin_run(
+        reservation,
         BoardRunId{20U},
         RunGeneration{1U},
         std::move(prepared.start_token),
@@ -335,11 +586,15 @@ TEST(BoardAdapterContract, RejectedRunReturnsTokenGrantAndSinkWithoutCallbacks) 
         BoardOpenRequest{1U, BoardContractVersion{1U, 0U}});
     VNA_REQUIRE(opened_result.has_value());
     auto opened = std::move(opened_result).take_value();
+    auto reservation_result = opened.board.execution().reserve_execution();
+    VNA_REQUIRE(reservation_result.has_value());
+    auto reservation = std::move(reservation_result).take_value();
 
     const auto capability = opened.board.execution().capabilities();
     const SweepIntent intent{3U, 1.0e6, 3.0e6, vna::core::StrongDigest{0xD00DU}};
     RecordingPrepareSink prepare_sink;
     auto prepare_submission = opened.board.execution().begin_prepare(
+        reservation,
         PrepareCallId{11U},
         intent,
         matching_prepare_authorization(capability, intent.digest),
@@ -358,6 +613,7 @@ TEST(BoardAdapterContract, RejectedRunReturnsTokenGrantAndSinkWithoutCallbacks) 
         capability.operational_epoch,
         AcquisitionContinuationAttestation{});
     auto submission = opened.board.execution().begin_run(
+        reservation,
         BoardRunId{21U},
         RunGeneration{1U},
         std::move(prepared.start_token),

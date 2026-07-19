@@ -2,6 +2,8 @@
 
 #include "runtime/core/base/result.h"
 #include "runtime/core/base/strong_id.h"
+#include "runtime/platform/board/board_execution_reservation.h"
+#include "runtime/platform/board/board_prepare_drain_owner.h"
 
 #include <array>
 #include <cstddef>
@@ -274,10 +276,9 @@ struct PrepareFailed final {
     BoardError error;
 };
 
-/// Prepare 尚在排空底软资源时移交给上层的所有权占位类型。
-struct BoardPrepareDrainOwner final {};
 /// Prepare 进入排空流程的终态分支。
 struct PrepareDraining final {
+    /// 必须与对应采集 owner 聚合保活、不能按普通失败析构的排空义务。
     BoardPrepareDrainOwner owner;
 };
 
@@ -646,20 +647,37 @@ public:
     /// @return 调用时刻的最新能力和状态版本快照。
     virtual CapabilitySnapshot capabilities() const noexcept = 0;
 
+    /// @return 与 AcquisitionContinuationAttestation::expires_at 相同时间域的
+    ///         当前单调 tick；仅用于相对 deadline 计算，不代表 wall clock。
+    virtual std::uint64_t monotonic_tick() const noexcept = 0;
+
+    /// 在上层发布 Accepted Operation 和首次 Runtime dispatch 前预占执行容量。
+    /// @return 成功时返回覆盖同一次 Prepare/Run call、排队和 callback sink 槽的
+    ///         move-only owner；容量不足时返回 ResourceExhausted 且不改变状态。
+    ///         返回对象及其后续移动目标都不得比当前 BoardExecutionPort 活得更久。
+    virtual core::Result<BoardExecutionReservation, BoardError>
+    reserve_execution() noexcept = 0;
+
     /// 请求单板验证并准备一项冻结扫描意图。
+    /// @param reservation 当前 execution 实例在首次 dispatch 前签发、且覆盖本次
+    ///        Prepare/Run 队列与 callback registration 容量的有效租约。
     /// @param call 非 0 且由上层分配的 Prepare 调用 ID。
     /// @param intent 要准备的扫描意图，按值传入以便拒绝时完整返还。
     /// @param authorization 与当前能力版本及 intent.digest 匹配的一次性授权。
     /// @param sink Prepare 唯一终态的回调注册。
     /// @return PrepareAccepted 表示输入所有权已经转移并将在未来回调一次；
     ///         PrepareRejected 表示未接受，并连同错误返还 intent、authorization、sink。
+    /// @note reservation 只允许从 Reserved 调用一次；该次调用无论接受或拒绝都
+    ///       消费其 Prepare call capability，非法重复调用必须同步拒绝且零 callback。
     virtual PrepareSubmission begin_prepare(
+        const BoardExecutionReservation& reservation,
         PrepareCallId call,
         SweepIntent intent,
         PrepareAuthorization&& authorization,
         PrepareSinkRegistration&& sink) noexcept = 0;
 
     /// 启动一个已经 Prepare 成功的采集执行。
+    /// @param reservation 与对应 Prepare 相同且仍有效的 Adapter execution 租约。
     /// @param run 非 0 且由上层分配的 Run ID。
     /// @param generation 非 0 的 Run 代次，用于丢弃迟到事件。
     /// @param prepared Prepare 成功返回且与 authorization 匹配的启动令牌。
@@ -668,13 +686,41 @@ public:
     /// @param sink 接收阶段、A/B 原始数据块和唯一终态的注册。
     /// @return RunAccepted 表示所有 move-only 输入已被消费且后续异步回调；
     ///         RunRejected 表示未启动，并原样返还全部输入且永不回调。
+    /// @note 只有同一 reservation 的 PrepareSucceeded 后允许调用一次；无论接受
+    ///       或拒绝都消费 Run call capability，非法顺序不得复用该容量。
     virtual RunSubmission begin_run(
+        const BoardExecutionReservation& reservation,
         BoardRunId run,
         RunGeneration generation,
         PreparedStartToken&& prepared,
         StartAuthorization&& authorization,
         RunDeliveryGrant&& delivery,
         BoardRunSinkRegistration&& sink) noexcept = 0;
+
+protected:
+    /// 为派生 Adapter 已经原子占用的槽位建立 RAII owner。
+    /// @param id Adapter 内当前有效且非 0 的预留身份。
+    /// @return 绑定当前 execution 实例的 move-only 租约。
+    BoardExecutionReservation issue_execution_reservation(
+        BoardExecutionReservationId id) noexcept {
+        return BoardExecutionReservation{*this, id};
+    }
+
+    /// 判断租约是否由当前 execution 实例签发且尚未被移动或释放。
+    /// @param reservation 调用者随 Prepare/Run 提供的非 owning 租约引用。
+    /// @return owner 与当前实例相同且身份非 0 时返回 true；Adapter 仍须校验
+    ///         该身份对应当前活动槽位。
+    bool owns_execution_reservation(
+        const BoardExecutionReservation& reservation) const noexcept {
+        return reservation.owner_ == this && reservation.valid();
+    }
+
+private:
+    friend class BoardExecutionReservation;
+    /// 由 BoardExecutionReservation 析构恰好一次调用，归还实际 Adapter 槽位。
+    /// @param id 要归还的预留身份；过期身份不得影响复用后的新槽位。
+    virtual void release_execution_reservation(
+        BoardExecutionReservationId id) noexcept = 0;
 };
 
 /// 一次已打开单板会话的所有功能面入口。

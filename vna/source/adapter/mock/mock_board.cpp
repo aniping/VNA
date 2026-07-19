@@ -267,6 +267,15 @@ struct PendingRun final {
     VirtualDuration due_at{0U};
 };
 
+enum class MockExecutionReservationPhase {
+    None,
+    Reserved,
+    Preparing,
+    Prepared,
+    Running,
+    Terminal
+};
+
 class MockBoardSession final : public BoardSession,
                                public BoardExecutionPort,
                                public MockBoardControl {
@@ -283,19 +292,59 @@ public:
     }
 
     CapabilitySnapshot capabilities() const noexcept override { return capabilities_; }
+    std::uint64_t monotonic_tick() const noexcept override { return now_; }
+
+    core::Result<BoardExecutionReservation, BoardError>
+    reserve_execution() noexcept override {
+        if (active_execution_reservation_.valid() ||
+            pending_prepare_.has_value() || pending_run_.has_value()) {
+            ++observations_.rejected_execution_reservations;
+            return core::Result<BoardExecutionReservation, BoardError>::failure(
+                BoardError{BoardErrc::ResourceExhausted});
+        }
+        active_execution_reservation_ =
+            BoardExecutionReservationId{next_execution_reservation_id_++};
+        execution_reservation_phase_ = MockExecutionReservationPhase::Reserved;
+        active_prepared_id_ = PreparedExecutionId{};
+        active_manifest_digest_ = core::StrongDigest{};
+        ++observations_.acquired_execution_reservations;
+        return core::Result<BoardExecutionReservation, BoardError>::success(
+            issue_execution_reservation(active_execution_reservation_));
+    }
 
     PrepareSubmission begin_prepare(
+        const BoardExecutionReservation& reservation,
         PrepareCallId call,
         SweepIntent intent,
         PrepareAuthorization&& authorization,
         PrepareSinkRegistration&& sink) noexcept override {
-        // 所有同步拒绝分支都必须返还 intent、授权和 sink，且绝不安排回调。
-        if (scenario_.prepare_behavior == MockPrepareBehavior::Reject) {
+        auto reject = [&](BoardErrc code, bool consume) mutable
+            -> PrepareSubmission {
+            if (consume) {
+                execution_reservation_phase_ =
+                    MockExecutionReservationPhase::Terminal;
+            }
             ++observations_.rejected_prepare_calls;
             return PrepareRejected{
-                BoardError{BoardErrc::Unsupported},
+                BoardError{code},
                 ReclaimedPrepareInputs{
                     std::move(intent), std::move(authorization), std::move(sink)}};
+        };
+
+        // 预留身份与 Reserved phase 共同形成一次性 Prepare call capability。
+        if (!owns_execution_reservation(reservation) ||
+            reservation.id() != active_execution_reservation_ ||
+            execution_reservation_phase_ !=
+                MockExecutionReservationPhase::Reserved) {
+            return reject(BoardErrc::ContractViolation, false);
+        }
+        if (!call.valid() || !sink.valid()) {
+            return reject(BoardErrc::ContractViolation, true);
+        }
+
+        // 所有同步拒绝分支都必须返还 intent、授权和 sink，且绝不安排回调。
+        if (scenario_.prepare_behavior == MockPrepareBehavior::Reject) {
+            return reject(BoardErrc::Unsupported, true);
         }
 
         const bool intent_is_valid = intent.point_count > 0U &&
@@ -306,11 +355,7 @@ public:
                  : intent.stop_hz > intent.start_hz) &&
             intent.digest.valid();
         if (!intent_is_valid) {
-            ++observations_.rejected_prepare_calls;
-            return PrepareRejected{
-                BoardError{BoardErrc::InvalidIntent},
-                ReclaimedPrepareInputs{
-                    std::move(intent), std::move(authorization), std::move(sink)}};
+            return reject(BoardErrc::InvalidIntent, true);
         }
 
         const bool authorization_matches = authorization.valid() &&
@@ -321,23 +366,16 @@ public:
             authorization.operational_epoch() == capabilities_.operational_epoch &&
             authorization.intent_digest() == intent.digest;
         if (!authorization_matches) {
-            ++observations_.rejected_prepare_calls;
-            return PrepareRejected{
-                BoardError{BoardErrc::AuthorizationMismatch},
-                ReclaimedPrepareInputs{
-                    std::move(intent), std::move(authorization), std::move(sink)}};
+            return reject(BoardErrc::AuthorizationMismatch, true);
         }
 
         if (pending_prepare_.has_value()) {
-            ++observations_.rejected_prepare_calls;
-            return PrepareRejected{
-                BoardError{BoardErrc::Busy},
-                ReclaimedPrepareInputs{
-                    std::move(intent), std::move(authorization), std::move(sink)}};
+            return reject(BoardErrc::Busy, true);
         }
 
         // 接受只登记待办；即使 delay 为 0，也要等测试显式 advance() 才回调。
         ++observations_.accepted_prepare_calls;
+        execution_reservation_phase_ = MockExecutionReservationPhase::Preparing;
         pending_prepare_.emplace(PendingPrepare{
             call,
             std::move(intent),
@@ -348,13 +386,18 @@ public:
     }
 
     RunSubmission begin_run(
+        const BoardExecutionReservation& reservation,
         BoardRunId run,
         RunGeneration generation,
         PreparedStartToken&& prepared,
         StartAuthorization&& authorization,
         RunDeliveryGrant&& delivery,
         BoardRunSinkRegistration&& sink) noexcept override {
-        auto reject = [&](BoardErrc code) mutable -> RunSubmission {
+        auto reject = [&](BoardErrc code, bool consume) mutable -> RunSubmission {
+            if (consume) {
+                execution_reservation_phase_ =
+                    MockExecutionReservationPhase::Terminal;
+            }
             // Run 拒绝与 Prepare 相同：调用者重新取得所有 move-only 输入的所有权。
             ++observations_.rejected_run_calls;
             return RunRejected{
@@ -366,21 +409,34 @@ public:
                     std::move(sink)}};
         };
 
+        if (!owns_execution_reservation(reservation) ||
+            reservation.id() != active_execution_reservation_ ||
+            execution_reservation_phase_ !=
+                MockExecutionReservationPhase::Prepared) {
+            return reject(BoardErrc::ContractViolation, false);
+        }
+
+        if (!run.valid() || !generation.valid() || !sink.valid()) {
+            return reject(BoardErrc::ContractViolation, true);
+        }
         if (scenario_.run_behavior == MockRunBehavior::Reject) {
-            return reject(BoardErrc::Unsupported);
+            return reject(BoardErrc::Unsupported, true);
         }
         if (pending_run_.has_value()) {
-            return reject(BoardErrc::Busy);
+            return reject(BoardErrc::Busy, true);
         }
-        if (scenario_.point_count == 0U ||
-            scenario_.point_count > kMaximumContractChunkSamples ||
-            scenario_.point_count > capabilities_.maximum_points) {
-            return reject(BoardErrc::ResourceExhausted);
+        if (scenario_.run_behavior == MockRunBehavior::Succeed &&
+            (scenario_.point_count == 0U ||
+             scenario_.point_count > kMaximumContractChunkSamples ||
+             scenario_.point_count > capabilities_.maximum_points)) {
+            return reject(BoardErrc::ResourceExhausted, true);
         }
 
         const bool authorization_matches = prepared.valid() && authorization.valid() &&
             delivery.valid() && sink.valid() && run.valid() && generation.valid() &&
             prepared.session_id() == capabilities_.session_id &&
+            prepared.prepared_id() == active_prepared_id_ &&
+            prepared.manifest_digest() == active_manifest_digest_ &&
             authorization.session_id() == capabilities_.session_id &&
             authorization.prepared_id() == prepared.prepared_id() &&
             authorization.manifest_digest() == prepared.manifest_digest() &&
@@ -388,11 +444,12 @@ public:
             authorization.continuation().valid() &&
             authorization.continuation().expires_at > now_;
         if (!authorization_matches) {
-            return reject(BoardErrc::AuthorizationMismatch);
+            return reject(BoardErrc::AuthorizationMismatch, true);
         }
 
         // 捕获当前场景，保证一旦接受，输出波形和质量标记就不再被配置修改影响。
         ++observations_.accepted_run_calls;
+        execution_reservation_phase_ = MockExecutionReservationPhase::Running;
         pending_run_.emplace(PendingRun{
             run,
             generation,
@@ -430,17 +487,38 @@ public:
     }
 
 private:
+    void release_execution_reservation(
+        BoardExecutionReservationId id) noexcept override {
+        // generation-bound 身份避免旧租约析构释放后来复用的新执行槽；若调用者
+        // 违反契约，在 Accepted terminal 前销毁租约，则宁可保持槽位占用也不允许
+        // 新请求复用仍持有 callback sink 的底层容量。
+        if (active_execution_reservation_ == id &&
+            !pending_prepare_.has_value() && !pending_run_.has_value()) {
+            active_execution_reservation_ = BoardExecutionReservationId{};
+            execution_reservation_phase_ = MockExecutionReservationPhase::None;
+            active_prepared_id_ = PreparedExecutionId{};
+            active_manifest_digest_ = core::StrongDigest{};
+            ++observations_.released_execution_reservations;
+        }
+    }
+
     void complete_prepare() noexcept {
         if (!pending_prepare_.has_value()) {
             return;
         }
 
-        // 先从会话摘除待办再回调，允许 sink 在回调中安全地提交下一次 Prepare。
+        // 先从会话摘除待办并进入 Prepared，再回调；sink 可重入提交唯一 Run，
+        // 但同一 reservation 不能再次 Prepare。
         auto pending = std::move(*pending_prepare_);
         pending_prepare_.reset();
+        execution_reservation_phase_ = MockExecutionReservationPhase::Prepared;
         const auto prepared_id = PreparedExecutionId{next_prepared_id_++};
         const core::StrongDigest manifest_digest{
             pending.intent.digest.value ^ 0xA5A5A5A5A5A5A5A5ULL};
+        // Run 必须精确消费同一 reservation 刚刚产出的 Prepared 身份，不能只
+        // 接受一对由调用者自行伪造、但彼此自洽的 token/authorization。
+        active_prepared_id_ = prepared_id;
+        active_manifest_digest_ = manifest_digest;
         PreparedExecutionManifest manifest{
             ManifestId{prepared_id.value()},
             prepared_id,
@@ -470,6 +548,7 @@ private:
         // 与 Prepare 相同，回调前先清空 pending，保证回调重入不会观察到 Busy。
         auto pending = std::move(*pending_run_);
         pending_run_.reset();
+        execution_reservation_phase_ = MockExecutionReservationPhase::Terminal;
         auto& sink = pending.sink.sink();
 
         ++observations_.run_phase_callbacks;
@@ -478,6 +557,18 @@ private:
         ++observations_.run_phase_callbacks;
         sink.on_phase(BoardRunPhaseEvent{
             pending.run, pending.generation, BoardRunPhase::Acquiring});
+
+        if (pending.scenario.run_behavior == MockRunBehavior::Fail) {
+            // 延迟失败剧本只报告资源终态，不制造空数据块或部分正式观测。
+            pending.delivery.retire();
+            ++observations_.run_terminal_callbacks;
+            sink.on_terminal(BoardRunTerminal{
+                pending.run,
+                pending.generation,
+                RunTerminalKind::Failed,
+                0U});
+            return;
+        }
 
         const auto manifest_id = ManifestId{pending.prepared.prepared_id().value()};
         const auto prepared_id = pending.prepared.prepared_id();
@@ -555,6 +646,14 @@ private:
     std::uint64_t next_prepared_id_{1U};
     std::optional<PendingPrepare> pending_prepare_{};
     std::optional<PendingRun> pending_run_{};
+    BoardExecutionReservationId active_execution_reservation_{};
+    MockExecutionReservationPhase execution_reservation_phase_{
+        MockExecutionReservationPhase::None};
+    /// 当前 execution reservation 唯一可供 Run 消费的 Prepare 成功身份。
+    PreparedExecutionId active_prepared_id_{};
+    /// 与 active_prepared_id_ 配对的 Manifest 摘要。
+    core::StrongDigest active_manifest_digest_{};
+    std::uint64_t next_execution_reservation_id_{1U};
 };
 
 core::Result<MockOpenedBoard, BoardError> make_opened_mock(

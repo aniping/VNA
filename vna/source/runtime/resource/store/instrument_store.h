@@ -2,6 +2,8 @@
 
 #include "runtime/core/base/result.h"
 #include "runtime/core/base/strong_id.h"
+#include "runtime/function/acquisition/acquisition_result.h"
+#include "runtime/function/operation/operation_runtime.h"
 
 #include <array>
 #include <cstddef>
@@ -13,6 +15,8 @@ namespace vna::store {
 
 /// 对外可见操作的唯一标识；0 为无效值。
 using OperationId = core::StrongId<struct OperationIdTag>;
+/// Store Event Journal 内的单调事件身份；0 为无效值。
+using OperationEventId = core::StrongId<struct OperationEventIdTag>;
 
 /// 仪器状态存储操作的失败原因。
 enum class StoreErrc {
@@ -20,7 +24,7 @@ enum class StoreErrc {
     ResourceExhausted,
     /// 预留凭证无效、已消费或不属于当前 Store。
     InvalidReservation,
-    /// 操作 ID 无效，或把 Accepted 当作终态提交。
+    /// 操作 ID/强关联 WorkId/plan digest 无效，或把 Accepted 当作终态提交。
     InvalidOperation,
     /// 相同 OperationId 已经可见。
     DuplicateOperation,
@@ -49,13 +53,54 @@ struct OperationSnapshot final {
     OperationState state{OperationState::Accepted};
     /// Store 全局单调递增修订号，用于判断快照先后关系。
     std::uint64_t revision{0U};
+    /// 与 Operation 关联的非执行性 Runtime correlation；查询者不能据此派发工作。
+    runtime::WorkId work{};
+    /// 初始 Accepted 时冻结的计划摘要。
+    core::StrongDigest plan_digest{};
+};
+
+/// 某个 Operation 等待边界在终态时冻结的事实。
+struct OperationFenceSnapshot final {
+    OperationId operation{};
+    OperationState state{OperationState::Accepted};
+    /// 与 Operation terminal、status 和 Event 相同的 Store revision。
+    std::uint64_t revision{0U};
+};
+
+/// 仪器共享状态寄存器中最近一次 Operation 终态事实。
+struct InstrumentStatusSnapshot final {
+    OperationId operation{};
+    OperationState state{OperationState::Accepted};
+    /// 0 表示尚无终态；否则与同批 Operation/fence/Event 相同。
+    std::uint64_t revision{0U};
+};
+
+/// Event Journal 中一次不可变的 Operation 终态通知事实。
+struct OperationEventSnapshot final {
+    OperationEventId id{};
+    OperationId operation{};
+    OperationState state{OperationState::Failed};
+    /// 与 Operation terminal、status 和 fence 相同的 Store revision。
+    std::uint64_t revision{0U};
+    /// failure 字段是否保存一项完整 A-only 采集失败。
+    bool has_acquisition_failure{false};
+    acquisition::AcquisitionFailure failure{};
+};
+
+/// 当前正式数据 Catalog 中各数据阶段的发布数量。
+struct PublicationCountSnapshot final {
+    std::size_t completed_sweeps{0U};
+    std::size_t measurements{0U};
+    std::size_t stages{0U};
+    std::size_t analyses{0U};
 };
 
 class InstrumentStore;
 
 /// move-only 的生命周期终态容量预留。
 ///
-/// 其目的是在对外提交 Accepted 之前，先保证该操作将来一定有容量提交终态。
+/// 其目的是在对外提交 Accepted 之前，先保证该操作将来一定有容量原子提交
+/// terminal Operation、status、fence 和一个必达 Event。
 /// 未经 commit_accepted() 消费的凭证会在析构时自动归还槽位。
 class LifecycleTerminalReservation final {
 public:
@@ -124,6 +169,8 @@ struct StoreSnapshot final {
     std::size_t visible_operations{0U};
     /// 最近一次状态变更后的全局修订号。
     std::uint64_t revision{0U};
+    /// 已原子写入终态的 Operation Event 数量。
+    std::size_t events{0U};
 };
 
 /// 固定容量的仪器操作生命周期存储。
@@ -151,6 +198,19 @@ public:
         OperationId operation,
         LifecycleTerminalReservation&& reservation) noexcept;
 
+    /// 原子安装带 Runtime/plan correlation 的 Accepted 生命周期。
+    /// @param operation 对外可见的非 0 OperationId。
+    /// @param work 只作为事实保存的非 0 WorkId；Store 不执行该能力。
+    /// @param plan_digest 与本次冻结请求绑定的非 0 摘要。
+    /// @param reservation 当前 Store 为终态、status/fence/Event 签发的完整预留；
+    ///        成功时所有权转移进可见 Operation，失败时原样返还。
+    /// @return 成功时返回统一 revision；任一身份非法或重复时返回拒绝分支。
+    AcceptedCommitResult commit_accepted(
+        OperationId operation,
+        runtime::WorkId work,
+        core::StrongDigest plan_digest,
+        LifecycleTerminalReservation&& reservation) noexcept;
+
     /// 为已接受操作写入最终状态。
     /// @param operation 已经可见的操作 ID。
     /// @param terminal_state 必须为 Completed 或 Failed。
@@ -160,11 +220,35 @@ public:
         OperationId operation,
         OperationState terminal_state) noexcept;
 
+    /// 原子写入 A-only 失败的全部权威事实。
+    /// @param operation 已经 Accepted 且安装终态预留的 OperationId。
+    /// @param failure L4 返回的类型化阶段、原因与 Board 身份；按值复制进 Event。
+    /// @return 首次调用时让 Operation、status、fence 和失败 Event 使用同一新
+    ///         revision；重复终态返回 AlreadyTerminal，不追加第二个 Event。
+    core::Result<TerminalCommitReceipt, StoreError> commit_acquisition_failed(
+        OperationId operation,
+        acquisition::AcquisitionFailure failure) noexcept;
+
     /// 按 ID 查询操作状态。
     /// @param operation 要查询的操作 ID。
     /// @return 找到时返回值拷贝；不存在时返回 std::nullopt。
     std::optional<OperationSnapshot> inspect_operation(
         OperationId operation) const noexcept;
+
+    /// 查询某个 Operation 已提交的终态 fence。
+    /// @param operation 要查询的 OperationId。
+    /// @return 终态已提交时返回值副本；Accepted 或不存在时返回 std::nullopt。
+    std::optional<OperationFenceSnapshot> inspect_fence(
+        OperationId operation) const noexcept;
+
+    /// @return 最近一次终态提交产生的共享状态副本；尚无终态时 revision 为 0。
+    InstrumentStatusSnapshot inspect_status() const noexcept;
+
+    /// @return Event Journal 中 revision 最新的终态 Event；尚无 Event 时为空。
+    std::optional<OperationEventSnapshot> latest_event() const noexcept;
+
+    /// @return A/B/Stage/C 正式发布数量的一致性副本。
+    PublicationCountSnapshot inspect_publications() const noexcept;
 
     /// @return 当前容量使用和全局修订号快照。
     StoreSnapshot inspect() const noexcept;
@@ -182,16 +266,34 @@ private:
         SlotState slot_state{SlotState::Empty};
         std::uint64_t generation{0U};
         OperationSnapshot operation{};
+        bool fence_visible{false};
+        OperationFenceSnapshot fence{};
+        bool event_visible{false};
+        OperationEventSnapshot event{};
     };
 
     void release_reservation(
         std::size_t slot,
         std::uint64_t generation) noexcept;
+    AcceptedCommitResult commit_accepted_impl(
+        OperationId operation,
+        runtime::WorkId work,
+        core::StrongDigest plan_digest,
+        bool require_correlation,
+        LifecycleTerminalReservation&& reservation) noexcept;
+    core::Result<TerminalCommitReceipt, StoreError> commit_terminal_impl(
+        OperationId operation,
+        OperationState terminal_state,
+        const acquisition::AcquisitionFailure* failure) noexcept;
 
     std::array<Slot, kMaximumOperations> slots_{};
     std::size_t capacity_{0U};
     std::uint64_t next_generation_{1U};
     std::uint64_t revision_{0U};
+    std::size_t events_{0U};
+    std::uint64_t next_event_id_{1U};
+    InstrumentStatusSnapshot status_{};
+    PublicationCountSnapshot publications_{};
 };
 
 }  // namespace vna::store

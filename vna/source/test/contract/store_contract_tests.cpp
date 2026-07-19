@@ -56,6 +56,43 @@ TEST(InstrumentStoreContract, RejectedInitialCommitCreatesNoVisibleLifecycle) {
     VNA_REQUIRE(store.inspect().reserved_lifecycles == 0U);
 }
 
+TEST(InstrumentStoreContract, CorrelatedAcceptedCommitRejectsMissingIdentity) {
+    using namespace vna;
+
+    store::InstrumentStore store{1U};
+    {
+        auto reservation_result = store.reserve_lifecycle_terminal();
+        VNA_REQUIRE(reservation_result.has_value());
+        auto commit = store.commit_accepted(
+            store::OperationId{31U},
+            runtime::WorkId{},
+            core::StrongDigest{0x31U},
+            std::move(reservation_result).take_value());
+
+        VNA_REQUIRE(std::holds_alternative<store::RejectedAcceptedCommit>(commit));
+        const auto& rejected = std::get<store::RejectedAcceptedCommit>(commit);
+        VNA_REQUIRE(rejected.error.code == store::StoreErrc::InvalidOperation);
+        VNA_REQUIRE(rejected.reclaimed.valid());
+        VNA_REQUIRE(store.inspect().visible_operations == 0U);
+        VNA_REQUIRE(store.inspect().revision == 0U);
+    }
+
+    auto digest_reservation = store.reserve_lifecycle_terminal();
+    VNA_REQUIRE(digest_reservation.has_value());
+    auto digest_commit = store.commit_accepted(
+        store::OperationId{32U},
+        runtime::WorkId{32U},
+        core::StrongDigest{},
+        std::move(digest_reservation).take_value());
+    VNA_REQUIRE(
+        std::holds_alternative<store::RejectedAcceptedCommit>(digest_commit));
+    VNA_REQUIRE(
+        std::get<store::RejectedAcceptedCommit>(digest_commit).error.code ==
+        store::StoreErrc::InvalidOperation);
+    VNA_REQUIRE(store.inspect().visible_operations == 0U);
+    VNA_REQUIRE(store.inspect().revision == 0U);
+}
+
 TEST(InstrumentStoreContract, InstalledTerminalReservationCommitsUnderCapacityPressure) {
     using namespace vna::store;
 
