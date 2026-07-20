@@ -49,6 +49,9 @@ B 层快照对平均输入的有界来源证明。Finite Average 可保存受 fa
 **单板能力描述（Board Capabilities）**：
 单板可执行频率、功率、IFBW、点数、端口路由、触发、接收机拓扑、波量定义、质量标志、并发资源、abort SLA、RF safe/off，以及 Clock/Coherence Domain、timebase lock、同步 trigger/epoch 与最大 skew 的版本化事实。上层根据它验证和编译扫描，不根据板卡型号散布条件分支；未知相干能力不得把多块板的数据合成同一代 S-matrix、mixed-mode 或校准 bundle。
 
+**逻辑端口拓扑（Logical Port Topology）**：
+一个 Channel revision 可使用的逻辑测试端口集合，以及这些端口到当前 Board Capabilities 所声明激励和接收路径的版本化映射；本产品配置可以暴露 2 个或 4 个逻辑端口。S 参数始终用 `S(receive_port, source_port)` 的类型化端口对表达，不能把核心数据结构固定为某组二端口字段。
+
 **单板安全通道（Board Safety Lane）**：
 每块可发射 RF 的单板必须预留、且不与 Acquisition/Prepare/Recovery worker 共用的 RF-off/readback 通道。safe-state 请求通过唯一 `BoardSafetyCallId` 报告 accepted/rejected 和一个可信终态；若该通道卡死则进入 Drain/Quarantine，仍应存在与其物理独立的 emergency kill/interlock。软件 quarantine 本身不能证明 RF 已关闭。
 
@@ -60,8 +63,11 @@ Abort/timeout 后无法通过独立控制路径和 readback 证明 RF 已关闭�
 
 ## 测量与校准
 
+**接收机波约定（Receiver Wave Convention）**：
+Product/Board Profile 对逻辑端口与 source state、receiver path、`aᵢ/bᵢ` 波量之间的映射，以及功率波归一化、参考阻抗和板侧预修正边界作出的版本化声明。只有该约定完整且与实际 Manifest 一致时，`bᵢ/aⱼ` 才能命名为未校准 `S(i,j)`；否则它只能作为 Receiver Ratio 发布。
+
 **测量规格（Measurement Spec）**：
-描述“测什么”的值对象，例如 `S11`、`S21`、接收机波量或接收机比值。它属于一条 Analysis Trace 的 Source Spec，不单独拥有用户可见身份；不同 Trace 可以包含等价规格，Sweep Compiler 只合并其底层采集需求，不合并 Trace 的身份和设置。
+描述“测什么”的值对象，例如 `S(receive_port, source_port)`、接收机波量或接收机比值；端口必须来自同一冻结 Logical Port Topology。它属于一条 Analysis Trace 的 Source Spec，不单独拥有用户可见身份；不同 Trace 可以包含等价规格，Sweep Compiler 只合并其底层采集需求，不合并 Trace 的身份和设置。
 
 **测量完成快照（Completed Measurement Snapshot）**：
 由一个或多个完整逻辑扫频经过接收机量提取、兼容平均和用户校准修正后原子发布的不可变 B 层网络结果，对应 `CompletedMeasurementBundle`。它绑定实际激励轴、有界 `AverageContributionRef`、平均 generation/count、配置版本、逐板 identity/capability 集合和质量信息；默认单板集合长度为 1。项目原生 Sweep completion fence 到这一层为止，不等待所有 Trace 分析。
