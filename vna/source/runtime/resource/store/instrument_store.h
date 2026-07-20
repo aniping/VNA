@@ -258,7 +258,9 @@ public:
     /// @param operation 已经 Accepted 且安装终态预留的 OperationId。
     /// @param failure L4 返回的类型化阶段、原因与 Board 身份；按值复制进 Event。
     /// @return 首次调用时让 Operation、status、fence 和失败 Event 使用同一新
-    ///         revision；重复终态返回 AlreadyTerminal，不追加第二个 Event。
+    ///         revision；重复终态返回 AlreadyTerminal，不追加第二个 Event；
+    ///         Operation 不存在时返回 OperationNotFound。若已安装预留仍无法写入，
+    ///         返回 IntegrityFault 且不改变任何公开事实，调用者必须进入 fail-stop。
     core::Result<TerminalCommitReceipt, StoreError> commit_acquisition_failed(
         OperationId operation,
         acquisition::AcquisitionFailure failure) noexcept;
@@ -268,7 +270,11 @@ public:
     /// @param candidate worker 返回、仍拥有全部正式观测的 move-only 候选；成功
     ///        时被消费，拒绝时在结果中原样返还。
     /// @return 成功时 A、Completed Operation、status、fence 和 Event 共享同一
-    ///         revision；身份/关联不匹配时 Store 不改变且返还 candidate。
+    ///         revision。身份/关联不匹配返回 InvalidCandidate；领域校验拒绝返回
+    ///         CandidateValidationRejected；本地 staging 后、revision 切换前的
+    ///         写入拒绝返回 CandidateWriteRejected；Operation 不存在返回
+    ///         OperationNotFound。所有拒绝都不改变 revision 或任何正式事实，并在
+    ///         RejectedCompletedSweepCommit 中原样返还完整 candidate 所有权。
     CompletedSweepCommitResult commit_completed_sweep(
         OperationId operation,
         acquisition::CandidateCommitLease&& candidate) noexcept;
@@ -354,6 +360,8 @@ private:
     std::optional<StoreErrc> next_completed_sweep_commit_fault_{};
     /// 只在合同测试组合存在；模拟已安装终态预留无法完成 state-only 失败提交。
     bool fail_next_acquisition_failure_commit_{false};
+    /// 只在合同测试组合存在；模拟错误 OperationId/零 revision 的伪成功回执。
+    bool return_malformed_acquisition_failure_receipt_{false};
 #endif
 };
 

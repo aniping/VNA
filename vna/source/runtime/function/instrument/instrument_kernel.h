@@ -158,7 +158,8 @@ public:
     ///        调用返回后无需继续保活。
     /// @return Accepted 只携带可查询 OperationId；Rejected 携带类型化原因且不创建
     ///         Operation/Event/Board 调用；非 0 expected_capability_revision 不匹配
-    ///         时返回 RevisionConflict。调用不等待 Prepare、Run 或终态。
+    ///         时返回 RevisionConflict；StoreFailStop 时在读取 Board/capability 或
+    ///         申请容量前返回 InstrumentFailStop。调用不等待 Prepare、Run 或终态。
     AOnlySubmitResult submit_a_only(const AOnlySweepRequest& request) noexcept;
 
     /// 推进一项 Runtime 状态转换或交付一条可靠 completion mailbox 消息。

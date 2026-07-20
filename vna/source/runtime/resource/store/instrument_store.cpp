@@ -143,6 +143,15 @@ InstrumentStore::commit_acquisition_failed(
     OperationId operation,
     acquisition::AcquisitionFailure failure) noexcept {
 #if defined(VNA_ENABLE_STORE_CONTRACT_TEST_HOOKS)
+    if (return_malformed_acquisition_failure_receipt_) {
+        return_malformed_acquisition_failure_receipt_ = false;
+        return core::Result<TerminalCommitReceipt, StoreError>::success(
+            TerminalCommitReceipt{
+                OperationId{},
+                OperationState::Failed,
+                0U,
+                TerminalCommitDisposition::Committed});
+    }
     if (fail_next_acquisition_failure_commit_) {
         fail_next_acquisition_failure_commit_ = false;
         return core::Result<TerminalCommitReceipt, StoreError>::failure(

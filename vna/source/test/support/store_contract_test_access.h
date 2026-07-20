@@ -33,6 +33,13 @@ public:
         InstrumentStore& store) noexcept {
         store.fail_next_acquisition_failure_commit_ = true;
     }
+
+    /// 令下一次 state-only Failed 返回错误 Operation/零 revision 的伪成功回执。
+    /// @param store 被测试的 Store；不转移所有权，故障被一次提交消费。
+    static void return_malformed_acquisition_failure_receipt(
+        InstrumentStore& store) noexcept {
+        store.return_malformed_acquisition_failure_receipt_ = true;
+    }
 };
 
 }  // namespace vna::store

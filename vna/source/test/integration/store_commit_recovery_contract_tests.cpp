@@ -237,4 +237,32 @@ TEST(StoreCommitRecoveryContract, IntegrityFaultEntersTypedFailStop) {
         board_before.acquired_execution_reservations);
 }
 
+TEST(StoreCommitRecoveryContract, MalformedFailedReceiptCannotReleaseOwners) {
+    using namespace vna;
+
+    StoreRecoveryHarness harness{1U};
+    store::OperationId operation{};
+    harness.drive_to_invisible_candidate(operation);
+    store::InstrumentStoreContractTestAccess::
+        reject_next_completed_sweep_validation(harness.store);
+    store::InstrumentStoreContractTestAccess::
+        return_malformed_acquisition_failure_receipt(harness.store);
+
+    VNA_REQUIRE(harness.kernel.run_one());
+    VNA_REQUIRE(
+        harness.store.inspect_operation(operation)->state ==
+        store::OperationState::Accepted);
+    VNA_REQUIRE(!harness.store.inspect_fence(operation).has_value());
+    VNA_REQUIRE(!harness.store.latest_event().has_value());
+    VNA_REQUIRE(harness.acquisition_resources.inspect().in_use == 1U);
+    VNA_REQUIRE(harness.acquisition_resources.inspect().failure_finalizations == 0U);
+
+    const auto integrity = harness.kernel.inspect_integrity();
+    VNA_REQUIRE(
+        integrity.state == instrument::InstrumentIntegrityState::StoreFailStop);
+    VNA_REQUIRE(integrity.operation == operation);
+    VNA_REQUIRE(integrity.has_store_error);
+    VNA_REQUIRE(integrity.store_error.code == store::StoreErrc::IntegrityFault);
+}
+
 }  // namespace

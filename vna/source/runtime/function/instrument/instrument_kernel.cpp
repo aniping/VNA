@@ -371,10 +371,30 @@ bool InstrumentKernel::accept_state_only_failure_commit(
     const core::Result<
         store::TerminalCommitReceipt,
         store::StoreError>& result) noexcept {
-    if (result.has_value() &&
+    const auto operation_snapshot = store_.inspect_operation(operation);
+    const auto fence = store_.inspect_fence(operation);
+    const auto status = store_.inspect_status();
+    const auto event = store_.latest_event();
+    const bool receipt_matches = result.has_value() &&
+        result.value().operation == operation &&
         result.value().state == store::OperationState::Failed &&
+        result.value().revision != 0U &&
         result.value().disposition ==
-            store::TerminalCommitDisposition::Committed) {
+            store::TerminalCommitDisposition::Committed;
+    const bool store_facts_match = receipt_matches &&
+        operation_snapshot.has_value() && fence.has_value() &&
+        event.has_value() &&
+        operation_snapshot->state == store::OperationState::Failed &&
+        fence->state == store::OperationState::Failed &&
+        status.state == store::OperationState::Failed &&
+        event->state == store::OperationState::Failed &&
+        operation_snapshot->revision == result.value().revision &&
+        fence->revision == result.value().revision &&
+        status.operation == operation &&
+        status.revision == result.value().revision &&
+        event->operation == operation &&
+        event->revision == result.value().revision;
+    if (store_facts_match) {
         return true;
     }
 
