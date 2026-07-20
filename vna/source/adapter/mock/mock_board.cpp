@@ -373,6 +373,8 @@ struct PendingRun final {
     std::uint32_t delivered_chunks{0U};
     bool phases_delivered{false};
     bool delivery_failed{false};
+    /// 显式释放 Stall Completed 后，下一次 advance() 不再等待原始 offset。
+    bool release_all_deliveries{false};
 };
 
 enum class MockExecutionReservationPhase {
@@ -607,6 +609,7 @@ public:
             now_ + scenario_.run_duration,
             0U,
             false,
+            false,
             false});
         return RunAccepted{run, generation};
     }
@@ -688,6 +691,8 @@ public:
             terminal == MockStalledRunTerminal::Completed
             ? MockRunBehavior::Succeed
             : MockRunBehavior::Fail;
+        pending_run_->release_all_deliveries =
+            terminal == MockStalledRunTerminal::Completed;
         pending_run_->terminal_at = now_;
         return true;
     }
@@ -849,8 +854,9 @@ private:
 
         if (pending.scenario.run_behavior == MockRunBehavior::Succeed &&
             !pending.delivery_failed) {
-            const auto delivery_limit =
-                pending.scenario.maximum_chunks_before_completed_terminal == 0U
+            const auto delivery_limit = pending.release_all_deliveries
+                ? pending.delivery_count
+                : pending.scenario.maximum_chunks_before_completed_terminal == 0U
                 ? pending.delivery_count
                 : pending.scenario.maximum_chunks_before_completed_terminal;
             while (!pending.delivery_failed &&
@@ -862,9 +868,10 @@ private:
                      index < pending.delivery_count;
                      ++index) {
                     if (pending.delivery_attempted[index] ||
-                        pending.accepted_at +
-                                pending.deliveries[index].offset >
-                            now_) {
+                        (!pending.release_all_deliveries &&
+                         pending.accepted_at +
+                                 pending.deliveries[index].offset >
+                             now_)) {
                         continue;
                     }
                     if (selected == pending.delivery_count ||

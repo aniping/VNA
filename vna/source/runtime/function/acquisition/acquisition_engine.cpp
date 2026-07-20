@@ -415,6 +415,15 @@ runtime::RuntimeDrainStep AcquisitionEngine::resume_drain(
     if (phase_ != Phase::Draining) {
         return runtime::RuntimeDrainStep::cleanup_failed();
     }
+    if (contract_violation_.has_value()) {
+        // Callback 只能锁存固定大小证据；Draining 也必须在非 callback 步骤
+        // 执行会话隔离。存在重复 terminal、terminal 后 callback 或错误身份时，
+        // 即使已收到一个匹配 terminal 也不能把会话谎报为安全 Drained。
+        isolate_recorded_contract_violation();
+        drain_obligation_ = DrainObligation::Quarantine;
+        phase_ = Phase::Terminal;
+        return runtime::RuntimeDrainStep::quarantined();
+    }
     if (drain_obligation_ == DrainObligation::Quarantine) {
         // 当前 Board seam 没有可证明底软排空完成的后续 terminal。把 drain owner、
         // 本地资源和 execution reservation 留在 Engine，由 L2 在 Quarantined
@@ -682,8 +691,13 @@ runtime::RuntimeWorkStep AcquisitionEngine::fail_contract_violation() noexcept {
     auto result = fail(
         AcquisitionFailurePhase::Run,
         AcquisitionFailureReason::BoardContractViolation);
+    isolate_recorded_contract_violation();
+    return result;
+}
+
+void AcquisitionEngine::isolate_recorded_contract_violation() noexcept {
     if (!contract_violation_.has_value()) {
-        return result;
+        return;
     }
     // 隔离命令属于普通 Runtime 控制步骤；Board callback 只锁存固定大小事实，
     // 不会在适配器栈内反向调用会话控制或 L2/Store。
@@ -693,7 +707,6 @@ runtime::RuntimeWorkStep AcquisitionEngine::fail_contract_violation() noexcept {
     }
     failure_.has_contract_violation = true;
     failure_.contract_violation = *contract_violation_;
-    return result;
 }
 
 void AcquisitionEngine::remember_contract_violation(

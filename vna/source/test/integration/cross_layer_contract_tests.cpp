@@ -1744,10 +1744,19 @@ TEST(AOnlySweepContract, WrongRunAcceptedIdentityKeepsSinkAliveThroughDrain) {
 
     board.complete_run_failure();
     VNA_REQUIRE(kernel.run_one());
-    VNA_REQUIRE(kernel.run_one());
+    // 已出现错误 terminal 身份后，后续匹配 terminal 也不能重新建立对 callback
+    // producer 的信任。Runtime 交付唯一 Quarantined terminal，但 Kernel 必须
+    // 持续保活 sink、execution reservation 和上层 owner，等待会话级恢复。
+    VNA_REQUIRE(!kernel.run_one());
     VNA_REQUIRE(runtime.inspect().draining == 0U);
-    VNA_REQUIRE(acquisition_resources.inspect().in_use == 0U);
-    VNA_REQUIRE(!board.execution_reserved());
+    VNA_REQUIRE(acquisition_resources.inspect().in_use == 1U);
+    VNA_REQUIRE(board.execution_reserved());
+    const auto event = store.latest_event();
+    VNA_REQUIRE(event.has_value());
+    VNA_REQUIRE(event->has_drain);
+    const auto drain = store.inspect_drain(event->drain);
+    VNA_REQUIRE(drain.has_value());
+    VNA_REQUIRE(drain->state == store::DrainState::Quarantined);
 }
 
 TEST(AOnlySweepContract, EarlyRunChunkIsRejectedAndConsumedAtBoardBoundary) {

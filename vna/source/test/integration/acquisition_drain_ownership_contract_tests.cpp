@@ -28,6 +28,74 @@ vna::instrument::AOnlySweepRequest make_request() noexcept {
             issue_for_mock_diagnostics()};
 }
 
+void verify_late_contract_fault_is_quarantined(
+    vna::board::MockRunContractFault fault) {
+    using namespace vna;
+
+    board::MockScenario scenario{};
+    scenario.prepare_delay = 1U;
+    scenario.run_behavior = board::MockRunBehavior::Stall;
+    scenario.run_duration = 350U;
+    scenario.contract_fault = fault;
+    board::MockBoardProvider provider{
+        board::MockCapabilityProfile{201U}, scenario};
+    auto opened_result = provider.open_controlled(
+        board::BoardOpenRequest{1U, board::BoardContractVersion{1U, 0U}});
+    VNA_REQUIRE(opened_result.has_value());
+    auto opened = std::move(opened_result).take_value();
+    DrainRuntimeClock clock;
+    runtime::OperationRuntime runtime{1U, clock};
+    store::InstrumentStore store{1U};
+    acquisition::AcquisitionAdmissionPool resources{1U};
+    instrument::InstrumentKernel kernel{
+        runtime,
+        store,
+        opened.board.execution(),
+        resources,
+        clock,
+        instrument::AOnlyKernelProfile{500U, 64U}};
+
+    const auto submitted = kernel.submit_a_only(make_request());
+    VNA_REQUIRE(submitted.has_value());
+    VNA_REQUIRE(kernel.run_one());
+    opened.control->advance(1U);
+    VNA_REQUIRE(kernel.run_one());
+    opened.control->advance(400U);
+    clock.set(500U);
+    VNA_REQUIRE(kernel.run_one());
+    VNA_REQUIRE(kernel.run_one());
+    const auto parent_event = store.latest_event();
+    VNA_REQUIRE(parent_event.has_value());
+    VNA_REQUIRE(parent_event->has_drain);
+
+    VNA_REQUIRE(opened.control->complete_stalled_run(
+        board::MockStalledRunTerminal::Completed));
+    opened.control->advance(0U);
+    VNA_REQUIRE(
+        opened.control->session_state() == board::MockSessionState::Healthy);
+
+    // 协议违约由 callback 只锁存；下一次非 callback Runtime 步骤必须隔离
+    // Session 并形成 Quarantined，而不能谎报 Drained 后释放 owner。
+    VNA_REQUIRE(kernel.run_one());
+    VNA_REQUIRE(
+        opened.control->session_state() ==
+        board::MockSessionState::IsolatedContractViolation);
+    VNA_REQUIRE(kernel.run_one());
+    const auto drain = store.inspect_drain(parent_event->drain);
+    VNA_REQUIRE(drain.has_value());
+    VNA_REQUIRE(drain->state == store::DrainState::Quarantined);
+    VNA_REQUIRE(resources.inspect().in_use == 1U);
+    VNA_REQUIRE(
+        opened.control->observations().released_execution_reservations == 0U);
+    VNA_REQUIRE(!store.inspect_completed_sweep(submitted.value().operation).has_value());
+    VNA_REQUIRE(store.inspect_publications().completed_sweeps == 0U);
+
+    const auto blocked = kernel.submit_a_only(make_request());
+    VNA_REQUIRE(!blocked.has_value());
+    VNA_REQUIRE(
+        blocked.error().code == instrument::AOnlySubmitErrc::BoardSessionIsolated);
+}
+
 TEST(AcquisitionDrainOwnershipContract,
      StalledAcceptedRunTransfersOwnersAndReleasesOnlyAfterDrainTerminal) {
     using namespace vna;
@@ -199,6 +267,64 @@ TEST(AcquisitionDrainOwnershipContract,
         store::OperationState::Completed);
     VNA_REQUIRE(store.inspect_publications().completed_sweeps == 1U);
     VNA_REQUIRE(store.inspect().visible_drains == 0U);
+}
+
+TEST(AcquisitionDrainOwnershipContract,
+     EarlyExplicitStallCompletionDeliversWholeRunOnNextAdvance) {
+    using namespace vna;
+
+    board::MockScenario scenario{};
+    scenario.prepare_delay = 1U;
+    scenario.run_behavior = board::MockRunBehavior::Stall;
+    scenario.run_duration = 350U;
+    board::MockBoardProvider provider{
+        board::MockCapabilityProfile{201U}, scenario};
+    auto opened_result = provider.open_controlled(
+        board::BoardOpenRequest{1U, board::BoardContractVersion{1U, 0U}});
+    VNA_REQUIRE(opened_result.has_value());
+    auto opened = std::move(opened_result).take_value();
+    DrainRuntimeClock clock;
+    runtime::OperationRuntime runtime{1U, clock};
+    store::InstrumentStore store{1U};
+    acquisition::AcquisitionAdmissionPool resources{1U};
+    instrument::InstrumentKernel kernel{
+        runtime,
+        store,
+        opened.board.execution(),
+        resources,
+        clock,
+        instrument::AOnlyKernelProfile{700U, 64U}};
+
+    const auto submitted = kernel.submit_a_only(make_request());
+    VNA_REQUIRE(submitted.has_value());
+    VNA_REQUIRE(kernel.run_one());
+    opened.control->advance(1U);
+    VNA_REQUIRE(kernel.run_one());
+
+    // 此刻原始 offset 尚未到期；显式 Completed 的公开契约仍要求下一次
+    // advance(0) 交付整轮，而不是制造缺块 Completed。
+    VNA_REQUIRE(opened.control->complete_stalled_run(
+        board::MockStalledRunTerminal::Completed));
+    opened.control->advance(0U);
+    VNA_REQUIRE(opened.control->observations().run_chunk_callbacks == 2U);
+    VNA_REQUIRE(opened.control->observations().run_terminal_callbacks == 1U);
+    VNA_REQUIRE(kernel.run_one());
+    VNA_REQUIRE(kernel.run_one());
+    VNA_REQUIRE(
+        store.inspect_operation(submitted.value().operation)->state ==
+        store::OperationState::Completed);
+}
+
+TEST(AcquisitionDrainOwnershipContract,
+     DuplicateLateTerminalQuarantinesSessionAndOwners) {
+    verify_late_contract_fault_is_quarantined(
+        vna::board::MockRunContractFault::MultipleTerminal);
+}
+
+TEST(AcquisitionDrainOwnershipContract,
+     CallbackAfterLateTerminalQuarantinesSessionAndOwners) {
+    verify_late_contract_fault_is_quarantined(
+        vna::board::MockRunContractFault::CallbackAfterTerminal);
 }
 
 }  // namespace

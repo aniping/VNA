@@ -37,7 +37,8 @@ enum class MockRunBehavior {
 
 /// 测试控制面为已接受 Stall Run 安排的迟到真实终态。
 enum class MockStalledRunTerminal {
-    /// 下一次 advance() 交付完整数据和成功 terminal。
+    /// 下一次 advance() 忽略尚未到期的 offset，交付已冻结成功计划并报告 terminal。
+    /// @note 故障场景仍可让已冻结计划故意缺块或产生非合规 callback。
     Completed,
     /// 下一次 advance() 不交付数据并报告失败 terminal。
     Failed
@@ -229,7 +230,7 @@ public:
     virtual void advance(VirtualDuration delta) noexcept = 0;
 
     /// 为当前已接受且仍卡住的 Run 安排一个迟到 terminal。
-    /// @param terminal 选择下一次 advance() 交付成功数据或失败 terminal。
+    /// @param terminal 选择下一次 advance() 交付已冻结成功计划或失败 terminal。
     /// @return 当前确有一个 Stall Run 并已成功安排时返回 true；没有待办、剧本
     ///         不是 Stall 或已经安排过时返回 false。
     /// @note 本调用不内联触发 callback，不表示 abort、RF-off、readback 或安全

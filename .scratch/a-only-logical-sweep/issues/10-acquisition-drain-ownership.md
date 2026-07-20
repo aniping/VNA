@@ -22,5 +22,5 @@
 - `MockRunBehavior::Stall` 与 `MockBoardControl::complete_stalled_run()` 只使用虚拟时间和显式 pump，正常 350ms Run 与 500/700 tick Runtime deadline 分别测试。
 - `AcquisitionDrainOwner` 真实接管 L4 move-only owner；OperationRuntime 的 Draining 槽保留 completion registration，Store 保存不可执行所有权证据。
 - `LifecycleTerminalReservation` 在 Accepted 前同时预留父 Operation terminal 与可选 child Drain terminal 字段；handoff 原子公布父 Failed/Event/Drain，Drain terminal 使用独立 Event。
-- `AcquisitionDrainOwnershipContract` 覆盖 deadline handoff、容量不可复用、迟到成功数据不发布 A、唯一 terminal 后释放及重新准入；`InstrumentStoreContract` 覆盖错误 DrainId 与重复 terminal。
-- MinGW 测试组合：75/75 通过；关闭测试的产品构建与依赖图检查见本工单提交验证记录。
+- `AcquisitionDrainOwnershipContract` 覆盖 deadline handoff、容量不可复用、早期显式释放 Stall、迟到成功数据不发布 A、唯一 terminal 后释放及重新准入；迟到重复 terminal/terminal 后 callback 必须隔离 session 并保持 Quarantined owner；`InstrumentStoreContract` 覆盖错误 DrainId 与重复 terminal。
+- MinGW 测试组合：78/78 通过；关闭测试的产品构建与依赖图检查见本工单提交验证记录。

@@ -138,6 +138,9 @@ private:
         NetworkObservationError error) noexcept;
     /// 先在非 callback Runtime 步骤锁存 Board session 隔离，再形成类型化失败。
     runtime::RuntimeWorkStep fail_contract_violation() noexcept;
+    /// 在非 callback Runtime 步骤执行已经锁存的 session 隔离并补全失败证据。
+    /// @note 无锁存违约时不改变状态；本函数不释放任何 Board 或 Drain owner。
+    void isolate_recorded_contract_violation() noexcept;
     /// 只保存首个协议违约；后续回调只能补充更大的 terminal 观察计数。
     void remember_contract_violation(
         board::BoardContractViolation violation) noexcept;
