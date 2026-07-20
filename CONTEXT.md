@@ -95,7 +95,7 @@ Channel 对某个 Correction Set 的版本化选择与独立 correction enable �
 本节是项目内部的归一化语言，不宣称 Keysight、R&S、CMT 公开了相同的内部对象切分。协议 Adapter 负责把 Keysight 的 Measurement/显示 Trace、R&S/CMT 的复合 Trace 映射到这些对象。
 
 **分析迹线（Analysis Trace / Trace Definition）**：
-面向用户和协议的稳定可分析对象。它拥有 `TraceSourceSpec`、处理图、分析投影、Marker、Limit、Memory、Hold 与统计定义；Live Source 内含 Measurement Spec，其他 Source 可以引用 Math、Frozen/Memory Snapshot 或导入数据。它独立于任何 Diagram，可在不重新扫频的情况下基于 last-good 数据重新求值。
+面向用户和协议的稳定可分析对象。它拥有 `TraceSourceSpec`、处理图、分析投影、Marker、Limit、Memory、Hold 与统计定义；它可以没有任何 Trace Placement，Live Source 内含的 Measurement Spec 仍可进入 Sweep Compiler，其他 Source 可以引用 Math、Frozen/Memory Snapshot 或导入数据；它独立于任何 Diagram，并可在不重新扫频的情况下基于 last-good 数据重新求值。
 
 **迹线求值快照（Trace Evaluation Snapshot）**：
 某个正式输入快照与某个 Analysis Trace 版本计算得到的不可变结果。Marker、Limit、SCPI 查询和导出必须绑定明确的求值快照。
