@@ -26,7 +26,10 @@ _避免使用_：当前数组、活动数据
 Board Adapter 将一块接收机观测唯一移动给 Acquisition Ingress 的所有权凭证。若公司底软允许转移 buffer 生命周期，它包装该 buffer；若底软在回调返回后立即复用内存，Adapter 必须先复制到项目 Buffer Pool。正式 Builder 是唯一长期拥有者，Preview 只能读取有界只读视图或独立 `PreviewTile`，不能与 Builder 共同拥有同一个 move-only chunk。
 
 **类型化质量平面（Typed Quality Plane）**：
-与数值同路传播的 validity、quality flags、有界指标及其实际 granularity。不同层可以是 Sweep、receiver、path、point 或 matrix-element 粒度；ratio、平均、校准、矩阵变换和 Trace 节点按版本化 quality transform 产生下一层质量，不能用日志附言或一个全局 `valid` 布尔值代替。
+与数值同路传播的 validity、quality flags、有界指标及其实际 granularity。不同层可以是 Sweep、receiver、path、point 或 matrix-element 粒度；ratio、平均、校准、矩阵变换和 Trace 节点按版本化 quality transform 产生下一层质量，不能用日志附言或一个全局 `valid` 布尔值代替，也不能把单点无效误报成结构缺失。
+
+**测量结构完整性（Measurement Structural Completeness）**：
+Frozen Measurement Requirement Set 中全部必需测量量、Board Run 终态、实际轴、端口拓扑、点数和结果形状均已闭合的发布前提。缺少其中任一项会使本轮失败且不发布 B；结构完整的 B 即使含有无效或降级点仍是正式快照，并由 Typed Quality Plane 表达可用性。
 
 **准备执行清单（Prepared Execution Manifest）**：
 L2 的纯 `SweepAdmissionPlanner` 先从同一授权 Catalog cut 生成 `SweepIntent`、typed refs 与保守资源声明；第一次 Runtime dispatch 前，L2 已取得 acquisition/必达后继的 `ReservedWorkDispatch{WorkId, WorkDispatchPermit, RuntimeCompletionRegistration}`、purpose-specific frozen pins、输出与新 A join reservation，以及 stateful ResourceArbiter 全有或全无签发的 `PreAdmissionLease`、逐板 prepare/run call/sink 容量和 `ExactFinalizationCapability`。Board Adapter `prepare` 才形成包含量化轴、功率、IFBW、路由、source state、精确资源和采集界限的不可变实际事实。L4 只能用 Manifest 校验并在已有 envelope 内本地消费 finalization capability，无新分配地收窄成 exact `AcquisitionRunResourceSet + StartAuthorization`，成功后才可 `start`；不能在 L4 反向申请新容量、换板，也不能用未量化请求值替代。
@@ -79,7 +82,7 @@ Product/Board Profile 对逻辑端口与 source state、receiver path、`aᵢ/b�
 同一 Channel revision 下全部 Live Analysis Trace 的 Measurement Spec，与校准、导出或诊断等显式消费者需求合并、验证并去重后的有界集合。Sweep Compiler 只为该集合生成必要的 source state 和 receiver observation；完整 N 端口矩阵必须作为显式需求进入集合，本轮全部必需结果成功后才能原子发布 B。
 
 **测量完成快照（Completed Measurement Snapshot）**：
-由一个或多个完整逻辑扫频经过接收机量提取、兼容平均和用户校准修正后，针对同一 Frozen Measurement Requirement Set 原子发布的不可变 B 层网络结果，对应 `CompletedMeasurementBundle`。它绑定完整的有界测量结果集、实际激励轴、`AverageApplication`、`CorrectionApplication`、配置版本、逐板 identity/capability 集合和质量信息；Disabled Average 直接引用本轮 Logical Sweep，Enabled 才绑定 Average Contribution Ref 与 generation/count。项目原生 Sweep completion fence 到这一层为止，不等待所有 Trace 分析。
+由一个或多个完整逻辑扫频经过接收机量提取、兼容平均和用户校准修正后，针对同一 Frozen Measurement Requirement Set 原子发布的不可变 B 层网络结果，对应 `CompletedMeasurementBundle`。它必须满足 Measurement Structural Completeness，并绑定完整的有界测量结果集、实际激励轴、`AverageApplication`、`CorrectionApplication`、配置版本、逐板 identity/capability 集合和逐点/整体质量；存在坏点可以使质量降级，但不撤销正式发布。项目原生 Sweep completion fence 到这一层为止，不等待所有 Trace 分析。
 
 **测量阶段快照（Measurement Stage Snapshot）**：
 当 receiver、ratio、corrected network、fixture/de-embedding/mixed-mode 等非 C 层数据尚未物化时，由 `MaterializeMeasurementStageOperation` 从明确的 canonical A/B roots 惰性生成的不可变结果。它保存 requested stage、完整 RF/network graph revision、Profile、axis、port topology、Z0、unit 和 quality，但不包含 Analysis Trace、Marker 或 Limit revision；一个 Stage 不把另一个 Stage 当作正式父对象，图内中间值只属于私有缓存。Touchstone、全矩阵导出和非 formatted SCPI query 可直接绑定它。
@@ -163,7 +166,7 @@ Control Executor 把可选的 `PublicationCandidateBatch`、有类型的 `Domain
 QueryTicket Ready 时由 `ResultPinLease` 保活的自包含结果闭包，例如 C publication 连同 Trace/Marker/Limit children、axis、quality 及结构共享 Buffer，或已提交的 Blob result，而不是只 pin 一个顶层 ID。`ResultPinLease` 始终留在 Store；L2 `open_read` 只提供授权，Store `open_result` 在 Ticket Ready→Reading 时将它原子转换为只封装在 opaque snapshot/blob `QueryReadHandle` 内的 `ReaderLease`，传输 terminal 再与 Reading→Consumed/Failed/Abandoned 同批释放；Event 不持有该租约，祖先 payload 可以按 retention 回收，但最小 tombstone/digest/provenance 保留。
 
 **测量与分析头（Measurement / Analysis Head）**：
-Catalog 中选择“最近尝试”和“last-good 正式结果”的小型可变记录。`ChannelMeasurementHead` 与 `TraceAnalysisHead` 在失败时更新 attempt/status，但不改写不可变 B/C。`ChannelAverageHead` 是 `Disabled{revision}` 或 `Enabled{generation, current_accumulator_snapshot_id, count, complete, revision}`；只有 Enabled 状态才选择权威 accumulator，并要求每次贡献的 B、accumulator snapshot、`ChannelAverageHead` 和 `ChannelMeasurementHead` 在同一个 `DomainCommitBundle` 切换，Disabled 的 B 则不创建 accumulator。只有匹配 expected current-input token 的 Live C 可以 compare-and-set 提升 `TraceAnalysisHead`；历史 B/Stage exact query 默认只返回 C，不倒退 Head。stale 是 Head、当前配置和 last-good 之间的关系，不是历史 Snapshot 被原地修改。
+Catalog 中选择“最近尝试”和“last-good 正式结果”的小型可变记录；`last_good_b` 表示最近一次满足结构完整性并成功发布的 B，可以携带 Degraded 逐点质量，不等同于“所有点均有效”。`ChannelMeasurementHead` 与 `TraceAnalysisHead` 在失败时更新 attempt/status，但不改写不可变 B/C。`ChannelAverageHead` 是 `Disabled{revision}` 或 `Enabled{generation, current_accumulator_snapshot_id, count, complete, revision}`；只有 Enabled 状态才选择权威 accumulator，并要求每次贡献的 B、accumulator snapshot、`ChannelAverageHead` 和 `ChannelMeasurementHead` 在同一个 `DomainCommitBundle` 切换，Disabled 的 B 则不创建 accumulator。只有匹配 expected current-input token 的 Live C 可以 compare-and-set 提升 `TraceAnalysisHead`；历史 B/Stage exact query 默认只返回 C，不倒退 Head。stale 是 Head、当前配置和 last-good 之间的关系，不是历史 Snapshot 被原地修改。
 
 **正式数据权威（Formal Data Authority）**：
 L5 `InstrumentStore` 通过内部 Measurement Data Store/SnapshotCatalog 持有 A/B/Stage/C、Calibration Observation、Blob result、质量平面、父闭包和 retention 事实。Operation 只表示工作，Event 只提示 commit，QueryTicket 只表示调用者的访问能力；任何一者都不能替代正式数据权威。
