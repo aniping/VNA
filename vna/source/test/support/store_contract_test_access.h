@@ -8,7 +8,8 @@
 
 namespace vna::store {
 
-/// 只供合同测试在正式 A 原子提交前注入一次性 Store 拒绝的 friend 访问器。
+/// 只供合同测试注入一次性正式 A 发布拒绝、终态提交完整性故障或畸形回执的
+/// Store friend 访问器；关闭测试的产品构建不包含此类型及其故障入口。
 class InstrumentStoreContractTestAccess final {
 public:
     /// 令下一次身份合法的 A candidate 在 schema/domain validation 阶段被拒绝。
