@@ -67,6 +67,32 @@ enum class MockChunkPayloadBehavior {
     InvalidLease
 };
 
+/// Mock 在已接受 Run 中故意注入的一项非合规回调行为。
+enum class MockRunContractFault {
+    /// 不注入协议违约。
+    None,
+    /// 首个 chunk 携带错误 ManifestId。
+    WrongManifest,
+    /// 首个 chunk 携带错误 PreparedExecutionId。
+    WrongPreparedExecution,
+    /// 首个 chunk 携带错误 BoardRunId。
+    WrongBoardRunId,
+    /// 首个 chunk 携带错误 Run generation。
+    WrongGeneration,
+    /// 正常 terminal 返回后立即重复发送同一 terminal。
+    MultipleTerminal,
+    /// 正常 terminal 返回后继续交付一个带独立 lease 的 chunk。
+    CallbackAfterTerminal
+};
+
+/// 测试可查询的 Mock 会话执行健康状态。
+enum class MockSessionState {
+    /// 会话仍允许新的 execution reservation。
+    Healthy,
+    /// Acquisition 已报告协议违约；本会话只允许关闭，不再接受执行。
+    IsolatedContractViolation
+};
+
 /// Mock 在一次 Run 窗口内交付一个确定性数据块的计划项。
 struct MockChunkDelivery final {
     /// 数据块对应的激励状态，必须匹配 Prepared Manifest。
@@ -122,6 +148,8 @@ struct MockScenario final {
     /// Succeed Run 在 Completed terminal 前最多交付的计划块数；0 表示交付全部，
     /// 非 0 值必须不大于解析后的计划数，可用于确定性制造 terminal-before-complete。
     std::uint32_t maximum_chunks_before_completed_terminal{0U};
+    /// 对本次 Run 注入的唯一身份/终态协议故障；接受 Run 时按值冻结。
+    MockRunContractFault contract_fault{MockRunContractFault::None};
 };
 
 /// Mock 从创建以来发生的契约事件计数快照。
@@ -145,7 +173,13 @@ struct MockObservationSnapshot final {
     std::uint32_t rejected_run_calls{0U};
     std::uint32_t run_phase_callbacks{0U};
     std::uint32_t run_chunk_callbacks{0U};
+    /// on_chunk() 返回后 Adapter 观察到 payload 已失效的累计块数。
+    std::uint32_t consumed_chunk_payloads{0U};
     std::uint32_t run_terminal_callbacks{0U};
+    /// Healthy 首次转入 IsolatedContractViolation 的累计次数；每个会话最多 1。
+    std::uint32_t isolated_session_transitions{0U};
+    /// 因会话已隔离而在新 Board Run 前拒绝的 execution reservation 累计数。
+    std::uint32_t rejected_isolated_execution_reservations{0U};
 };
 
 /// 测试侧控制已打开 Mock 会话的接口。
@@ -171,6 +205,9 @@ public:
 
     /// @return 当前契约事件累计计数的值快照。
     virtual MockObservationSnapshot observations() const noexcept = 0;
+
+    /// @return 当前 Mock 会话执行健康状态的值快照。
+    virtual MockSessionState session_state() const noexcept = 0;
 };
 
 /// 同时返回生产会话句柄和测试控制面的打开结果。
@@ -196,19 +233,23 @@ public:
 
     /// 按标准生产接口打开 Mock 会话。
     /// @param request selector 必须为 1，接受的主契约版本必须为 1。
-    /// @return 成功时返回独占会话；不支持的请求或分配失败时返回 BoardError。
+    /// @return 成功时返回具有新非零 SessionId 的独占会话；不支持的请求或
+    ///         分配失败时返回 BoardError。
     core::Result<OpenedBoard, BoardError> open(
         const BoardOpenRequest& request) noexcept override;
 
     /// 打开 Mock 会话并额外取得测试控制面。
     /// @param request 约束与 open() 相同。
-    /// @return 成功时返回会话和非 owning 控制指针；失败时返回 BoardError。
+    /// @return 成功时返回具有新非零 SessionId 的会话和非 owning 控制指针；
+    ///         失败时返回 BoardError。
     core::Result<MockOpenedBoard, BoardError> open_controlled(
         const BoardOpenRequest& request) noexcept;
 
 private:
     MockCapabilityProfile profile_{};
     MockScenario scenario_{};
+    /// 为每次成功 open 分配不同的非零 BoardSessionId。
+    std::uint64_t next_session_id_{1U};
 };
 
 }  // namespace vna::board

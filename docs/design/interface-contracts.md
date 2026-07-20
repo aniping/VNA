@@ -766,6 +766,7 @@ BoardPort 是真实 seam：Real、Mock、Replay 至少三个 Adapter 满足同�
 
 - prepare 与 start 分离，请求值与 actual Manifest 分离；
 - Start accepted 后，chunk/phase/唯一 terminal 由 `BoardRunSink` 交付；
+- wrong Manifest/Prepared/Run/generation、重复 terminal 或 terminal 后回调锁存为类型化 `BoardContractViolation`；callback 只移动 lease 和记录有界事实，L4 在 callback 返回后的 Runtime 步骤隔离当前 Session；
 - abort accepted 不等于 run terminal；
 - RF safe-state 通过独立 SafetyPort/SafetyLane 和可信 readback 证明；
 - `AcquisitionChunkLease` move-only；正式 chunk 不可丢，Preview 才可丢；

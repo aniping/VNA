@@ -213,7 +213,6 @@ DiscardPreparedSinkRegistration::operator=(
 
 namespace {
 
-constexpr BoardSessionId kMockSessionId{1U};
 constexpr VirtualDuration kMinimumMockRunDuration{300U};
 constexpr VirtualDuration kMaximumMockRunDuration{400U};
 
@@ -391,8 +390,11 @@ class MockBoardSession final : public BoardSession,
                                public BoardExecutionPort,
                                public MockBoardControl {
 public:
-    MockBoardSession(MockCapabilityProfile profile, MockScenario scenario) noexcept
-        : profile_(profile), scenario_(scenario) {
+    MockBoardSession(
+        BoardSessionId session_id,
+        MockCapabilityProfile profile,
+        MockScenario scenario) noexcept
+        : session_id_(session_id), profile_(profile), scenario_(scenario) {
         rebuild_capabilities();
         initial_capabilities_ = capabilities_;
     }
@@ -405,8 +407,24 @@ public:
     CapabilitySnapshot capabilities() const noexcept override { return capabilities_; }
     std::uint64_t monotonic_tick() const noexcept override { return now_; }
 
+    void isolate_contract_violation(
+        BoardContractViolation violation) noexcept override {
+        if (session_state_ == MockSessionState::IsolatedContractViolation) {
+            return;
+        }
+        isolated_violation_ = violation;
+        session_state_ = MockSessionState::IsolatedContractViolation;
+        ++observations_.isolated_session_transitions;
+    }
+
     core::Result<BoardExecutionReservation, BoardError>
     reserve_execution() noexcept override {
+        if (session_state_ == MockSessionState::IsolatedContractViolation) {
+            ++observations_.rejected_execution_reservations;
+            ++observations_.rejected_isolated_execution_reservations;
+            return core::Result<BoardExecutionReservation, BoardError>::failure(
+                BoardError{BoardErrc::ContractViolation});
+        }
         if (active_execution_reservation_.valid() ||
             pending_prepare_.has_value() || pending_run_.has_value()) {
             ++observations_.rejected_execution_reservations;
@@ -663,6 +681,10 @@ public:
         return observations_;
     }
 
+    MockSessionState session_state() const noexcept override {
+        return session_state_;
+    }
+
 private:
     void release_execution_reservation(
         BoardExecutionReservationId id) noexcept override {
@@ -869,10 +891,40 @@ private:
                         delivery.quality,
                         delivery.source_state,
                         delivery.receiver_path};
+                    // 身份故障只改写首次回调的固定大小 header；payload 仍沿同一
+                    // move-only 路径交给 Acquisition，由接收方决定协议拒绝。
+                    if (pending.delivered_chunks == 0U) {
+                        switch (pending.scenario.contract_fault) {
+                            case MockRunContractFault::WrongManifest:
+                                chunk.manifest_id = ManifestId{
+                                    chunk.manifest_id.value() + 1000U};
+                                break;
+                            case MockRunContractFault::WrongPreparedExecution:
+                                chunk.prepared_id = PreparedExecutionId{
+                                    chunk.prepared_id.value() + 1000U};
+                                break;
+                            case MockRunContractFault::WrongBoardRunId:
+                                chunk.run_id = BoardRunId{
+                                    chunk.run_id.value() + 1000U};
+                                break;
+                            case MockRunContractFault::WrongGeneration:
+                                chunk.run_generation = RunGeneration{
+                                    chunk.run_generation.value() + 1000U};
+                                break;
+                            case MockRunContractFault::None:
+                            case MockRunContractFault::MultipleTerminal:
+                            case MockRunContractFault::CallbackAfterTerminal:
+                                break;
+                        }
+                    }
                     ++observations_.run_chunk_callbacks;
                     ++pending.delivered_chunks;
-                    if (sink.on_chunk(std::move(chunk)) !=
-                        ChunkIngressDisposition::Accepted) {
+                    const auto disposition =
+                        sink.on_chunk(std::move(chunk));
+                    if (!chunk.payload.valid()) {
+                        ++observations_.consumed_chunk_payloads;
+                    }
+                    if (disposition != ChunkIngressDisposition::Accepted) {
                         pending.delivery_failed = true;
                     }
                 };
@@ -893,11 +945,24 @@ private:
             return;
         }
 
-        // 与 Prepare 相同，唯一终态回调前先清空 pending；终态之后不再交付块，
-        // 且未转换为 lease 的预留槽在 callback 前全部归还。
+        // 与 Prepare 相同，终态回调前先清空 pending。CallbackAfterTerminal 剧本
+        // 会先签发一份独立 lease，再注销 grant，证明违规回调也只有一个 payload
+        // owner，且其析构不依赖 grant 继续存活。
         auto completed = std::move(*pending_run_);
         pending_run_.reset();
         execution_reservation_phase_ = MockExecutionReservationPhase::Terminal;
+        std::optional<AcquisitionChunkLease> post_terminal_payload{};
+        if (completed.scenario.contract_fault ==
+                MockRunContractFault::CallbackAfterTerminal &&
+            completed.scenario.run_behavior == MockRunBehavior::Succeed) {
+            std::array<ComplexSample, kMaximumContractChunkSamples> sample{};
+            sample[0U] = completed.scenario.incident_a[0U];
+            auto copied = completed.delivery.copy_fallback(sample, 1U);
+            if (copied.has_value()) {
+                post_terminal_payload.emplace(
+                    std::move(copied).take_value());
+            }
+        }
         completed.delivery.retire();
         const auto terminal_kind =
             completed.scenario.run_behavior == MockRunBehavior::Succeed &&
@@ -910,6 +975,39 @@ private:
             completed.generation,
             terminal_kind,
             completed.delivered_chunks});
+        if (completed.scenario.contract_fault ==
+            MockRunContractFault::MultipleTerminal) {
+            ++observations_.run_terminal_callbacks;
+            completed.sink.sink().on_terminal(BoardRunTerminal{
+                completed.run,
+                completed.generation,
+                terminal_kind,
+                completed.delivered_chunks});
+        } else if (completed.scenario.contract_fault ==
+                       MockRunContractFault::CallbackAfterTerminal &&
+                   post_terminal_payload.has_value()) {
+            const auto& observation =
+                completed.manifest.required_observations[0U];
+            ++observations_.run_chunk_callbacks;
+            ReceiverObservationChunk chunk{
+                completed.manifest.id,
+                completed.manifest.prepared_id,
+                completed.run,
+                completed.generation,
+                ChunkSequence{
+                    static_cast<std::uint64_t>(completed.delivered_chunks) +
+                    1U},
+                observation.wave,
+                0U,
+                std::move(*post_terminal_payload),
+                completed.scenario.incident_quality,
+                observation.source_state,
+                observation.receiver_path};
+            (void)completed.sink.sink().on_chunk(std::move(chunk));
+            if (!chunk.payload.valid()) {
+                ++observations_.consumed_chunk_payloads;
+            }
+        }
     }
 
     void rebuild_capabilities() noexcept {
@@ -922,7 +1020,7 @@ private:
             (static_cast<std::uint64_t>(profile_.maximum_points) << 32U)};
         capabilities_ = CapabilitySnapshot{
             BoardContractVersion{1U, 0U},
-            kMockSessionId,
+            session_id_,
             1U,
             capability_revision,
             1U,
@@ -931,6 +1029,7 @@ private:
             profile_.maximum_points};
     }
 
+    BoardSessionId session_id_{};
     MockCapabilityProfile profile_{};
     MockScenario scenario_{};
     CapabilitySnapshot initial_capabilities_{};
@@ -951,10 +1050,14 @@ private:
     /// 当前 reservation 的实际执行事实；成功 Run 的形状只能从此处取得。
     PreparedExecutionManifest active_manifest_{};
     std::uint64_t next_execution_reservation_id_{1U};
+    MockSessionState session_state_{MockSessionState::Healthy};
+    /// 首次隔离原因的固定大小副本；不持有 callback 或恢复能力。
+    std::optional<BoardContractViolation> isolated_violation_{};
 };
 
 core::Result<MockOpenedBoard, BoardError> make_opened_mock(
     const BoardOpenRequest& request,
+    BoardSessionId session_id,
     MockCapabilityProfile profile,
     MockScenario scenario) noexcept {
     if (request.selector != 1U || request.accepted_contract.major != 1U) {
@@ -963,7 +1066,8 @@ core::Result<MockOpenedBoard, BoardError> make_opened_mock(
     }
 
     try {
-        auto owner = std::make_unique<MockBoardSession>(profile, scenario);
+        auto owner = std::make_unique<MockBoardSession>(
+            session_id, profile, scenario);
         // control 是对 owner 所持同一对象的非 owning 视图，其寿命由 OpenedBoard 限定。
         auto* control = static_cast<MockBoardControl*>(owner.get());
         return core::Result<MockOpenedBoard, BoardError>::success(
@@ -999,17 +1103,32 @@ core::Result<BoardInventorySnapshot, BoardError> MockBoardProvider::discover(
 
 core::Result<OpenedBoard, BoardError> MockBoardProvider::open(
     const BoardOpenRequest& request) noexcept {
-    auto opened = make_opened_mock(request, profile_, scenario_);
+    if (next_session_id_ == 0U) {
+        return core::Result<OpenedBoard, BoardError>::failure(
+            BoardError{BoardErrc::ResourceExhausted});
+    }
+    auto opened = make_opened_mock(
+        request, BoardSessionId{next_session_id_}, profile_, scenario_);
     if (!opened) {
         return core::Result<OpenedBoard, BoardError>::failure(opened.error());
     }
+    ++next_session_id_;
     auto controlled = std::move(opened).take_value();
     return core::Result<OpenedBoard, BoardError>::success(std::move(controlled.board));
 }
 
 core::Result<MockOpenedBoard, BoardError> MockBoardProvider::open_controlled(
     const BoardOpenRequest& request) noexcept {
-    return make_opened_mock(request, profile_, scenario_);
+    if (next_session_id_ == 0U) {
+        return core::Result<MockOpenedBoard, BoardError>::failure(
+            BoardError{BoardErrc::ResourceExhausted});
+    }
+    auto opened = make_opened_mock(
+        request, BoardSessionId{next_session_id_}, profile_, scenario_);
+    if (opened.has_value()) {
+        ++next_session_id_;
+    }
+    return opened;
 }
 
 }  // namespace vna::board

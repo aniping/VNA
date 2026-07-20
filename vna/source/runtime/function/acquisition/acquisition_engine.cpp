@@ -355,6 +355,9 @@ runtime::RuntimeWorkStep AcquisitionEngine::resume(
         if (!builder_.has_value() || !builder_->record_terminal(terminal)) {
             callback_contract_violation_ = true;
         }
+        if (contract_violation_.has_value()) {
+            return fail_contract_violation();
+        }
         if (builder_.has_value() && builder_->error().has_value()) {
             return fail_observation(
                 AcquisitionFailurePhase::Run,
@@ -482,8 +485,31 @@ void AcquisitionEngine::on_terminal(
 
 void AcquisitionEngine::on_phase(
     const board::BoardRunPhaseEvent& event) noexcept {
-    if ((phase_ != Phase::Acquiring && phase_ != Phase::Draining) ||
-        event.run_id != run_ || event.generation != generation_) {
+    const auto remember = [&](board::BoardContractViolationKind kind) {
+        remember_contract_violation(board::BoardContractViolation{
+            kind,
+            board::BoardRunCallbackKind::Phase,
+            manifest_,
+            false,
+            board::ManifestId{},
+            prepared_,
+            false,
+            board::PreparedExecutionId{},
+            run_,
+            true,
+            event.run_id,
+            generation_,
+            true,
+            event.generation,
+            run_terminal_callbacks_observed_});
+    };
+    if (run_terminal_.has_value()) {
+        remember(board::BoardContractViolationKind::CallbackAfterTerminal);
+    } else if (event.run_id != run_) {
+        remember(board::BoardContractViolationKind::WrongBoardRunId);
+    } else if (event.generation != generation_) {
+        remember(board::BoardContractViolationKind::WrongGeneration);
+    } else if (phase_ != Phase::Acquiring && phase_ != Phase::Draining) {
         callback_contract_violation_ = true;
     }
 }
@@ -500,8 +526,45 @@ board::ChunkIngressDisposition AcquisitionEngine::on_chunk(
         owned.sequence,
         owned.point_begin,
         static_cast<std::uint32_t>(owned.payload.size())};
-    if (phase_ != Phase::Acquiring || run_terminal_.has_value() ||
-        !builder_.has_value()) {
+    const auto remember = [&](board::BoardContractViolationKind kind) {
+        remember_contract_violation(board::BoardContractViolation{
+            kind,
+            board::BoardRunCallbackKind::Chunk,
+            manifest_,
+            true,
+            owned.manifest_id,
+            prepared_,
+            true,
+            owned.prepared_id,
+            run_,
+            true,
+            owned.run_id,
+            generation_,
+            true,
+            owned.run_generation,
+            run_terminal_callbacks_observed_});
+    };
+    if (run_terminal_.has_value()) {
+        remember(board::BoardContractViolationKind::CallbackAfterTerminal);
+        return board::ChunkIngressDisposition::AbortRunProtocolViolation;
+    }
+    if (owned.manifest_id != manifest_) {
+        remember(board::BoardContractViolationKind::WrongManifest);
+        return board::ChunkIngressDisposition::AbortRunProtocolViolation;
+    }
+    if (owned.prepared_id != prepared_) {
+        remember(board::BoardContractViolationKind::WrongPreparedExecution);
+        return board::ChunkIngressDisposition::AbortRunProtocolViolation;
+    }
+    if (owned.run_id != run_) {
+        remember(board::BoardContractViolationKind::WrongBoardRunId);
+        return board::ChunkIngressDisposition::AbortRunProtocolViolation;
+    }
+    if (owned.run_generation != generation_) {
+        remember(board::BoardContractViolationKind::WrongGeneration);
+        return board::ChunkIngressDisposition::AbortRunProtocolViolation;
+    }
+    if (phase_ != Phase::Acquiring || !builder_.has_value()) {
         callback_contract_violation_ = true;
         return board::ChunkIngressDisposition::AbortRunProtocolViolation;
     }
@@ -515,15 +578,51 @@ board::ChunkIngressDisposition AcquisitionEngine::on_chunk(
 
 void AcquisitionEngine::on_terminal(
     board::BoardRunTerminal&& terminal) noexcept {
-    if ((phase_ != Phase::Acquiring && phase_ != Phase::Draining) ||
-        terminal.run_id != run_ || terminal.generation != generation_ ||
-        run_terminal_.has_value()) {
+    if (run_terminal_callbacks_observed_ !=
+        std::numeric_limits<std::uint32_t>::max()) {
+        ++run_terminal_callbacks_observed_;
+    }
+    const auto remember = [&](board::BoardContractViolationKind kind) {
+        remember_contract_violation(board::BoardContractViolation{
+            kind,
+            board::BoardRunCallbackKind::Terminal,
+            manifest_,
+            false,
+            board::ManifestId{},
+            prepared_,
+            false,
+            board::PreparedExecutionId{},
+            run_,
+            true,
+            terminal.run_id,
+            generation_,
+            true,
+            terminal.generation,
+            run_terminal_callbacks_observed_});
+    };
+    if (run_terminal_.has_value()) {
+        remember(board::BoardContractViolationKind::MultipleTerminal);
+        return;
+    }
+    if (terminal.run_id != run_) {
+        remember(board::BoardContractViolationKind::WrongBoardRunId);
+        return;
+    }
+    if (terminal.generation != generation_) {
+        remember(board::BoardContractViolationKind::WrongGeneration);
+        return;
+    }
+    if (phase_ != Phase::Acquiring && phase_ != Phase::Draining) {
         // 错误身份的 terminal 不能解除原请求的 callback 生命周期义务；保留
         // sink 与 execution reservation，等待匹配 RunId/Generation 的真实终态。
-        callback_contract_violation_ = true;
+        remember(board::BoardContractViolationKind::CallbackAfterTerminal);
         return;
     }
     run_terminal_.emplace(std::move(terminal));
+    if (contract_violation_.has_value()) {
+        contract_violation_->observed_terminal_callbacks =
+            run_terminal_callbacks_observed_;
+    }
 }
 
 bool AcquisitionEngine::consume_transition_budget(
@@ -559,6 +658,38 @@ runtime::RuntimeWorkStep AcquisitionEngine::fail_observation(
     failure_.has_observation_error = true;
     failure_.observation_error = error;
     return result;
+}
+
+runtime::RuntimeWorkStep AcquisitionEngine::fail_contract_violation() noexcept {
+    auto result = fail(
+        AcquisitionFailurePhase::Run,
+        AcquisitionFailureReason::BoardContractViolation);
+    if (!contract_violation_.has_value()) {
+        return result;
+    }
+    // 隔离命令属于普通 Runtime 控制步骤；Board callback 只锁存固定大小事实，
+    // 不会在适配器栈内反向调用会话控制或 L2/Store。
+    if (!board_session_isolated_) {
+        execution_->isolate_contract_violation(*contract_violation_);
+        board_session_isolated_ = true;
+    }
+    failure_.has_contract_violation = true;
+    failure_.contract_violation = *contract_violation_;
+    return result;
+}
+
+void AcquisitionEngine::remember_contract_violation(
+    board::BoardContractViolation violation) noexcept {
+    callback_contract_violation_ = true;
+    if (!contract_violation_.has_value()) {
+        contract_violation_ = violation;
+        return;
+    }
+    if (violation.observed_terminal_callbacks >
+        contract_violation_->observed_terminal_callbacks) {
+        contract_violation_->observed_terminal_callbacks =
+            violation.observed_terminal_callbacks;
+    }
 }
 
 runtime::RuntimeWorkStep AcquisitionEngine::fail_board_rejection(

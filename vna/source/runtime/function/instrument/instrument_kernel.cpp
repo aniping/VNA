@@ -32,6 +32,7 @@ acquisition::AcquisitionRetryClass retry_for_submit_error(
         case AOnlySubmitErrc::StoreAdmissionRejected:
             return acquisition::AcquisitionRetryClass::AfterResourceRelease;
         case AOnlySubmitErrc::StoreInitialCommitRejected:
+        case AOnlySubmitErrc::BoardSessionIsolated:
             return acquisition::AcquisitionRetryClass::AfterRecovery;
         case AOnlySubmitErrc::DiagnosticAuthorizationRequired:
         case AOnlySubmitErrc::InvalidRequest:
@@ -120,6 +121,10 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
         request.point_count, request.start_hz, request.stop_hz, plan_digest};
     auto board_reservation_result = board_execution_.reserve_execution();
     if (!board_reservation_result.has_value()) {
+        if (board_reservation_result.error().code ==
+            board::BoardErrc::ContractViolation) {
+            return reject(AOnlySubmitErrc::BoardSessionIsolated, capabilities);
+        }
         return reject(
             AOnlySubmitErrc::AcquisitionResourcesUnavailable, capabilities);
     }

@@ -127,6 +127,11 @@ private:
         AcquisitionFailurePhase phase,
         AcquisitionFailureReason reason,
         NetworkObservationError error) noexcept;
+    /// 先在非 callback Runtime 步骤锁存 Board session 隔离，再形成类型化失败。
+    runtime::RuntimeWorkStep fail_contract_violation() noexcept;
+    /// 只保存首个协议违约；后续回调只能补充更大的 terminal 观察计数。
+    void remember_contract_violation(
+        board::BoardContractViolation violation) noexcept;
     runtime::RuntimeWorkStep fail_board_rejection(
         AcquisitionFailurePhase phase,
         board::BoardError error) noexcept;
@@ -179,9 +184,12 @@ private:
     std::optional<board::RunDeliveryGrant> rejected_delivery_{};
     std::optional<board::BoardRunSinkRegistration> rejected_run_sink_{};
     std::optional<NetworkObservationBuilder> builder_{};
+    std::optional<board::BoardContractViolation> contract_violation_{};
     std::optional<AcquisitionSucceeded> success_{};
     std::optional<board::BoardPrepareDrainOwner> board_prepare_drain_owner_{};
     bool callback_contract_violation_{false};
+    bool board_session_isolated_{false};
+    std::uint32_t run_terminal_callbacks_observed_{0U};
     bool discard_contract_violation_{false};
     DrainObligation drain_obligation_{DrainObligation::None};
 };

@@ -119,6 +119,10 @@ struct AcquisitionFailure final {
     bool has_observation_error{false};
     /// has_observation_error 为 true 时保存有界身份、覆盖和 terminal 摘要。
     NetworkObservationError observation_error{};
+    /// contract_violation 是否保存 Board 回调身份或唯一终态违约证据。
+    bool has_contract_violation{false};
+    /// has_contract_violation 为 true 时保存首个稳定、固定大小的违约事实。
+    board::BoardContractViolation contract_violation{};
 };
 
 /// L4 成功终态移交给 L2 的完整 publication 与 purpose-specific owner 集合。

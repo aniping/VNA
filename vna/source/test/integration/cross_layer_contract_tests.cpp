@@ -110,10 +110,22 @@ public:
 
     std::uint64_t monotonic_tick() const noexcept override { return 0U; }
 
+    void isolate_contract_violation(
+        vna::board::BoardContractViolation violation) noexcept override {
+        (void)violation;
+        isolated_ = true;
+    }
+
     vna::core::Result<
         vna::board::BoardExecutionReservation,
         vna::board::BoardError>
     reserve_execution() noexcept override {
+        if (isolated_) {
+            return vna::core::Result<
+                vna::board::BoardExecutionReservation,
+                vna::board::BoardError>::failure(
+                vna::board::BoardError{vna::board::BoardErrc::ContractViolation});
+        }
         if (active_reservation_.valid()) {
             return vna::core::Result<
                 vna::board::BoardExecutionReservation,
@@ -326,6 +338,7 @@ private:
     vna::board::ChunkIngressDisposition early_chunk_disposition_{
         vna::board::ChunkIngressDisposition::Accepted};
     vna::board::BoardExecutionReservationId active_reservation_{};
+    bool isolated_{false};
 };
 
 struct SubmissionTimingSample final {

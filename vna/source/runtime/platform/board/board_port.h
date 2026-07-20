@@ -765,6 +765,70 @@ struct BoardRunTerminal final {
     std::uint32_t delivered_chunks{0U};
 };
 
+/// 发生协议违约的 BoardRunSink 回调种类。
+enum class BoardRunCallbackKind {
+    /// 非终态运行阶段回调。
+    Phase,
+    /// 携带 move-only payload 的观测块回调。
+    Chunk,
+    /// Run 终态回调。
+    Terminal
+};
+
+/// Board Run 回调违反身份或唯一终态契约的稳定分类。
+enum class BoardContractViolationKind {
+    /// 数据块引用的 Manifest 不属于当前 Run。
+    WrongManifest,
+    /// 数据块引用的 PreparedExecution 不属于当前 Run。
+    WrongPreparedExecution,
+    /// 回调引用了其他 BoardRunId。
+    WrongBoardRunId,
+    /// 回调引用了其他 Run generation。
+    WrongGeneration,
+    /// 同一 Run 发送了第二个或更多 terminal。
+    MultipleTerminal,
+    /// 唯一 terminal 返回后继续发送 phase、chunk 或 terminal 之外的重复回调。
+    CallbackAfterTerminal
+};
+
+/// 一次被锁存的 Board Run 回调协议违约证据。
+///
+/// 所有字段均为固定大小值事实，不持有 payload、sink 或可执行恢复能力。未由对应
+/// 回调携带的 observed 身份通过 has_observed_* 明确标记为不存在；调用者不得把
+/// 无效 StrongId 猜测成某种错误身份。
+struct BoardContractViolation final {
+    /// 调用者无需解析日志文本即可分支的稳定违约分类。
+    BoardContractViolationKind kind{BoardContractViolationKind::WrongManifest};
+    /// 首次违约发生在哪一类 BoardRunSink 回调。
+    BoardRunCallbackKind callback{BoardRunCallbackKind::Chunk};
+    /// 当前 Builder 期望的 Manifest 身份。
+    ManifestId expected_manifest{};
+    /// 回调携带 Manifest 身份时为 true。
+    bool has_observed_manifest{false};
+    /// has_observed_manifest 为 true 时保存回调实际携带的 Manifest 身份。
+    ManifestId observed_manifest{};
+    /// 当前 Builder 期望的 PreparedExecution 身份。
+    PreparedExecutionId expected_prepared{};
+    /// 回调携带 PreparedExecution 身份时为 true。
+    bool has_observed_prepared{false};
+    /// has_observed_prepared 为 true 时保存回调实际携带的 PreparedExecution 身份。
+    PreparedExecutionId observed_prepared{};
+    /// 当前 Engine 期望的 BoardRunId。
+    BoardRunId expected_run{};
+    /// 回调携带 BoardRunId 时为 true。
+    bool has_observed_run{false};
+    /// has_observed_run 为 true 时保存回调实际携带的 BoardRunId。
+    BoardRunId observed_run{};
+    /// 当前 Engine 期望的 Run generation。
+    RunGeneration expected_generation{};
+    /// 回调携带 Run generation 时为 true。
+    bool has_observed_generation{false};
+    /// has_observed_generation 为 true 时保存回调实际携带的 Run generation。
+    RunGeneration observed_generation{};
+    /// 截至失败锁存时观察到的 terminal 回调次数；正常上限为 1。
+    std::uint32_t observed_terminal_callbacks{0U};
+};
+
 /// 接收 Run 阶段、原始数据和终态的异步接口。
 class BoardRunSink {
 public:
@@ -843,6 +907,15 @@ public:
     /// @return 与 AcquisitionContinuationAttestation::expires_at 相同时间域的
     ///         当前单调 tick；仅用于相对 deadline 计算，不代表 wall clock。
     virtual std::uint64_t monotonic_tick() const noexcept = 0;
+
+    /// 将当前已打开会话锁存为不可信，阻止后续执行复用。
+    /// @param violation Acquisition 在 Runtime 控制步骤确认的首个固定大小协议
+    ///        违约事实；按值传入，不转移 payload、sink 或其他资源所有权。
+    /// @note 调用必须发生在 Board callback 返回之后；实现必须幂等。锁存后新的
+    ///       reserve_execution() 必须同步拒绝，只有关闭本会话并重新 open() 才能
+    ///       得到健康执行上下文。
+    virtual void isolate_contract_violation(
+        BoardContractViolation violation) noexcept = 0;
 
     /// 在上层发布 Accepted Operation 和首次 Runtime dispatch 前预占执行容量。
     /// @return 成功时返回覆盖同一次 Prepare/Run/Prepared-discard call、排队和

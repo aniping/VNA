@@ -46,6 +46,7 @@
 
 当前可执行产品组合只包含 `VnaBoardMock`，没有 Real Board Adapter、SafetyLane、RF-off/readback 或 HIL 证据。A-only 授权明确命名为 Mock diagnostics；不得把该纵切连接真实 RF 或宣称具备生产安全能力。
 失败事实中的 safety impact 只区分“Run 未接受”“匹配 Run terminal 已观察到”与“资源必须隔离”，不等价于物理 RF-off 或真实单板安全证明。
+Mock 可确定性注入错误 Manifest/Prepared/Run/generation、重复 terminal 和 terminal 后回调。Acquisition 将首个违约保存为类型化失败事实，并在 callback 返回后的 Runtime 步骤隔离当前 Board session；同一会话的新执行在 Run 前拒绝，关闭并重新打开得到新 SessionId 后才恢复。
 
 ## MinGW 构建与测试
 

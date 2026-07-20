@@ -32,3 +32,10 @@ vna_add_test(
     vna::runtime
     vna::board_mock
 )
+
+vna_add_test(
+    vna_board_contract_isolation_contract_tests
+    board_contract_isolation_contract_tests.cpp
+    vna::runtime
+    vna::board_mock
+)

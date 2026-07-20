@@ -336,6 +336,9 @@ public:
     virtual CapabilitySnapshot capabilities() const noexcept = 0;
     virtual BoardExecutionSnapshot inspect() const noexcept = 0;
 
+    virtual void isolate_contract_violation(
+        BoardContractViolation violation) noexcept = 0;
+
     virtual PrepareSubmission begin_prepare(
         PrepareCallId call,
         SweepIntent intent,
@@ -364,6 +367,8 @@ public:
         const AbortRequest& request) noexcept = 0;
 };
 ```
+
+`isolate_contract_violation` 只接收固定大小、不可执行的首错证据，并在 Board callback 返回后的 L4 Runtime 步骤调用；不得在 callback 栈内反向进入 L2 或 Store。实现必须幂等，锁存后拒绝新的 execution reservation。该入口只做当前 Session 的软件 containment，不等于 recovery、rejoin 或 RF-safe 证明；当前 Mock 只能通过关闭旧会话并重新 open 得到不同 `BoardSessionId` 的健康会话。
 
 Prepare 终态是封闭 variant，Accepted 后不得假设必然成功：
 
