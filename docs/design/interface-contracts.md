@@ -237,7 +237,7 @@ public:
 - 纯配置 Command 只在 `DomainCommitBundle` 成功后返回无 revision 的成功回执。
 - 长操作返回 `Accepted{OperationId}`；这不是完成，Operation 内部保存接受切面与来源版本。
 - admission 失败不创建幽灵 Operation；若创建 Operation 与派发之间失败，Operation 必须有可查询的失败终态。
-- 同一 SCPI Session 的 `session_sequence + causal_predecessor` 保持 Profile 规定的因果顺序；不同 Web/SCPI 客户端的 mutation 由唯一 Control Executor 线性化。协议不返回 revision conflict；字段/行级 patch 只在其声明范围内作用于接受时的最新状态。若目标政策要求显式编辑 lease，未持 lease 的竞争命令返回 Locked；否则同一字段按接受顺序决定，最终政策见 WEB-09。
+- 同一 SCPI Session 的 `session_sequence + causal_predecessor` 保持 Profile 规定的因果顺序；不同 Web/SCPI 客户端的 mutation 由唯一 Control Executor 线性化。协议不返回 revision conflict；字段/稳定行 ID patch 只在声明范围内作用于各自接受时的最新状态，不同字段的合法修改各自保留，同一字段以后接受且成功提交的命令为准。普通配置编辑不取得 edit lease；只有校准、Recall 等需要持续 owner 的长 Operation 发生所有权竞争时才返回不含版本值的 Locked/Busy。
 
 ### 5.2 admit/inspect/open_read/finish_read
 

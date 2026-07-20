@@ -34,7 +34,7 @@ Web、SCPI、启动恢复和内部自动操作最终都提交相同的类型化 
 
 ### 2.2 控制面单写，数据面不可变
 
-仪器配置由一个 Control Executor 串行修改，每次成功修改形成新 revision。扫频在启动时捕获配置 revision；后续修改不会改变正在执行或已经发布结果的含义。所有正式数据和分析结果一经发布即不可变。
+仪器配置由一个 Control Executor 串行修改，每次成功修改形成新的内部 revision。扫频在启动时捕获配置 revision；后续修改不会改变正在执行或已经发布结果的含义。所有正式数据和分析结果一经发布即不可变。
 
 ### 2.3 能力驱动，不伪装支持
 
@@ -899,12 +899,12 @@ SCPI 对客户端保持同步协议语义，但实现不得让 session worker �
 
 基础单连接 raw TCP Profile 只承诺寄存器和 `*STB?` polling，不自动宣称异步 SRQ。R&S RawSocket 官方行为没有 VISA control channel；Keysight PNA 则公开了专有第二 TCP control connection，可接收 SRQ 和 Device Clear。因此 PNA control socket、HiSLIP/VXI-11 或项目事件协议必须作为独立 Transport capability 实现和测试，不能从“使用 raw Socket”一概推导有或没有 SRQ。首版必须选择一个主 SCPI 方言或明确的项目方言+兼容子集，不能把 Keysight/R&S/CMT 命令随意拼成“全兼容”。
 
-### 11.4 多会话控制策略（推荐默认）
+### 11.4 多会话控制策略（已确认）
 
 - 所有领域 mutation 最终在同一 Control Executor 中有序提交；入口使用有保留容量的 SafetyIngress、每 SCPI Session 保留分区的 SessionStateIngress、只读 PriorityReadIngress 和有界 NormalIngress。安全动作优先且有最大调度延迟，但遵守同 Session causal predecessor；普通队列满载不能阻塞跨 Session `ABORt`/Cancel/RF-off/shutdown、SCPI error/status 的有序记录/read-clear，或不可变 health/status/readiness 读取。
-- Web 和 SCPI 普通 mutation 都由唯一 Control Executor 线性化；协议不使用 optimistic revision。推荐让窄字段/行级 patch 应用于接受时最新状态，并让同一逻辑字段组的后接受修改覆盖先前值；这项普通编辑冲突政策尚未定案，最终以 `WEB-09` 的产品确认结果为准。
-- SCPI 按连接内因果顺序执行；跨连接资源冲突根据当前 lease 返回不含内部版本值的 Busy/Locked/StateChanged error。
-- 校准、Preset/Recall、网络设置和恢复类操作取得独占 lease；普通 Channel 编辑不使用全局永久锁，内部 revision 只用于原子 commit、审计和异步重验。
+- Web 和 SCPI 普通 mutation 都由唯一 Control Executor 线性化；协议不使用 optimistic revision。窄字段/稳定行 ID patch 应用于各自 Control Admission Cut 的最新状态，不同字段的合法修改各自保留；同一逻辑字段组以后接受且成功提交的修改为准。后来命令若校验或提交失败，先前成功状态保持不变。
+- SCPI 按连接内因果顺序执行；跨连接的硬件资源冲突或长 Operation 所有权冲突根据当前 lease 返回不含内部版本值的 Busy/Locked/StateChanged error，普通同字段配置修改不返回冲突。
+- 校准、Recall、恢复等需要跨多个控制回合保持 owner 的长 Operation 取得 lease；普通 Channel、Trace、Marker、Limit、Segment 和 Cal Kit 配置编辑不取得 edit lease，也不使用全局永久锁。内部 revision 只用于原子 commit、审计和异步重验。
 - Web selected Channel/Trace/Marker 为 session-local；SCPI selection 按 Compatibility Profile 使用共享或连接局部状态。真实 Channel、Trace 定义和正式数据始终属于同一台 instrument。
 - owner 断开不自动杀死共享 Sweep；校准等交互 Operation 进入可配置的 grace period，之后取消或由管理员接管。
 
@@ -1017,7 +1017,7 @@ Interface 就是主要测试表面，不以“每个类都有单测”宣布完�
 4. **校准失败回滚**：已有有效校准时开始新 Guided Cal，中途取消/拔板，旧 Correction Set 继续有效且新 Set 不发布。
 5. **Trace/Marker/Limit**：Data-Memory、LogMag/Phase/Smith、多 Marker search、Bandwidth 和 Limit Fail 全部绑定同一正式快照，Web/SCPI 一致。
 6. **多 Channel/多板资源**：共享源串行、独立板并行、Continuous 不饿死 Single/Cal。
-7. **多会话冲突**：Web 正在校准，多个 SCPI 会话读写；lease、Control Executor 接受顺序、selected context 和无 revision 错误可预测。
+7. **多会话冲突**：Web 正在校准，多个 SCPI 会话读写；同字段以后接受且成功提交的配置为准，不同字段窄 patch 均保留，长 Operation lease、selected context 和无 revision 错误可预测。
 8. **故障与恢复**：扫频 60% 时超时/热拔，所有 waiter 得到同一终态，last-good 保留，资源不死锁，Board 自检后才恢复。
 9. **State/掉电/换板**：原子保存后模拟损坏回退；换板恢复布局但校准显式失效；Touchstone 回读与复数结果一致。
 10. **最大负载与慢客户端**：最大点数、多个 Trace/Web/SCPI 大查询下内存有界，preview 可降级，正式事实先提交；事件投递过载显式 gap/resync，控制不被反压。
@@ -1079,10 +1079,10 @@ Interface 就是主要测试表面，不以“每个类都有单测”宣布完�
 ### C. 控制与兼容 Profile
 
 - 首版 SCPI 主方言：Keysight PNA 风格、CMT 风格或项目原生方言+兼容子集。
-- Web/多 SCPI 的写控制、校准 owner、断线接管和 destructive command 策略。
+- Web/多 SCPI 的普通写控制已按 ADR-0014 定案；仍需随产品/兼容 Profile 冻结校准 owner、断线接管和 destructive command 的具体权限策略。
 - 浏览器前端是否允许 TypeScript/JavaScript 构建，目标端只托管静态 bundle。
 
-推荐默认：项目内部类型化 Command；外部优先采用 Keysight PNA 风格公共子集并记录差异；对象 revision + 复合 Operation lease，不使用全局永久独占锁。
+推荐兼容默认：项目内部使用类型化 Command，外部优先采用 Keysight PNA 风格公共子集并记录差异。已确认的并发基线是普通配置按 Control Executor 接受顺序线性化、同字段以后接受且成功提交者为准、普通编辑无 lease；只有需要持续 owner 的长 Operation 使用 lease，不使用全局永久独占锁。
 
 ### D. 平台、存储与安全 Profile
 

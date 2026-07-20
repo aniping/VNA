@@ -174,7 +174,7 @@ sequenceDiagram
     Protocol->>Kernel: "CommandEnvelope ApplyChannelPatch"
     Kernel->>Store: "读取当前 Channel、Profile、capability cut"
     Store-->>Kernel: "typed refs 与 revisions"
-    Kernel->>Kernel: "按接受顺序解析目标、冻结内部 revision、校验领域不变量"
+    Kernel->>Kernel: "按接受顺序解析目标，在最新状态应用窄 patch、冻结内部 revision、校验领域不变量"
     Kernel->>Store: "DomainCommitBundle：新 Channel revision + Event"
     Store-->>Kernel: "CommitReceipt"
     Kernel-->>Protocol: "SubmitResult"

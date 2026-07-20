@@ -413,7 +413,7 @@ Web 是本项目明确要求的主操作面，但不是三家 VNA 的统一领�
 - 完整页面：Instrument/health、Channel/stimulus、Measurement、Calibration wizard/repository、Display/Diagram、Marker、Limit、File/State、SCPI/remote settings、diagnostics/logs。
 - 浏览器初次连接从同一内部 Catalog cut 获取一致业务快照，之后通过业务事件和不透明 Watch token 更新；断线重连、慢客户端、丢包和多标签页不破坏仪器状态，内部 revision 不进入 Web schema。
 - 扫频 preview 分块推送并限速/抽稀，CompletedSnapshot 原子发布；前端绘图抽稀不能改变导出/Marker/Limit 使用的全分辨率数据。
-- 多用户并发写由唯一 Control Executor 线性化：普通配置使用字段/稳定行 ID 的窄 patch；同一字段当前推荐按服务器接受顺序生效，显式编辑 lease 是待确认备选。Segment 等复合表整体校验并原子提交，Cal Session 等长交互使用 owner/lease。Busy/Locked/StateChanged 只返回业务原因，不返回内部 revision；SCPI 与 Web 不得产生半套 Segment 或 Cal Session。
+- 多用户并发写由唯一 Control Executor 线性化：普通配置使用字段/稳定行 ID 的窄 patch，不同字段各自保留，同一字段以后接受且成功提交者生效，普通编辑不取得 lease；后来非法命令不改变先前状态。Segment 等复合表整体校验并原子提交，Cal Session、Recall 等需要持续 owner 的长 Operation 使用 owner/lease。Busy/Locked/StateChanged 只返回业务原因，不返回内部 revision；SCPI 与 Web 不得产生半套 Segment 或 Cal Session。
 - 登录、密码变更、会话超时、只读/控制权限、CSRF/Origin 检查、TLS 终止部署说明；在封闭网内也不能默认所有浏览器都有管理员权。
 - 所有长操作都有 progress、cancel、timeout 和结构化错误；Web 页面刷新不取消共享 sweep/calibration。
 

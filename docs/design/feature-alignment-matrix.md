@@ -73,7 +73,7 @@
 | [02 分析与显示](alignment/02-analysis-display.md) | Trace、Diagram、格式、Marker、Limit、Math/Memory/Hold/Statistics、参考面、夹具、混模、时域 | 66 项，已完成证据归类 |
 | [03 控制、文件、诊断与平台](alignment/03-control-files-platform.md) | Web、SCPI、Session、状态寄存器、文件、State、诊断、安全、构建、依赖和容量 | 64 项，已完成证据归类 |
 
-当前共盘点 176 项：6 项“已明确”、67 项“已由证据定案”、20 项“待算法/计量验证”、27 项“待兼容目标”、24 项“待底软/硬件确认”、22 项“待平台验证”，仅 10 项仍是真正的“待产品确认”。这个数量表示评审粒度，不表示功能数量或开发任务数量；同一行可能仍在说明中附带次级门禁，状态列记录其首要未闭合条件。
+当前共盘点 176 项：7 项“已明确”、66 项“已由证据定案”、20 项“待算法/计量验证”、27 项“待兼容目标”、24 项“待底软/硬件确认”、22 项“待平台验证”，仅 10 项仍是真正的“待产品确认”。这个数量表示评审粒度，不表示功能数量或开发任务数量；同一行可能仍在说明中附带次级门禁，状态列记录其首要未闭合条件。
 
 这次重分类的目的不是把风险标成“完成”，而是把责任放到正确位置：通用对象和行为由架构承担，厂商差异由 Compatibility Profile 承担，数值正确性由黄金/计量验证承担，单板事实由 Real Adapter 契约承担，SDK/容量由目标机验证承担；只有功能是否交付和部署政策才留给产品决定。
 
@@ -131,7 +131,7 @@
 5. **Trace 与 Diagram**：格式、坐标、布局、叠加、抽稀、Math、Memory、Hold、Smoothing 和 Statistics。
 6. **Marker 与 Limit**：所有 Marker 类型/搜索/耦合/marker-to，以及 Limit Segment/边界/无效点/报告/状态聚合。
 7. **专业网络处理**：Port Extension、Z0、Fixture、De-embedding、Mixed-mode、Time Domain、Window 和 Gate。
-8. **Web 与并发控制**：完整操作面、事件/Preview、不透明 Watch 恢复、服务器接受顺序、lease、断线和大数据传输；Web/SCPI 均不暴露内部 revision。
+8. **Web 与并发控制**：完整操作面、事件/Preview、不透明 Watch 恢复、普通配置的服务器接受顺序、长 Operation lease、断线和大数据传输；Web/SCPI 均不暴露内部 revision。
 9. **SCPI 与 IEEE 488.2**：主方言、parser、会话、队列、状态寄存器、完成同步和数据阶段。
 10. **State、文件、诊断、安全与平台**：保存恢复、Touchstone/CSV、自检、日志、权限、TLS、依赖和容量。
 

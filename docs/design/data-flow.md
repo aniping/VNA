@@ -12,9 +12,9 @@
 
 | 流 | 传递内容 | 权威来源 | 不传递什么 |
 |---|---|---|---|
-| 控制流 | `CommandEnvelope`、revision、Operation、取消、deadline、完成 fence | Instrument Kernel、Control Executor、OperationCatalog | 大数组和浏览器视图状态 |
+| 控制流 | 外部 `CommandEnvelope`、内核内部 revision/precondition、Operation、取消、deadline、完成 fence | Instrument Kernel、Control Executor、OperationCatalog | 大数组、浏览器视图状态和外部 revision |
 | 正式数据流 | Manifest、A/B/Stage/C、Calibration Observation、质量平面、不可变 Buffer | Measurement Data Store / SnapshotCatalog | “当前选择”、Socket、JSON、厂商 SDK 对象 |
-| 通知流 | catalog revision、event cursor、对象 ID、状态变化摘要、显式 gap | EventJournal → InstrumentStore EventFeed → L2 Watch 投影 → L1 Dispatcher | 正式事实所有权、等待正确性和数组载荷 |
+| 通知流 | 内部 catalog revision/event cursor、对象 ID、状态变化摘要、显式 gap；公共投影只含业务事件与不透明 Watch token | EventJournal → InstrumentStore EventFeed → L2 Watch 投影 → L1 Dispatcher | 正式事实所有权、等待正确性、数组载荷和公共 revision |
 
 `Operation` 表示工作生命周期，不是数据；`Event` 表示“某事实已经提交”的提示，不是事实；`QueryTicket` 表示某个调用者访问已冻结结果的能力，也不是数据。三者都可以引用同一 Snapshot ID，但互不拥有对方。
 
@@ -100,7 +100,7 @@ struct QueryEnvelope {
 };
 ```
 
-`RequestContext` 作为 `submit/admit` 的独立参数，是 transport-auth、session、Profile、deadline 和因果顺序的唯一来源；Envelope 不再内嵌第二份 context，也不接收 Web/SCPI 提供的 revision。SCPI parser context、selection 与错误队列仍是 Session 状态，但 Adapter 不能把字符串路径直接传进业务模块；Web JSON DOM、HTTP 对象也不能穿过 Kernel Interface。Kernel 在 Control Admission Cut 中重新验证权限，从同一权威 Catalog cut 解析确切 target ID，并冻结内部 Profile revision、对象 revisions、typed stage、父 refs 和 ordering；Adapter 既不能选择“当前数组”，也不能读取 revision 后代客户端补入。`QueryAdmission` 是 `InlineResult | ReadyTicket | PendingTicket | RejectedQuery` 的有类型和，只有有硬大小上限的状态/metadata 可以 inline。
+`RequestContext` 作为 `submit/admit` 的独立参数，是 transport-auth、session、Profile、deadline 和因果顺序的唯一来源；Envelope 不再内嵌第二份 context，也不接收 Web/SCPI 提供的 revision。SCPI parser context、selection 与错误队列仍是 Session 状态，但 Adapter 不能把字符串路径直接传进业务模块；Web JSON DOM、HTTP 对象也不能穿过 Kernel Interface。Kernel 在 Control Admission Cut 中重新验证权限，从同一权威 Catalog cut 解析确切 target ID，并冻结内部 Profile revision、对象 revisions、typed stage、父 refs 和 ordering；Adapter 既不能选择“当前数组”，也不能读取 revision 后代客户端补入。普通配置窄 patch 在该 cut 的最新状态上应用；同字段以后接受且成功提交者生效，失败命令不产生状态变化，也不要求客户端重试 revision。`QueryAdmission` 是 `InlineResult | ReadyTicket | PendingTicket | RejectedQuery` 的有类型和，只有有硬大小上限的状态/metadata 可以 inline。
 
 领域 commit 产生的通知统一为：
 
