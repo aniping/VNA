@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime/function/acquisition/acquisition_admission.h"
+#include "runtime/function/acquisition/acquisition_drain_owner.h"
 #include "runtime/function/acquisition/acquisition_ingress.h"
 #include "runtime/function/acquisition/network_observation_builder.h"
 #include "runtime/function/acquisition/acquisition_result.h"
@@ -89,6 +90,14 @@ public:
     ///       PrepareDraining、Quarantined/CleanupFailed 均不得调用；重复调用返回 false。
     bool finalize_failure_owners() noexcept;
 
+    /// 查询已经完成 handoff 的具名善后所有权。
+    /// @param runtime_completion_registered 调用方已在 Runtime Draining completion
+    ///        registration 内收到 handoff 时传 true；本函数不取得该能力所有权。
+    /// @return 已建立 AcquisitionDrainOwner 时返回值快照；普通终态或 handoff
+    ///         之前返回空。快照不含可执行 token，生命周期与本对象无关。
+    std::optional<AcquisitionDrainOwnershipSnapshot> inspect_drain_ownership(
+        bool runtime_completion_registered) const noexcept;
+
     /// 取得唯一成功终态的 candidate 与 completion owner 聚合。
     /// @return Runtime 报告 Completed 后首次调用返回 move-only success；失败、
     ///         Draining、尚未完成或重复调用返回空。返回对象由 L2 持有到 commit。
@@ -151,6 +160,11 @@ private:
     runtime::RuntimeWorkStep drain_contract_violation(
         AcquisitionFailurePhase phase,
         DrainObligation obligation) noexcept;
+    /// 把所有仍存活的 L4 move-only owner 一次性移入具名 Drain。
+    /// @return 首次迁移后 owner 有效或此前已经完成迁移时返回 true。
+    bool activate_drain_owner() noexcept;
+    AcquisitionIngress& active_ingress() noexcept;
+    NetworkObservationBuilder* active_builder() noexcept;
 
     board::BoardExecutionPort* execution_{nullptr};
     board::SweepIntent intent_{};
@@ -186,6 +200,7 @@ private:
     std::optional<NetworkObservationBuilder> builder_{};
     std::optional<board::BoardContractViolation> contract_violation_{};
     std::optional<AcquisitionSucceeded> success_{};
+    std::optional<AcquisitionDrainOwner> drain_owner_{};
     std::optional<board::BoardPrepareDrainOwner> board_prepare_drain_owner_{};
     bool callback_contract_violation_{false};
     bool board_session_isolated_{false};

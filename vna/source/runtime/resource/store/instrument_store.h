@@ -3,6 +3,7 @@
 #include "runtime/core/base/result.h"
 #include "runtime/core/base/strong_id.h"
 #include "runtime/function/acquisition/acquisition_result.h"
+#include "runtime/function/acquisition/acquisition_drain_owner.h"
 #include "runtime/function/operation/operation_runtime.h"
 #include "runtime/resource/store/completed_sweep_bundle.h"
 
@@ -36,7 +37,13 @@ enum class StoreErrc {
     /// A candidate 已在本地完成 staging，但正式 revision 切换前写入被拒绝。
     CandidateWriteRejected,
     /// 已安装的生命周期终态预留仍无法完成 state-only 提交，Store 不变量失效。
-    IntegrityFault
+    IntegrityFault,
+    /// 父 Operation 已经可见，但尚未安装具名 Drain 生命周期。
+    DrainNotFound,
+    /// terminal 携带的 DrainId 与父 Operation 已安装的 Drain 不一致。
+    DrainIdentityMismatch,
+    /// 同一 Drain 已经提交过唯一终态，拒绝重复 terminal。
+    DrainAlreadyTerminal
 };
 
 /// Store 接口返回的类型化错误。
@@ -96,6 +103,45 @@ struct OperationEventSnapshot final {
     bool has_completed_sweep{false};
     /// has_completed_sweep 为 true 时的正式 A snapshot ID。
     acquisition::CompletedSweepId completed_sweep{};
+    /// 本 Event 是否同时公布父失败事实关联的具名 Drain。
+    bool has_drain{false};
+    /// has_drain 为 true 时，与父失败事实同 revision 首次可见的 DrainId。
+    runtime::DrainId drain{};
+};
+
+/// 具名善后流程的公开生命周期状态。
+enum class DrainState {
+    /// 父工作已失败，但完整软件 owner 仍等待底软真实终态。
+    Draining,
+    /// 底软义务闭合，全部软件 owner 可以释放。
+    Drained,
+    /// 善后终结但相关资源保持隔离，不可复用。
+    Quarantined,
+    /// 善后失败并保留 owner 以供诊断或恢复。
+    CleanupFailed
+};
+
+/// 某个具名 Drain 在查询时刻的不可执行事实副本。
+struct DrainSnapshot final {
+    runtime::DrainId id{};
+    store::OperationId operation{};
+    DrainState state{DrainState::Draining};
+    /// 首次可见时与父失败事实相同；终态时使用后续单调 revision。
+    std::uint64_t revision{0U};
+    /// handoff 时冻结的完整软件所有权证据；终态后保留作审计。
+    acquisition::AcquisitionDrainOwnershipSnapshot ownership{};
+    /// 首次可见时已把 Accepted 前预留的 child terminal 容量安装给本 Drain。
+    bool lifecycle_terminal_reserved{false};
+};
+
+/// Drain 独立终态 Event；容量在父 Operation Accepted 之前一并预留。
+struct DrainEventSnapshot final {
+    OperationEventId id{};
+    runtime::DrainId drain{};
+    store::OperationId operation{};
+    DrainState state{DrainState::CleanupFailed};
+    /// 与 DrainSnapshot 终态切换相同的 Store revision。
+    std::uint64_t revision{0U};
 };
 
 /// 当前正式数据 Catalog 中各数据阶段的发布数量。
@@ -115,6 +161,8 @@ class InstrumentStoreContractTestAccess;
 ///
 /// 其目的是在对外提交 Accepted 之前，先保证该操作将来一定有容量原子提交
 /// terminal Operation、status、fence 和一个必达 Event。
+/// 同一槽还预留一个可选具名 Drain 事实及其唯一终态 Event；普通完成路径不会
+/// 使用该子容量，Draining 路径不需要在 deadline 到达后临时申请任何内存。
 /// 未经 commit_accepted() 消费的凭证会在析构时自动归还槽位。
 class LifecycleTerminalReservation final {
 public:
@@ -175,6 +223,22 @@ struct TerminalCommitReceipt final {
     TerminalCommitDisposition disposition{TerminalCommitDisposition::Committed};
 };
 
+/// 父失败事实与具名 Drain 原子首次可见后的回执。
+struct DrainHandoffCommitReceipt final {
+    store::OperationId operation{};
+    runtime::DrainId drain{};
+    /// 父 Operation/fence/status/Event 与 Drain 首次可见共享的 revision。
+    std::uint64_t revision{0U};
+};
+
+/// 唯一 Drain terminal 提交成功后的回执。
+struct DrainTerminalCommitReceipt final {
+    store::OperationId operation{};
+    runtime::DrainId drain{};
+    DrainState state{DrainState::CleanupFailed};
+    std::uint64_t revision{0U};
+};
+
 /// A-only 成功 publication 原子提交后的回执。
 struct CompletedSweepCommitReceipt final {
     OperationId operation{};
@@ -205,6 +269,10 @@ struct StoreSnapshot final {
     std::uint64_t revision{0U};
     /// 已原子写入终态的 Operation Event 数量。
     std::size_t events{0U};
+    /// 当前已通过父失败事实同步安装的具名 Drain 数量。
+    std::size_t visible_drains{0U};
+    /// 已写入的独立 Drain terminal Event 数量。
+    std::size_t drain_events{0U};
 };
 
 /// 固定容量的仪器操作生命周期存储。
@@ -217,6 +285,8 @@ public:
     static constexpr std::size_t kMaximumOperations = 16U;
     /// 当前每项可见 Operation 最多产生一个终态 Event，故上限与操作槽一致。
     static constexpr std::size_t kMaximumEvents = kMaximumOperations;
+    /// 每个 Operation 最多安装一个 Drain，且最多产生一个 Drain terminal Event。
+    static constexpr std::size_t kMaximumDrainEvents = kMaximumOperations;
 
     /// @param capacity 可见操作与预留生命周期合计上限；超过
     ///        kMaximumOperations 的值会被截断。
@@ -268,6 +338,34 @@ public:
         OperationId operation,
         acquisition::AcquisitionFailure failure) noexcept;
 
+    /// 原子写入父采集失败事实并首次安装具名 Drain。
+    /// @param operation 仍处于 Accepted 且已预留完整生命周期容量的 Operation。
+    /// @param drain Runtime handoff 交付的非 0 唯一 DrainId。
+    /// @param failure L4 在 deadline/stop/budget 边界冻结的失败事实；按值保存。
+    /// @param ownership handoff 时完整软件 owner 的不可执行证据；按值保存。
+    /// @return 成功时父 Operation/fence/status/Event 与 Drain 使用同一 revision；
+    ///         身份非法返回 InvalidOperation，重复或已终态返回类型化错误，失败
+    ///         不改变任何公开事实。该操作不发布 A，也不制造 Completed。
+    core::Result<DrainHandoffCommitReceipt, StoreError>
+    commit_acquisition_draining(
+        OperationId operation,
+        runtime::DrainId drain,
+        acquisition::AcquisitionFailure failure,
+        acquisition::AcquisitionDrainOwnershipSnapshot ownership) noexcept;
+
+    /// 写入具名 Drain 的唯一资源终态。
+    /// @param operation 安装该 Drain 的父 Operation。
+    /// @param drain 必须与 handoff 时安装的 DrainId 完全一致。
+    /// @param terminal Runtime 可靠 completion 交付的终态种类。
+    /// @return 首次提交成功时写入 DrainSnapshot 与独立 Drain Event；错误 ID 返回
+    ///         DrainIdentityMismatch，重复 terminal 返回 DrainAlreadyTerminal，均不
+    ///         改变 revision。返回对象为值副本，不携带 owner。
+    core::Result<DrainTerminalCommitReceipt, StoreError>
+    commit_drain_terminal(
+        OperationId operation,
+        runtime::DrainId drain,
+        runtime::RuntimeDrainTerminalKind terminal) noexcept;
+
     /// 原子发布 A-only 成功的全部权威事实。
     /// @param operation 已经 Accepted 且安装终态预留的 OperationId。
     /// @param candidate worker 返回、仍拥有全部正式观测的 move-only 候选；成功
@@ -288,6 +386,12 @@ public:
     std::optional<OperationSnapshot> inspect_operation(
         OperationId operation) const noexcept;
 
+    /// 按 DrainId 查询善后生命周期。
+    /// @param drain handoff 时公开的非 0 DrainId。
+    /// @return 找到时返回值副本；未安装或 ID 不存在时返回空。
+    std::optional<DrainSnapshot> inspect_drain(
+        runtime::DrainId drain) const noexcept;
+
     /// 按关联 Operation 查询已发布的不可变 A 层快照。
     /// @param operation 产生该快照的 OperationId。
     /// @return 发布完成时返回独立值副本；Accepted/Failed/不存在时为空。返回值
@@ -306,6 +410,9 @@ public:
 
     /// @return Event Journal 中 revision 最新的终态 Event；尚无 Event 时为空。
     std::optional<OperationEventSnapshot> latest_event() const noexcept;
+
+    /// @return revision 最新的独立 Drain terminal Event；尚无终态时为空。
+    std::optional<DrainEventSnapshot> latest_drain_event() const noexcept;
 
     /// @return A/B/Stage/C 正式发布数量的一致性副本。
     PublicationCountSnapshot inspect_publications() const noexcept;
@@ -333,6 +440,10 @@ private:
         OperationFenceSnapshot fence{};
         bool event_visible{false};
         OperationEventSnapshot event{};
+        bool drain_visible{false};
+        DrainSnapshot drain{};
+        bool drain_event_visible{false};
+        DrainEventSnapshot drain_event{};
         std::optional<CompletedSweepBundle> completed_sweep{};
     };
 
@@ -355,6 +466,7 @@ private:
     std::uint64_t next_generation_{1U};
     std::uint64_t revision_{0U};
     std::size_t events_{0U};
+    std::size_t drain_events_{0U};
     std::uint64_t next_event_id_{1U};
     InstrumentStatusSnapshot status_{};
     PublicationCountSnapshot publications_{};

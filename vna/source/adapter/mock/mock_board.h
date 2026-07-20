@@ -29,8 +29,18 @@ enum class MockRunBehavior {
     Succeed,
     /// 接受请求，在运行窗口末端报告失败终态，不交付数据块。
     Fail,
+    /// 接受请求但不按 run_duration 自动产生数据或 terminal，直到测试控制面释放。
+    Stall,
     /// 以 Unsupported 同步拒绝并返还全部输入。
     Reject
+};
+
+/// 测试控制面为已接受 Stall Run 安排的迟到真实终态。
+enum class MockStalledRunTerminal {
+    /// 下一次 advance() 交付完整数据和成功 terminal。
+    Completed,
+    /// 下一次 advance() 不交付数据并报告失败 terminal。
+    Failed
 };
 
 /// Mock 模拟的底软 callback 源 Buffer 生命周期行为。
@@ -217,6 +227,15 @@ public:
     /// 推进虚拟时间并同步触发所有到期的 Prepare/Run/Prepared-discard 回调。
     /// @param delta 非负虚拟时间增量；0 也会处理已经到期的请求。
     virtual void advance(VirtualDuration delta) noexcept = 0;
+
+    /// 为当前已接受且仍卡住的 Run 安排一个迟到 terminal。
+    /// @param terminal 选择下一次 advance() 交付成功数据或失败 terminal。
+    /// @return 当前确有一个 Stall Run 并已成功安排时返回 true；没有待办、剧本
+    ///         不是 Stall 或已经安排过时返回 false。
+    /// @note 本调用不内联触发 callback，不表示 abort、RF-off、readback 或安全
+    ///       动作；它只模拟底软后来完成原 Run。
+    virtual bool complete_stalled_run(
+        MockStalledRunTerminal terminal) noexcept = 0;
 
     /// @return 当前契约事件累计计数的值快照。
     virtual MockObservationSnapshot observations() const noexcept = 0;

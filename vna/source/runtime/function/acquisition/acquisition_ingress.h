@@ -22,8 +22,11 @@ public:
     /// @param capacity 首次派发前准入的 chunk 数，范围必须为
     ///        [1, kMaximumAcquisitionIngressChunks]；越界创建无效 Ingress。
     explicit AcquisitionIngress(std::size_t capacity) noexcept;
-    /// Ingress 地址被 Board callback 注册间接依赖，禁止移动。
-    AcquisitionIngress(AcquisitionIngress&& other) = delete;
+    /// 转移尚未交给 Builder 的全部 chunk owner 与固定队列状态。
+    /// @param other 所有权来源；移动后为空且无效。
+    /// @note Board 注册的是稳定的 AcquisitionEngine sink 地址而非本对象地址；
+    ///       仅允许 Engine 在非 callback 的 Draining 转换中执行本次移动。
+    AcquisitionIngress(AcquisitionIngress&& other) noexcept;
     /// Ingress 地址被 Board callback 注册间接依赖，禁止移动赋值。
     AcquisitionIngress& operator=(AcquisitionIngress&& other) = delete;
     /// 队列中的 move-only chunk owner 不能复制。

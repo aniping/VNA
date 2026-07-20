@@ -145,6 +145,7 @@ runtime::RuntimeWorkStep AcquisitionEngine::start(
         execution_ == nullptr || !prepare_authorization_.valid() ||
         !prepare_call_.valid() || !run_.valid() || !generation_.valid() ||
         !snapshot_id_.valid() || !logical_sweep_id_.valid() || !work_.valid() ||
+        !drain_.valid() ||
         !ingress_.valid() ||
         !continuation_.valid() || !delivery_.valid()) {
         return fail(
@@ -196,6 +197,7 @@ runtime::RuntimeWorkStep AcquisitionEngine::resume(
                 AcquisitionSafetyImpact::ResourceIsolationRequired;
             phase_ = Phase::Draining;
             drain_obligation_ = DrainObligation::Quarantine;
+            (void)activate_drain_owner();
             return runtime::RuntimeWorkStep::draining(drain_);
         }
         phase_ = Phase::Terminal;
@@ -247,6 +249,7 @@ runtime::RuntimeWorkStep AcquisitionEngine::resume(
                 AcquisitionSafetyImpact::ResourceIsolationRequired};
             phase_ = Phase::Draining;
             drain_obligation_ = DrainObligation::Quarantine;
+            (void)activate_drain_owner();
             return runtime::RuntimeWorkStep::draining(drain_);
         }
 
@@ -446,14 +449,25 @@ runtime::RuntimeDrainStep AcquisitionEngine::resume_drain(
     }
 
     // PrepareFailed 的 cleanup evidence 或匹配的 Run terminal 才能证明 Board
-    // 已不再持有本工作资源，此时才允许终结上层 owner 并报告 Drained。
-    (void)resources_.finalize_failure();
+    // 已不再持有本工作资源。此处只形成可靠 Drain terminal；上层 completion、
+    // Preview 与其余 RAII owner 仍保持到 Store 落下该 terminal 后再唯一终结。
     phase_ = Phase::Terminal;
     return runtime::RuntimeDrainStep::drained();
 }
 
 bool AcquisitionEngine::finalize_failure_owners() noexcept {
-    return resources_.finalize_failure();
+    return drain_owner_.has_value()
+        ? drain_owner_->finalize_failure()
+        : resources_.finalize_failure();
+}
+
+std::optional<AcquisitionDrainOwnershipSnapshot>
+AcquisitionEngine::inspect_drain_ownership(
+    bool runtime_completion_registered) const noexcept {
+    if (!drain_owner_.has_value()) {
+        return std::nullopt;
+    }
+    return drain_owner_->inspect(runtime_completion_registered);
 }
 
 std::optional<AcquisitionSucceeded> AcquisitionEngine::take_success() noexcept {
@@ -566,14 +580,16 @@ board::ChunkIngressDisposition AcquisitionEngine::on_chunk(
         remember(board::BoardContractViolationKind::WrongGeneration);
         return board::ChunkIngressDisposition::AbortRunProtocolViolation;
     }
-    if (phase_ != Phase::Acquiring || !builder_.has_value()) {
+    auto* builder = active_builder();
+    if ((phase_ != Phase::Acquiring && phase_ != Phase::Draining) ||
+        builder == nullptr) {
         callback_contract_violation_ = true;
         return board::ChunkIngressDisposition::AbortRunProtocolViolation;
     }
-    const auto disposition = ingress_.push(std::move(owned));
+    const auto disposition = active_ingress().push(std::move(owned));
     if (disposition != board::ChunkIngressDisposition::Accepted) {
         callback_contract_violation_ = true;
-        (void)builder_->record_ingress_rejection(evidence, disposition);
+        (void)builder->record_ingress_rejection(evidence, disposition);
     }
     return disposition;
 }
@@ -780,6 +796,7 @@ runtime::RuntimeWorkStep AcquisitionEngine::begin_prepared_discard(
             AcquisitionSafetyImpact::ResourceIsolationRequired;
         phase_ = Phase::Draining;
         drain_obligation_ = DrainObligation::Quarantine;
+        (void)activate_drain_owner();
         return runtime::RuntimeWorkStep::draining(drain_);
     }
 
@@ -829,6 +846,7 @@ runtime::RuntimeWorkStep AcquisitionEngine::wait_or_drain(
     drain_obligation_ = phase == AcquisitionFailurePhase::Prepare
         ? DrainObligation::PrepareTerminal
         : DrainObligation::RunTerminal;
+    (void)activate_drain_owner();
     return runtime::RuntimeWorkStep::draining(drain_);
 }
 
@@ -852,7 +870,38 @@ runtime::RuntimeWorkStep AcquisitionEngine::drain_contract_violation(
         failure_, manifest_, board_session_, capability_revision_);
     phase_ = Phase::Draining;
     drain_obligation_ = obligation;
+    (void)activate_drain_owner();
     return runtime::RuntimeWorkStep::draining(drain_);
+}
+
+bool AcquisitionEngine::activate_drain_owner() noexcept {
+    if (drain_owner_.has_value()) {
+        return drain_owner_->valid();
+    }
+    drain_owner_.emplace(
+        drain_,
+        work_,
+        run_,
+        generation_,
+        std::move(ingress_),
+        std::move(prepared_manifest_),
+        std::move(builder_),
+        std::move(resources_),
+        std::move(board_reservation_));
+    prepared_manifest_.reset();
+    builder_.reset();
+    return drain_owner_->valid();
+}
+
+AcquisitionIngress& AcquisitionEngine::active_ingress() noexcept {
+    return drain_owner_.has_value() ? drain_owner_->ingress() : ingress_;
+}
+
+NetworkObservationBuilder* AcquisitionEngine::active_builder() noexcept {
+    if (drain_owner_.has_value()) {
+        return drain_owner_->builder();
+    }
+    return builder_.has_value() ? &*builder_ : nullptr;
 }
 
 }  // namespace vna::acquisition

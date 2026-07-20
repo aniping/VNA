@@ -556,7 +556,8 @@ public:
         if (pending_run_.has_value()) {
             return reject(BoardErrc::Busy, true);
         }
-        if (scenario_.run_behavior == MockRunBehavior::Succeed &&
+        if ((scenario_.run_behavior == MockRunBehavior::Succeed ||
+             scenario_.run_behavior == MockRunBehavior::Stall) &&
             (active_manifest_.actual_point_count == 0U ||
              active_manifest_.actual_point_count > kMaximumMockSweepPoints ||
              active_manifest_.required_observation_count == 0U ||
@@ -673,6 +674,22 @@ public:
         if (pending_run_.has_value()) {
             progress_run();
         }
+    }
+
+    bool complete_stalled_run(
+        MockStalledRunTerminal terminal) noexcept override {
+        if (!pending_run_.has_value() ||
+            pending_run_->scenario.run_behavior != MockRunBehavior::Stall) {
+            return false;
+        }
+        // 只修改已捕获待办的完成方式；callback 仍必须由下一次 advance()
+        // 触发，因而测试可以精确观察 terminal 前后的容量边界。
+        pending_run_->scenario.run_behavior =
+            terminal == MockStalledRunTerminal::Completed
+            ? MockRunBehavior::Succeed
+            : MockRunBehavior::Fail;
+        pending_run_->terminal_at = now_;
+        return true;
     }
 
     MockObservationSnapshot observations() const noexcept override {
@@ -822,6 +839,12 @@ private:
             ++observations_.run_phase_callbacks;
             sink.on_phase(BoardRunPhaseEvent{
                 pending.run, pending.generation, BoardRunPhase::Acquiring});
+        }
+
+        if (pending.scenario.run_behavior == MockRunBehavior::Stall) {
+            // run_duration 只描述正常 Succeed/Fail 的 Accepted->terminal 耗时；
+            // Stall 永不把 400 ms 隐式解释为 timeout 或硬件安全动作。
+            return;
         }
 
         if (pending.scenario.run_behavior == MockRunBehavior::Succeed &&

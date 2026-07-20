@@ -216,6 +216,8 @@ private:
         bool release_pending{false};
         runtime::WorkId work{};
         store::OperationId operation{};
+        /// Draining handoff 后与 Store/Runtime 共同关联的唯一善后身份。
+        runtime::DrainId drain{};
         std::optional<acquisition::AcquisitionEngine> engine{};
         /// Store success commit 后 owner 无法安全终结时继续隔离的聚合。
         std::optional<acquisition::AcquisitionSucceeded> pending_success{};
@@ -233,7 +235,16 @@ private:
         store::OperationId operation,
         const core::Result<
             store::TerminalCommitReceipt,
+        store::StoreError>& result) noexcept;
+    bool accept_drain_handoff_commit(
+        store::OperationId operation,
+        runtime::DrainId drain,
+        const core::Result<
+            store::DrainHandoffCommitReceipt,
             store::StoreError>& result) noexcept;
+    void enter_store_fail_stop(
+        store::OperationId operation,
+        store::StoreError error) noexcept;
     void release_completed_slots() noexcept;
 
     runtime::OperationRuntime& runtime_;

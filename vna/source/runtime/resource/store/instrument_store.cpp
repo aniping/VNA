@@ -162,6 +162,139 @@ InstrumentStore::commit_acquisition_failed(
         operation, OperationState::Failed, &failure);
 }
 
+core::Result<DrainHandoffCommitReceipt, StoreError>
+InstrumentStore::commit_acquisition_draining(
+    OperationId operation,
+    runtime::DrainId drain,
+    acquisition::AcquisitionFailure failure,
+    acquisition::AcquisitionDrainOwnershipSnapshot ownership) noexcept {
+    if (!operation.valid() || !drain.valid()) {
+        return core::Result<DrainHandoffCommitReceipt, StoreError>::failure(
+            StoreError{StoreErrc::InvalidOperation});
+    }
+
+    for (std::size_t index = 0U; index < capacity_; ++index) {
+        auto& slot = slots_[index];
+        if (slot.slot_state != SlotState::Visible ||
+            slot.operation.id != operation) {
+            continue;
+        }
+        if (slot.drain_visible) {
+            return core::Result<DrainHandoffCommitReceipt, StoreError>::failure(
+                StoreError{
+                    slot.drain.id == drain
+                        ? StoreErrc::DrainAlreadyTerminal
+                        : StoreErrc::DrainIdentityMismatch});
+        }
+        if (slot.operation.state != OperationState::Accepted) {
+            return core::Result<DrainHandoffCommitReceipt, StoreError>::failure(
+                StoreError{StoreErrc::DrainAlreadyTerminal});
+        }
+
+        // LifecycleTerminalReservation 在 Accepted 前已经为父终态以及可选 Drain
+        // 终态各留出固定字段。所有值先在栈上形成，再通过一个 revision 切换，
+        // 因而查询者不会看见“父已失败但 Drain 尚不存在”的半提交状态。
+        const auto terminal_revision = revision_ + 1U;
+        OperationEventSnapshot parent_event{
+            OperationEventId{next_event_id_++},
+            operation,
+            OperationState::Failed,
+            terminal_revision,
+            true,
+            failure};
+        parent_event.has_drain = true;
+        parent_event.drain = drain;
+        const DrainSnapshot drain_snapshot{
+            drain,
+            operation,
+            DrainState::Draining,
+            terminal_revision,
+            ownership,
+            true};
+
+        revision_ = terminal_revision;
+        slot.operation.state = OperationState::Failed;
+        slot.operation.revision = terminal_revision;
+        slot.fence_visible = true;
+        slot.fence = OperationFenceSnapshot{
+            operation, OperationState::Failed, terminal_revision};
+        status_ = InstrumentStatusSnapshot{
+            operation, OperationState::Failed, terminal_revision};
+        slot.event_visible = true;
+        slot.event = parent_event;
+        slot.drain_visible = true;
+        slot.drain = drain_snapshot;
+        ++events_;
+        return core::Result<DrainHandoffCommitReceipt, StoreError>::success(
+            DrainHandoffCommitReceipt{operation, drain, terminal_revision});
+    }
+
+    return core::Result<DrainHandoffCommitReceipt, StoreError>::failure(
+        StoreError{StoreErrc::OperationNotFound});
+}
+
+core::Result<DrainTerminalCommitReceipt, StoreError>
+InstrumentStore::commit_drain_terminal(
+    OperationId operation,
+    runtime::DrainId drain,
+    runtime::RuntimeDrainTerminalKind terminal) noexcept {
+    if (!operation.valid() || !drain.valid()) {
+        return core::Result<DrainTerminalCommitReceipt, StoreError>::failure(
+            StoreError{StoreErrc::InvalidOperation});
+    }
+
+    for (std::size_t index = 0U; index < capacity_; ++index) {
+        auto& slot = slots_[index];
+        if (slot.slot_state != SlotState::Visible ||
+            slot.operation.id != operation) {
+            continue;
+        }
+        if (!slot.drain_visible) {
+            return core::Result<DrainTerminalCommitReceipt, StoreError>::failure(
+                StoreError{StoreErrc::DrainNotFound});
+        }
+        if (slot.drain.id != drain) {
+            return core::Result<DrainTerminalCommitReceipt, StoreError>::failure(
+                StoreError{StoreErrc::DrainIdentityMismatch});
+        }
+        if (slot.drain.state != DrainState::Draining ||
+            slot.drain_event_visible) {
+            return core::Result<DrainTerminalCommitReceipt, StoreError>::failure(
+                StoreError{StoreErrc::DrainAlreadyTerminal});
+        }
+
+        DrainState state{DrainState::CleanupFailed};
+        switch (terminal) {
+            case runtime::RuntimeDrainTerminalKind::Drained:
+                state = DrainState::Drained;
+                break;
+            case runtime::RuntimeDrainTerminalKind::Quarantined:
+                state = DrainState::Quarantined;
+                break;
+            case runtime::RuntimeDrainTerminalKind::CleanupFailed:
+                state = DrainState::CleanupFailed;
+                break;
+        }
+        const auto terminal_revision = ++revision_;
+        slot.drain.state = state;
+        slot.drain.revision = terminal_revision;
+        slot.drain_event_visible = true;
+        slot.drain_event = DrainEventSnapshot{
+            OperationEventId{next_event_id_++},
+            drain,
+            operation,
+            state,
+            terminal_revision};
+        ++drain_events_;
+        return core::Result<DrainTerminalCommitReceipt, StoreError>::success(
+            DrainTerminalCommitReceipt{
+                operation, drain, state, terminal_revision});
+    }
+
+    return core::Result<DrainTerminalCommitReceipt, StoreError>::failure(
+        StoreError{StoreErrc::OperationNotFound});
+}
+
 CompletedSweepCommitResult InstrumentStore::commit_completed_sweep(
     OperationId operation,
     acquisition::CandidateCommitLease&& candidate) noexcept {
@@ -306,6 +439,21 @@ std::optional<OperationSnapshot> InstrumentStore::inspect_operation(
     return std::nullopt;
 }
 
+std::optional<DrainSnapshot> InstrumentStore::inspect_drain(
+    runtime::DrainId drain) const noexcept {
+    if (!drain.valid()) {
+        return std::nullopt;
+    }
+    for (std::size_t index = 0U; index < capacity_; ++index) {
+        const auto& slot = slots_[index];
+        if (slot.slot_state == SlotState::Visible && slot.drain_visible &&
+            slot.drain.id == drain) {
+            return slot.drain;
+        }
+    }
+    return std::nullopt;
+}
+
 std::optional<CompletedSweepBundle> InstrumentStore::inspect_completed_sweep(
     OperationId operation) const noexcept {
     for (std::size_t index = 0U; index < capacity_; ++index) {
@@ -348,6 +496,22 @@ std::optional<OperationEventSnapshot> InstrumentStore::latest_event() const noex
         : std::optional<OperationEventSnapshot>{*latest};
 }
 
+std::optional<DrainEventSnapshot>
+InstrumentStore::latest_drain_event() const noexcept {
+    const DrainEventSnapshot* latest{nullptr};
+    for (std::size_t index = 0U; index < capacity_; ++index) {
+        const auto& slot = slots_[index];
+        if (slot.drain_event_visible &&
+            (latest == nullptr ||
+             slot.drain_event.revision > latest->revision)) {
+            latest = &slot.drain_event;
+        }
+    }
+    return latest == nullptr
+        ? std::optional<DrainEventSnapshot>{}
+        : std::optional<DrainEventSnapshot>{*latest};
+}
+
 PublicationCountSnapshot InstrumentStore::inspect_publications() const noexcept {
     return publications_;
 }
@@ -356,11 +520,15 @@ StoreSnapshot InstrumentStore::inspect() const noexcept {
     StoreSnapshot snapshot{};
     snapshot.revision = revision_;
     snapshot.events = events_;
+    snapshot.drain_events = drain_events_;
     for (std::size_t index = 0U; index < capacity_; ++index) {
         if (slots_[index].slot_state == SlotState::Reserved) {
             ++snapshot.reserved_lifecycles;
         } else if (slots_[index].slot_state == SlotState::Visible) {
             ++snapshot.visible_operations;
+            if (slots_[index].drain_visible) {
+                ++snapshot.visible_drains;
+            }
         }
     }
     return snapshot;

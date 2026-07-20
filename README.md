@@ -12,18 +12,20 @@
 
 - `BoardProvider → OpenedBoard.Execution` 的 discover/open/cached capability、prepare 与 run；
 - `MockBoardControl` 虚拟时间，以及确定性的 receiver-wave 多块交付计划、实际点范围、类型化质量标志和 Prepare/Run/非法 Manifest 故障剧本；
-- Mock Run 从 `RunAccepted` 起采用 300～400ms 的剧本时长；成功块按确定性 offset 在窗口内分批交付，成功或失败的唯一 terminal 位于窗口末端，标称测试值为 350ms，该时间不包含提交或 Prepare；
+- Mock 普通 Run 从 `RunAccepted` 起采用 300～400ms 的剧本时长；成功块按确定性 offset 在窗口内分批交付，成功或失败的唯一 terminal 位于窗口末端，标称测试值为 350ms，该时间不包含提交、Prepare 或 Runtime deadline。`Stall` 剧本即使虚拟时间越过 400ms 也不自动产生 terminal，只能由测试控制面为下一次 `advance()` 安排迟到成功/失败；这不是 timeout、abort、RF-off 或安全证明；
 - prepare/run 同步 Rejected 时归还全部 move-only 输入且零 callback；
 - Accepted 后非内联回调、唯一 terminal 和 terminal 后零回调；
 - Runtime 在 `reserve_work` 时同时冻结有限 deadline/budget，并绑定 `receiver + WorkId + generation + completion mailbox`；不同控制消费者不能误取彼此终态，Accepted 后的 dispatch 不再申请完成容量；
 - 工作按 `dispatch → start/resume → typed completion` 分步推进，终态先写入预留 mailbox，再由后续 Control pump 可靠交付，提交不等待工作完成；
 - 工作返回 `Running` 或尚有 completion 待交付时继续占用 slot；返回 `Draining` 后保持容量占用，直到同一注册收到对应 Drain 终态；
+- 已接受 Run 在独立 `ExecutionContext` deadline 前没有 terminal 时，L4 会把 Manifest lease、Builder、Ingress、上层 A/candidate/Buffer/completion/disabled-Preview owner 与 Board execution reservation 一次性移入具名 `AcquisitionDrainOwner`；Runtime 同一 Draining 槽继续持有可靠 completion registration。Store 使用 Accepted 前预留的 child terminal 容量，让父 Failed 事实、失败 Event 与具名 Drain 在同一 revision 可见，并为 Drain 安装独立 terminal reservation；
 - Store 在 Operation 可见前预留 terminal capacity，初始 commit 失败不派发，已安装 reservation 可在容量压力下提交终态；即使 Accepted 后发生内部 Runtime dispatch 契约故障，也会用该预留容量把同一 Operation、status、fence 和 Event 原子提交为 Failed；
 - L2 先提交 Accepted Operation、再 dispatch，Runtime completion 再提交 L5 权威终态的跨层合同测试。
 - 公共 A-only 提交只返回 `OperationId`，不接受 `RuntimeWork`、Board token 或输出数组；无 diagnostic 授权、非零 `expected_capability_revision` 与当前 cut 冲突、资源不足或初始 commit 失败均同步拒绝，不创建幽灵 Operation/Event，也不调用 Board；同步错误同时返回稳定的 Admission 阶段、重试、安全影响和已读取的 capability session/revision 事实，不要求调用者解析诊断字符串；
 - A-only 上层资源以七个具名 move-only RAII owner 在首次 dispatch 前全量准入；Mock Adapter 还会真实预占同一次 Prepare/Run 的 call、队列和 callback sink execution 槽，并强制其按 `Reserved → Preparing → Prepared → Running → Terminal` 一次性消费；非法 call/sink、跨阶段复用或第二项并发提交均同步零 callback/零幽灵拒绝；实际 Manifest 只能一次性消费精确收窄 capability，按每项观测的真实 64 点分块数核对 Ingress 上界，并以 `source state + receiver path + wave` 完整身份判重，不能扩大频率/点数 envelope；
 - Adapter 返回错误的 `PrepareAccepted`/`RunAccepted` 身份时，Acquisition 会提交类型化失败并进入对应 terminal 的 Drain；只有携带清理证据的 `PrepareFailed` 或匹配的 Run terminal 可以解除 owner，`PrepareSucceeded`/`PrepareDraining` 因仍代表底板资源而转入 `Quarantined`；
 - `PrepareDraining` 会把具名 Board drain owner 与本地/Board 容量一起转入 `Quarantined`；当前 seam 没有后续排空证明，因此 Kernel 持续隔离整组 owner，绝不谎报 `Drained` 或复用容量；
+- 处于 `Draining` 的 Run 即使后来交付完整成功数据，也只能由善后 owner 消费或隔离，不能密封 candidate、发布 A 或把父 Operation 改写为 Completed。只有匹配的唯一 Drain terminal 成功写入 Store 后，Kernel 才一次性终结 completion/Preview owner 并销毁其余 RAII owner；错误 DrainId 与重复 terminal 返回类型化 Store 合同错误；
 - Mock 同步 Prepare/Run 拒绝不产生 callback；Prepare 接受后的异步失败必须等携带 cleanup evidence 的唯一 terminal，才允许上层提交失败并释放 owner。Prepare 已成功但 Manifest 无效、Run 同步拒绝，或 Runtime stop/deadline/budget 已阻止进入 Run 时，上层会显式提交 Prepared discard，并在非内联唯一 discard terminal 前持续持有 Prepared 及相关 owner；discard 被拒绝或清理失败则隔离资源。失败路径在同一 Store revision 原子写入 Failed Operation、status、fence 和类型化 Event，保留 phase、Manifest/session/revision、相关 ID、retry class 和执行生命周期 safety impact，且 A/B/Stage/C 正式发布计数保持为 0；
 - Prepared Manifest 以有界 required observation map 声明本轮必需接收机波量；Mock 成功输出的点数、身份与形状只从该实际清单派生，不再使用独立场景点数；
 - Kernel 用 `2 × ceil(point_count / 64)` 在 O(1) 时间内计算 a/b 的保守正式块数；构造时冻结的 Ingress 或 Buffer Profile 容量不足会在任何 Board execution reservation、Operation 或 Event 之前同步拒绝，默认产品切片容量为 8 块且 Run 开始后不扩张；
@@ -43,7 +45,7 @@
 - Web、SCPI、cpp-httplib、Eigen3 和 JSON；
 - 公司 AArch64 SDK 编译与目标机/HIL 验证。
 
-当前单个 Pool 槽最多携带 64 个复数样本，Mock 波形源和正式 A 快照上限为 201 点；一项观测最多 4 块，当前 a/b A-only 的 Operation、必需观测、点、chunk、Event、Ingress 和 Buffer 均有公开编译期上限。driver-buffer-reuse、可预测容量不足、运行期 Ingress 超限与 Buffer 回退耗尽矩阵已由 Mock 合同测试验收；这些结果仍只证明当前项目 Buffer/所有权边界，不能替代公司底软 ABI、真实板卡能力或目标机容量证据。
+当前单个 Pool 槽最多携带 64 个复数样本，Mock 波形源和正式 A 快照上限为 201 点；一项观测最多 4 块，当前 a/b A-only 的 Operation、必需观测、点、chunk、Operation Event、Drain Event、Ingress 和 Buffer 均有公开编译期上限。driver-buffer-reuse、可预测容量不足、运行期 Ingress 超限、Buffer 回退耗尽与卡住 Run 善后矩阵已由 Mock 合同测试验收；这些结果仍只证明当前项目 Buffer/软件所有权边界，不能替代公司底软 ABI、真实板卡能力、abort/RF-off/readback 或目标机容量证据。
 
 当前可执行产品组合只包含 `VnaBoardMock`，没有 Real Board Adapter、SafetyLane、RF-off/readback 或 HIL 证据。A-only 授权明确命名为 Mock diagnostics；不得把该纵切连接真实 RF 或宣称具备生产安全能力。
 失败事实中的 safety impact 只区分“Run 未接受”“匹配 Run terminal 已观察到”与“资源必须隔离”，不等价于物理 RF-off 或真实单板安全证明。

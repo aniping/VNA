@@ -3,6 +3,7 @@ set(VNA_RUNTIME_HEADERS
     core/base/strong_id.h
     function/acquisition/a_only_completion_owners.h
     function/acquisition/acquisition_admission.h
+    function/acquisition/acquisition_drain_owner.h
     function/acquisition/acquisition_engine.h
     function/acquisition/acquisition_ingress.h
     function/acquisition/acquisition_result.h
@@ -23,6 +24,7 @@ set(VNA_RUNTIME_HEADERS
 set(VNA_RUNTIME_SOURCES
     function/acquisition/a_only_completion_owners.cpp
     function/acquisition/acquisition_admission.cpp
+    function/acquisition/acquisition_drain_owner.cpp
     function/acquisition/acquisition_engine.cpp
     function/acquisition/acquisition_ingress.cpp
     function/acquisition/candidate_commit_lease.cpp

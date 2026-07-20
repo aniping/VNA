@@ -347,16 +347,33 @@ void InstrumentKernel::on_runtime_terminal(
         return;
     }
 
+    if (terminal.kind == runtime::RuntimeTerminalKind::Draining) {
+        const auto ownership = slot.engine->inspect_drain_ownership(true);
+        if (!ownership.has_value() || !terminal.drain.valid()) {
+            enter_store_fail_stop(
+                slot.operation,
+                store::StoreError{store::StoreErrc::IntegrityFault});
+            return;
+        }
+        const auto committed = store_.commit_acquisition_draining(
+            slot.operation,
+            terminal.drain,
+            slot.engine->failure(),
+            *ownership);
+        if (accept_drain_handoff_commit(
+                slot.operation, terminal.drain, committed)) {
+            slot.drain = terminal.drain;
+        }
+        return;
+    }
+
     const auto committed = store_.commit_acquisition_failed(
         slot.operation, slot.engine->failure());
     if (!accept_state_only_failure_commit(slot.operation, committed)) {
         return;
     }
-
-    if (terminal.kind != runtime::RuntimeTerminalKind::Draining) {
-        (void)slot.engine->finalize_failure_owners();
-        slot.release_pending = true;
-    }
+    (void)slot.engine->finalize_failure_owners();
+    slot.release_pending = true;
 }
 
 void InstrumentKernel::on_runtime_drain_terminal(
@@ -367,13 +384,28 @@ void InstrumentKernel::on_runtime_drain_terminal(
         return;
     }
     auto& slot = slots_[index];
+    const auto committed = store_.commit_drain_terminal(
+        slot.operation, terminal.drain, terminal.kind);
+    if (!committed.has_value()) {
+        enter_store_fail_stop(slot.operation, committed.error());
+        return;
+    }
+    if (committed.value().drain != slot.drain ||
+        committed.value().operation != slot.operation ||
+        committed.value().revision == 0U) {
+        enter_store_fail_stop(
+            slot.operation,
+            store::StoreError{store::StoreErrc::IntegrityFault});
+        return;
+    }
     if (terminal.kind != runtime::RuntimeDrainTerminalKind::Drained) {
         // Quarantined/CleanupFailed 表示 owner 仍未安全释放；保持 Engine、上层
         // 资源槽和 Board execution reservation 隔离，不能回收到新提交。
         return;
     }
-    (void)slot.engine->finalize_failure_owners();
-    slot.release_pending = true;
+    if (slot.engine->finalize_failure_owners()) {
+        slot.release_pending = true;
+    }
 }
 
 std::size_t InstrumentKernel::find_free_slot() const noexcept {
@@ -439,6 +471,53 @@ bool InstrumentKernel::accept_state_only_failure_commit(
     return false;
 }
 
+bool InstrumentKernel::accept_drain_handoff_commit(
+    store::OperationId operation,
+    runtime::DrainId drain,
+    const core::Result<
+        store::DrainHandoffCommitReceipt,
+        store::StoreError>& result) noexcept {
+    const auto operation_snapshot = store_.inspect_operation(operation);
+    const auto drain_snapshot = store_.inspect_drain(drain);
+    const auto fence = store_.inspect_fence(operation);
+    const auto status = store_.inspect_status();
+    const auto event = store_.latest_event();
+    const bool matches = result.has_value() &&
+        result.value().operation == operation &&
+        result.value().drain == drain && result.value().revision != 0U &&
+        operation_snapshot.has_value() && drain_snapshot.has_value() &&
+        fence.has_value() && event.has_value() &&
+        operation_snapshot->state == store::OperationState::Failed &&
+        drain_snapshot->state == store::DrainState::Draining &&
+        operation_snapshot->revision == result.value().revision &&
+        drain_snapshot->revision == result.value().revision &&
+        fence->revision == result.value().revision &&
+        status.operation == operation &&
+        status.revision == result.value().revision &&
+        event->operation == operation &&
+        event->revision == result.value().revision && event->has_drain &&
+        event->drain == drain;
+    if (matches) {
+        return true;
+    }
+    enter_store_fail_stop(
+        operation,
+        result.has_value()
+            ? store::StoreError{store::StoreErrc::IntegrityFault}
+            : result.error());
+    return false;
+}
+
+void InstrumentKernel::enter_store_fail_stop(
+    store::OperationId operation,
+    store::StoreError error) noexcept {
+    integrity_ = InstrumentIntegritySnapshot{
+        InstrumentIntegrityState::StoreFailStop,
+        operation,
+        true,
+        error};
+}
+
 void InstrumentKernel::release_completed_slots() noexcept {
     for (auto& slot : slots_) {
         if (slot.release_pending) {
@@ -447,6 +526,7 @@ void InstrumentKernel::release_completed_slots() noexcept {
             slot.release_pending = false;
             slot.work = runtime::WorkId{};
             slot.operation = store::OperationId{};
+            slot.drain = runtime::DrainId{};
             slot.pending_success.reset();
         }
     }

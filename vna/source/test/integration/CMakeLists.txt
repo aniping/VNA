@@ -46,3 +46,10 @@ vna_add_test(
     vna::runtime
     vna::board_mock
 )
+
+vna_add_test(
+    vna_acquisition_drain_ownership_contract_tests
+    acquisition_drain_ownership_contract_tests.cpp
+    vna::runtime
+    vna::board_mock
+)

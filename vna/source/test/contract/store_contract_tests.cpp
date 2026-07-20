@@ -125,4 +125,61 @@ TEST(InstrumentStoreContract, InstalledTerminalReservationCommitsUnderCapacityPr
     VNA_REQUIRE(store.inspect_operation(OperationId{41U})->state == OperationState::Failed);
 }
 
+TEST(InstrumentStoreContract,
+     DrainTerminalRejectsWrongIdentityAndDuplicateWithTypedErrors) {
+    using namespace vna;
+
+    store::InstrumentStore store{1U};
+    auto reservation = store.reserve_lifecycle_terminal();
+    VNA_REQUIRE(reservation.has_value());
+    const store::OperationId operation{41U};
+    const runtime::DrainId drain{73U};
+    const auto accepted = store.commit_accepted(
+        operation,
+        runtime::WorkId{51U},
+        core::StrongDigest{61U},
+        std::move(reservation).take_value());
+    VNA_REQUIRE(std::holds_alternative<store::AcceptedCommitReceipt>(accepted));
+
+    acquisition::AcquisitionDrainOwnershipSnapshot ownership{};
+    ownership.board_run_callback_obligation = true;
+    ownership.manifest_owned = true;
+    ownership.builder_owned = true;
+    ownership.buffer_ingress_owned = true;
+    ownership.runtime_completion_registered = true;
+    ownership.a_only_completion_owned = true;
+    ownership.disabled_preview_owned = true;
+    ownership.exact_finalization_consumed = true;
+    ownership.run_resources_narrowed = true;
+    const auto handoff = store.commit_acquisition_draining(
+        operation,
+        drain,
+        acquisition::AcquisitionFailure{},
+        ownership);
+    VNA_REQUIRE(handoff.has_value());
+
+    const auto wrong_identity = store.commit_drain_terminal(
+        operation,
+        runtime::DrainId{74U},
+        runtime::RuntimeDrainTerminalKind::Drained);
+    VNA_REQUIRE(!wrong_identity.has_value());
+    VNA_REQUIRE(
+        wrong_identity.error().code == store::StoreErrc::DrainIdentityMismatch);
+    VNA_REQUIRE(
+        store.inspect_drain(drain)->state == store::DrainState::Draining);
+
+    const auto committed = store.commit_drain_terminal(
+        operation, drain, runtime::RuntimeDrainTerminalKind::Drained);
+    VNA_REQUIRE(committed.has_value());
+    VNA_REQUIRE(committed.value().drain == drain);
+    VNA_REQUIRE(committed.value().state == store::DrainState::Drained);
+
+    const auto duplicate = store.commit_drain_terminal(
+        operation, drain, runtime::RuntimeDrainTerminalKind::Drained);
+    VNA_REQUIRE(!duplicate.has_value());
+    VNA_REQUIRE(
+        duplicate.error().code == store::StoreErrc::DrainAlreadyTerminal);
+    VNA_REQUIRE(store.inspect().drain_events == 1U);
+}
+
 }  // namespace

@@ -7,6 +7,18 @@ namespace vna::acquisition {
 AcquisitionIngress::AcquisitionIngress(std::size_t capacity) noexcept
     : capacity_(capacity > 0U && capacity <= slots_.size() ? capacity : 0U) {}
 
+AcquisitionIngress::AcquisitionIngress(AcquisitionIngress&& other) noexcept
+    : slots_(std::move(other.slots_)),
+      capacity_(other.capacity_),
+      head_(other.head_),
+      tail_(other.tail_),
+      size_(other.size_) {
+    other.capacity_ = 0U;
+    other.head_ = 0U;
+    other.tail_ = 0U;
+    other.size_ = 0U;
+}
+
 board::ChunkIngressDisposition AcquisitionIngress::push(
     board::ReceiverObservationChunk&& chunk) noexcept {
     // rvalue-reference 绑定本身不会移动。先建立本地 owner，确保所有拒绝分支
