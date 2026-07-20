@@ -24,3 +24,4 @@
 - `LifecycleTerminalReservation` 在 Accepted 前同时预留父 Operation terminal 与可选 child Drain terminal 字段；handoff 原子公布父 Failed/Event/Drain，Drain terminal 使用独立 Event。
 - `AcquisitionDrainOwnershipContract` 覆盖 deadline handoff、容量不可复用、早期显式释放 Stall、迟到成功数据不发布 A、唯一 terminal 后释放及重新准入；迟到重复 terminal/terminal 后 callback 必须隔离 session 并保持 Quarantined owner；`InstrumentStoreContract` 覆盖错误 DrainId 与重复 terminal。
 - MinGW 测试组合：78/78 通过；关闭测试的产品构建与依赖图检查见本工单提交验证记录。
+- 双审核记录：候选 `b0b34fa` 已通过独立规格审核（10/10 PASS，blocking 0、judgement 0）和代码/工程规范审核（PASS，blocking 0、judgement 0）；首轮审核发现的 Draining 迟到协议违约误报 `Drained` 及 Mock 提前释放时序问题均已由回归测试关闭。
