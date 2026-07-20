@@ -23,3 +23,5 @@
 - 2026-07-19：Mock 显式计划可确定性表达 gap、重复、overlap 和 Manifest 范围错误；可限制 Completed terminal 前的实际交付数，并可交付 moved-from invalid lease 验证 Ingress 拒绝。冲突/重叠/越界块先被合法 Ingress 接收，故 Board 仍可报告 Completed，随后 Builder 拒绝再次证明 terminal 不是完整性替代品；Mock-specific 分支没有进入 L2/L4/L5。
 - 2026-07-19：端到端矩阵逐项验证 Failed Operation、status、fence、Event 同 revision、零新 A、类型化阶段/retry/safety/身份/覆盖事实，并在每次失败后复查既有 A 的 ID、revision、LogicalSweepId、轴、a/b 首尾值、逐点质量及 Manifest/Run 来源不变；最后一轮乱序完整计划仍成功发布，证明实现没有退化成按 callback 顺序组装。
 - 2026-07-19：候选前验证为 MinGW Debug 65/65 通过；`BUILD_TESTING=OFF` 产品构建通过且 build graph 对 GoogleTest、测试源码及 Runtime/Store hook 宏引用为 0；`git diff --check` 通过。提交性能使用 8 次 warm-up、64 次记录：1 点 median 2400ns/p95 3600ns，201 点 median 2600ns/p95 3500ns；等待 Standards/Spec 双审核。
+- 2026-07-19：首轮独立 Spec 审核 9/9 PASS、0 blocking、0 judgement；首轮 Standards 审核发现 1 个 blocking、0 judgement：新增公开头 `network_observation_error.h` 未登记到 Runtime CMake 的显式头文件清单。现已补齐该登记，未改变运行时行为，等待重新验证与双审核。
+- 2026-07-19：CMake 登记修复后，工单 07 定向测试 1/1、MinGW Debug 全量测试 65/65、`BUILD_TESTING=OFF` 产品构建均通过；产品构建图对 GoogleTest、测试源码及 Runtime/Store hook 宏引用为 0，`git diff --check` 通过，提交后重新发起完整范围双审核。

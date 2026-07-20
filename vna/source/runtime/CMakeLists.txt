@@ -8,6 +8,7 @@ set(VNA_RUNTIME_HEADERS
     function/acquisition/acquisition_result.h
     function/acquisition/candidate_commit_lease.h
     function/acquisition/network_observation_builder.h
+    function/acquisition/network_observation_error.h
     function/instrument/instrument_kernel.h
     function/instrument/sweep_admission.h
     function/operation/operation_runtime.h
