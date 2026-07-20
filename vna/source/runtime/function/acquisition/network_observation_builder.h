@@ -2,6 +2,7 @@
 
 #include "runtime/core/base/result.h"
 #include "runtime/function/acquisition/candidate_commit_lease.h"
+#include "runtime/function/acquisition/network_observation_error.h"
 #include "runtime/platform/board/board_port.h"
 
 #include <array>
@@ -10,25 +11,6 @@
 #include <optional>
 
 namespace vna::acquisition {
-
-/// 单板观测构建失败的稳定分类。
-enum class NetworkObservationErrc {
-    /// Manifest 的实际轴或必需观测图不完整、重复或超出当前有界切片。
-    InvalidManifest,
-    /// 数据块身份、序号、点范围或 payload 与 Manifest/Run 不匹配。
-    InvalidChunk,
-    /// Run terminal 身份、数量或种类违反契约。
-    InvalidTerminal,
-    /// 成功 terminal 到达时仍缺少必需观测或完整点覆盖。
-    IncompleteCoverage,
-    /// Builder 已经密封，不能再次接收或密封。
-    AlreadySealed
-};
-
-/// NetworkObservationBuilder 返回的类型化错误。
-struct NetworkObservationError final {
-    NetworkObservationErrc code{NetworkObservationErrc::InvalidManifest};
-};
 
 /// 按 Prepared Manifest 必需观测图组装单板完整接收机波量的唯一长期 owner。
 ///
@@ -65,6 +47,14 @@ public:
     board::ChunkIngressDisposition accept(
         board::ReceiverObservationChunk&& chunk) noexcept;
 
+    /// 把 Ingress 已接管但未能入队的正式块记入同一失败账本。
+    /// @param chunk 不持有 payload 的来源、序号和声明点范围副本。
+    /// @param disposition Ingress 返回的容量或协议拒绝；Accepted 不是合法入参。
+    /// @return 首项稳定失败证据；不接管任何 Buffer 所有权，后续错误不覆盖它。
+    NetworkObservationError record_ingress_rejection(
+        BoardChunkEvidence chunk,
+        board::ChunkIngressDisposition disposition) noexcept;
+
     /// 记录唯一 Run terminal。
     /// @param terminal 必须与构造时的 run/generation 匹配；按值保存。
     /// @return 首次匹配 terminal 返回 true；重复或错误身份返回 false。
@@ -98,9 +88,20 @@ private:
         const CandidateObservationLease& observation,
         std::uint32_t point_begin,
         std::uint32_t point_count) const noexcept;
+    bool duplicates_existing_range(
+        const CandidateObservationLease& observation,
+        std::uint32_t point_begin,
+        std::uint32_t point_count) const noexcept;
     bool has_complete_coverage(
         const CandidateObservationLease& observation) const noexcept;
-    NetworkObservationError remember(NetworkObservationErrc code) noexcept;
+    std::optional<std::size_t> first_incomplete_observation() const noexcept;
+    ObservationCoverageSummary summarize_coverage(
+        std::optional<std::size_t> observation_index) const noexcept;
+    NetworkObservationError make_error(
+        NetworkObservationErrc code,
+        std::optional<std::size_t> observation_index,
+        const BoardChunkEvidence* offending_chunk) const noexcept;
+    NetworkObservationError remember(NetworkObservationError error) noexcept;
 
     board::PreparedExecutionManifest manifest_{};
     board::BoardRunId run_{};

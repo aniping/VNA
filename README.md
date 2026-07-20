@@ -29,6 +29,7 @@
 - Kernel 在首次派发前从固定 `AcquisitionBufferPool` 为 a/b 两项 201 点观测原子预留最坏 8 个回退槽并绑定到 `RunDeliveryGrant`；Mock 用不可转移源数组模拟底软，每个块在 callback 前只复制一次到 Pool，之后 `AcquisitionChunkLease` 只移动槽位指针和 generation；
 - 正式 chunk 通过固定容量 `AcquisitionIngress` 把 move-only `AcquisitionChunkLease` 从 Board callback 转交给唯一长期 owner `NetworkObservationBuilder`；拒绝也会消费 payload，回调不生成轴、不写 Store；
 - Builder 按 Manifest 中 `source state + receiver path + wave` 的观测集合和点覆盖重组乱序块，不依赖 callback 顺序或固定 a/b 数组位置；只有实际轴、全部必需覆盖、质量和唯一 Completed terminal 均闭合后才密封 `CandidateCommitLease`，缺少必需观测时不发布部分 A；
+- Builder 对整项缺失、内部 gap、冲突重复、部分 overlap、越界范围、成功 terminal 早于完整覆盖、failed terminal 和 Ingress 拒绝形成稳定失败账本；失败 Event 保存 Manifest/Prepared/Run/generation、相关观测、被拒绝块，以及期望点、已接收唯一点和首段缺口摘要。Completed terminal 不能覆盖账本错误，旧 A 不会被补零、最后写入覆盖或后续失败扫描修改；
 - L2 在 Runtime Completed 后才把 candidate 交给 Store；Store 在一个 revision 内共同发布不可变 `CompletedSweepBundle`、Completed Operation、status/fence 和完成 Event，receipt 返回后才终结 A-only completion 与 disabled Preview owner；
 - Store 成功发布可在有 schema 的 validation 或本地 write staging 阶段被确定性拒绝；两类普通拒绝都在同一个 L2 completion 回合使用 Accepted 时安装的终态预留提交 state-only Failed，A、Completed Event/status/fence 全部不逃逸，candidate 随后唯一 abort，completion/disabled Preview owner 只在失败 commit receipt 后终结；
 - 若连预留的 state-only Failed 都因显式 Store integrity fault 无法提交，Kernel 进入可查询的 `StoreFailStop`，保留 candidate、Board/采集 owner 并拒绝新扫描；当前未实现自动或人工恢复命令，不能用析构或重新提交绕过隔离；

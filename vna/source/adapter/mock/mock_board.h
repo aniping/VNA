@@ -59,6 +59,14 @@ struct MockCapabilityProfile final {
     std::uint32_t maximum_points{201U};
 };
 
+/// Mock 显式交付计划对单块 payload lease 的处理方式。
+enum class MockChunkPayloadBehavior {
+    /// 从首次派发前预留的 BufferPool 槽签发正常 move-only lease。
+    ValidLease,
+    /// 故意交付已经失效的 lease，用于验证 Ingress 拒绝不会静默丢块后成功。
+    InvalidLease
+};
+
 /// Mock 在一次 Run 窗口内交付一个确定性数据块的计划项。
 struct MockChunkDelivery final {
     /// 数据块对应的激励状态，必须匹配 Prepared Manifest。
@@ -67,7 +75,8 @@ struct MockChunkDelivery final {
     ReceiverPathId receiver_path{1U};
     /// 从 incident_a 或 response_b 选择数据源的原始波量身份。
     ReceiverWave wave{ReceiverWave::IncidentA};
-    /// 本块第一个样本在完整观测中的零基点索引。
+    /// 本块第一个样本在完整观测中的零基点索引。显式故障剧本可在仍受
+    /// kMaximumMockSweepPoints 约束时超出 Manifest 观测范围，以注入 OutOfRange。
     std::uint32_t point_begin{0U};
     /// 本块有效点数，范围为 [1, kMaximumContractChunkSamples]。
     std::uint32_t point_count{0U};
@@ -75,6 +84,9 @@ struct MockChunkDelivery final {
     VirtualDuration offset{0U};
     /// 随本块传播到逐点 Quality Plane 的质量标志。
     ChunkQuality quality{};
+    /// payload lease 是否有效；仅测试非合规 Ingress 交付路径时使用 InvalidLease。
+    MockChunkPayloadBehavior payload_behavior{
+        MockChunkPayloadBehavior::ValidLease};
 };
 
 /// 一次可重复 Mock 扫描的输入剧本。
@@ -103,9 +115,13 @@ struct MockScenario final {
     /// B 波数据块携带的质量标记。
     ChunkQuality response_quality{};
     /// 可选的显式交付计划；count 为 0 时由 Manifest 确定性生成完整分块。
+    /// 非 0 计划允许确定性表达 gap、重复、overlap 和 Manifest 范围错误。
     std::array<MockChunkDelivery, kMaximumRunChunks> chunk_deliveries{};
     /// chunk_deliveries 中有效计划项数量，范围为 [0, kMaximumRunChunks]。
     std::uint32_t chunk_delivery_count{0U};
+    /// Succeed Run 在 Completed terminal 前最多交付的计划块数；0 表示交付全部，
+    /// 非 0 值必须不大于解析后的计划数，可用于确定性制造 terminal-before-complete。
+    std::uint32_t maximum_chunks_before_completed_terminal{0U};
 };
 
 /// Mock 从创建以来发生的契约事件计数快照。

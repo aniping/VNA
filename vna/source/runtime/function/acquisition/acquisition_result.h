@@ -2,7 +2,10 @@
 
 #include "runtime/function/acquisition/a_only_completion_owners.h"
 #include "runtime/function/acquisition/candidate_commit_lease.h"
+#include "runtime/function/acquisition/network_observation_error.h"
 #include "runtime/platform/board/board_port.h"
+
+#include <cstdint>
 
 namespace vna::acquisition {
 
@@ -112,6 +115,10 @@ struct AcquisitionFailure final {
     board::BoardSessionId board_session{};
     /// Manifest 声明的 capability revision；此前失败时为 0。
     std::uint64_t capability_revision{0U};
+    /// observation_error 是否保存观测账本或 Ingress 失败证据。
+    bool has_observation_error{false};
+    /// has_observation_error 为 true 时保存有界身份、覆盖和 terminal 摘要。
+    NetworkObservationError observation_error{};
 };
 
 /// L4 成功终态移交给 L2 的完整 publication 与 purpose-specific owner 集合。

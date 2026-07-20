@@ -122,6 +122,11 @@ private:
     runtime::RuntimeWorkStep fail(
         AcquisitionFailurePhase phase,
         AcquisitionFailureReason reason) noexcept;
+    /// 形成普通失败终态，并把 Builder/Ingress 的有界账本证据原样附到失败事实。
+    runtime::RuntimeWorkStep fail_observation(
+        AcquisitionFailurePhase phase,
+        AcquisitionFailureReason reason,
+        NetworkObservationError error) noexcept;
     runtime::RuntimeWorkStep fail_board_rejection(
         AcquisitionFailurePhase phase,
         board::BoardError error) noexcept;

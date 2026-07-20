@@ -355,26 +355,39 @@ runtime::RuntimeWorkStep AcquisitionEngine::resume(
         if (!builder_.has_value() || !builder_->record_terminal(terminal)) {
             callback_contract_violation_ = true;
         }
+        if (builder_.has_value() && builder_->error().has_value()) {
+            return fail_observation(
+                AcquisitionFailurePhase::Run,
+                AcquisitionFailureReason::BoardContractViolation,
+                *builder_->error());
+        }
         if (callback_contract_violation_ || terminal.run_id != run_ ||
             terminal.generation != generation_) {
             return fail(
                 AcquisitionFailurePhase::Run,
                 AcquisitionFailureReason::BoardContractViolation);
         }
-        if (terminal.kind != board::RunTerminalKind::Completed) {
-            return fail(
-                AcquisitionFailurePhase::Run,
-                AcquisitionFailureReason::BoardTerminalFailed);
-        }
         auto candidate_result = builder_->seal(
             snapshot_id_, logical_sweep_id_, work_, intent_.digest);
+        if (terminal.kind != board::RunTerminalKind::Completed) {
+            if (candidate_result.has_value()) {
+                return fail(
+                    AcquisitionFailurePhase::Run,
+                    AcquisitionFailureReason::BoardContractViolation);
+            }
+            return fail_observation(
+                AcquisitionFailurePhase::Run,
+                AcquisitionFailureReason::BoardTerminalFailed,
+                candidate_result.error());
+        }
         if (!candidate_result.has_value()) {
-            return fail(
+            return fail_observation(
                 AcquisitionFailurePhase::CandidateSealing,
                 candidate_result.error().code ==
                         NetworkObservationErrc::IncompleteCoverage
                     ? AcquisitionFailureReason::IncompleteObservationSet
-                    : AcquisitionFailureReason::BoardContractViolation);
+                    : AcquisitionFailureReason::BoardContractViolation,
+                candidate_result.error());
         }
         success_.emplace(AcquisitionSucceeded{
             std::move(candidate_result).take_value(),
@@ -480,6 +493,13 @@ board::ChunkIngressDisposition AcquisitionEngine::on_chunk(
     // BoardRunSink 是最外层无条件所有权边界。即使 Adapter 违反时序或身份，
     // 也必须先接管 payload，再用 disposition 要求其停止后续交付。
     auto owned = std::move(chunk);
+    const BoardChunkEvidence evidence{
+        owned.source_state,
+        owned.receiver_path,
+        owned.wave,
+        owned.sequence,
+        owned.point_begin,
+        static_cast<std::uint32_t>(owned.payload.size())};
     if (phase_ != Phase::Acquiring || run_terminal_.has_value() ||
         !builder_.has_value()) {
         callback_contract_violation_ = true;
@@ -488,6 +508,7 @@ board::ChunkIngressDisposition AcquisitionEngine::on_chunk(
     const auto disposition = ingress_.push(std::move(owned));
     if (disposition != board::ChunkIngressDisposition::Accepted) {
         callback_contract_violation_ = true;
+        (void)builder_->record_ingress_rejection(evidence, disposition);
     }
     return disposition;
 }
@@ -528,6 +549,16 @@ runtime::RuntimeWorkStep AcquisitionEngine::fail(
         failure_, manifest_, board_session_, capability_revision_);
     phase_ = Phase::Terminal;
     return runtime::RuntimeWorkStep::failed();
+}
+
+runtime::RuntimeWorkStep AcquisitionEngine::fail_observation(
+    AcquisitionFailurePhase phase,
+    AcquisitionFailureReason reason,
+    NetworkObservationError error) noexcept {
+    auto result = fail(phase, reason);
+    failure_.has_observation_error = true;
+    failure_.observation_error = error;
+    return result;
 }
 
 runtime::RuntimeWorkStep AcquisitionEngine::fail_board_rejection(

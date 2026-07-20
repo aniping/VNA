@@ -322,10 +322,14 @@ ResolvedDeliveryPlan resolve_delivery_plan(
             !delivery.receiver_path.valid() || delivery.point_count == 0U ||
             delivery.point_count > kMaximumContractChunkSamples ||
             delivery.offset >= scenario.run_duration ||
-            delivery.point_begin >= required->point_count ||
-            delivery.point_count > required->point_count - delivery.point_begin) {
+            delivery.point_begin >= kMaximumMockSweepPoints ||
+            delivery.point_count >
+                kMaximumMockSweepPoints - delivery.point_begin) {
             return ResolvedDeliveryPlan{};
         }
+    }
+    if (scenario.maximum_chunks_before_completed_terminal > result.count) {
+        return ResolvedDeliveryPlan{};
     }
     result.valid = true;
     return result;
@@ -802,7 +806,12 @@ private:
 
         if (pending.scenario.run_behavior == MockRunBehavior::Succeed &&
             !pending.delivery_failed) {
-            while (!pending.delivery_failed) {
+            const auto delivery_limit =
+                pending.scenario.maximum_chunks_before_completed_terminal == 0U
+                ? pending.delivery_count
+                : pending.scenario.maximum_chunks_before_completed_terminal;
+            while (!pending.delivery_failed &&
+                   pending.delivered_chunks < delivery_limit) {
                 // advance() 可以一次跨过多个 offset；仍须按虚拟事件时刻排序，
                 // 相同 offset 再按剧本下标稳定排序，避免推进粒度改变 callback 序列。
                 std::size_t selected = pending.delivery_count;
@@ -847,24 +856,35 @@ private:
                 }
                 const auto sequence = ChunkSequence{
                     static_cast<std::uint64_t>(pending.delivered_chunks) + 1U};
-                ReceiverObservationChunk chunk{
-                    pending.manifest.id,
-                    pending.manifest.prepared_id,
-                    pending.run,
-                    pending.generation,
-                    sequence,
-                    delivery.wave,
-                    delivery.point_begin,
-                    std::move(payload).take_value(),
-                    delivery.quality,
-                    delivery.source_state,
-                    delivery.receiver_path};
-                ++observations_.run_chunk_callbacks;
-                ++pending.delivered_chunks;
-                if (sink.on_chunk(std::move(chunk)) !=
-                    ChunkIngressDisposition::Accepted) {
-                    pending.delivery_failed = true;
-                    break;
+                auto deliver = [&](AcquisitionChunkLease&& lease) {
+                    ReceiverObservationChunk chunk{
+                        pending.manifest.id,
+                        pending.manifest.prepared_id,
+                        pending.run,
+                        pending.generation,
+                        sequence,
+                        delivery.wave,
+                        delivery.point_begin,
+                        std::move(lease),
+                        delivery.quality,
+                        delivery.source_state,
+                        delivery.receiver_path};
+                    ++observations_.run_chunk_callbacks;
+                    ++pending.delivered_chunks;
+                    if (sink.on_chunk(std::move(chunk)) !=
+                        ChunkIngressDisposition::Accepted) {
+                        pending.delivery_failed = true;
+                    }
+                };
+                auto lease = std::move(payload).take_value();
+                if (delivery.payload_behavior ==
+                    MockChunkPayloadBehavior::InvalidLease) {
+                    // 保留真实 owner 到 callback 返回，但把 moved-from lease 作为
+                    // 非合规 payload 交付，以确定性触发 Ingress 协议拒绝。
+                    auto retained = std::move(lease);
+                    deliver(std::move(lease));
+                } else {
+                    deliver(std::move(lease));
                 }
             }
         }

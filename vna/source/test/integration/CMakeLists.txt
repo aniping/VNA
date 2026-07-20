@@ -25,3 +25,10 @@ vna_add_test(
     vna::runtime
     vna::board_mock
 )
+
+vna_add_test(
+    vna_invalid_observation_ledger_contract_tests
+    invalid_observation_ledger_contract_tests.cpp
+    vna::runtime
+    vna::board_mock
+)
