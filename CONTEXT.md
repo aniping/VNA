@@ -79,7 +79,7 @@ Product/Board Profile 对逻辑端口与 source state、receiver path、`aᵢ/b�
 同一 Channel revision 下全部 Live Analysis Trace 的 Measurement Spec，与校准、导出或诊断等显式消费者需求合并、验证并去重后的有界集合。Sweep Compiler 只为该集合生成必要的 source state 和 receiver observation；完整 N 端口矩阵必须作为显式需求进入集合，本轮全部必需结果成功后才能原子发布 B。
 
 **测量完成快照（Completed Measurement Snapshot）**：
-由一个或多个完整逻辑扫频经过接收机量提取、兼容平均和用户校准修正后，针对同一 Frozen Measurement Requirement Set 原子发布的不可变 B 层网络结果，对应 `CompletedMeasurementBundle`。它绑定完整的有界测量结果集、实际激励轴、`AverageApplication`、配置版本、逐板 identity/capability 集合和质量信息；Disabled 直接引用本轮 Logical Sweep，Enabled 才绑定 Average Contribution Ref 与 generation/count。项目原生 Sweep completion fence 到这一层为止，不等待所有 Trace 分析。
+由一个或多个完整逻辑扫频经过接收机量提取、兼容平均和用户校准修正后，针对同一 Frozen Measurement Requirement Set 原子发布的不可变 B 层网络结果，对应 `CompletedMeasurementBundle`。它绑定完整的有界测量结果集、实际激励轴、`AverageApplication`、`CorrectionApplication`、配置版本、逐板 identity/capability 集合和质量信息；Disabled Average 直接引用本轮 Logical Sweep，Enabled 才绑定 Average Contribution Ref 与 generation/count。项目原生 Sweep completion fence 到这一层为止，不等待所有 Trace 分析。
 
 **测量阶段快照（Measurement Stage Snapshot）**：
 当 receiver、ratio、corrected network、fixture/de-embedding/mixed-mode 等非 C 层数据尚未物化时，由 `MaterializeMeasurementStageOperation` 从明确的 canonical A/B roots 惰性生成的不可变结果。它保存 requested stage、完整 RF/network graph revision、Profile、axis、port topology、Z0、unit 和 quality，但不包含 Analysis Trace、Marker 或 Limit revision；一个 Stage 不把另一个 Stage 当作正式父对象，图内中间值只属于私有缓存。Touchstone、全矩阵导出和非 formatted SCPI query 可直接绑定它。
@@ -95,6 +95,9 @@ Product/Board Profile 对逻辑端口与 source state、receiver path、`aᵢ/b�
 
 **校准绑定（Correction Binding）**：
 Channel 对某个 Correction Set 的版本化选择与独立 correction enable 状态，表示为 `Unbound` 或 `Bound{set_id, set_revision, enabled, policy_revision}`。`Bound(enabled=false)` 关闭修正但保留所选 Set，重新开启时不会猜测目标；一个 Correction Set 可以同时被多个 Channel 使用。
+
+**修正应用状态（Correction Application）**：
+一份不可变 B 对本轮实际修正事实的声明，表示为 `Unbound`、`Disabled{set_id, set_revision, policy_revision}` 或 `Applied{set_id, set_revision, match_report}`。它不读取或复制解释当前 Correction Binding；若已启用的修正无法匹配或计算失败，本轮不发布 B，而不是伪造第四种“已应用”状态。
 
 **校准匹配报告（Correction Match Report）**：
 把 Correction Set 与本次非空 `PreparedExecutionManifestSet` 比较后的结构化结论，逐板表达 identity/capability/path/condition 匹配，再聚合频率轴、时效、绑定和总体适用性；默认单板时集合长度为 1，不能只检查其中一块板，也不压缩成单一“有效/无效”布尔值。
