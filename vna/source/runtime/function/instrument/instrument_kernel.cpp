@@ -57,7 +57,8 @@ InstrumentKernel::InstrumentKernel(
       acquisition_resources_(acquisition_resources),
       clock_(clock),
       profile_(profile),
-      completion_receiver_(runtime.register_completion_receiver()) {}
+      completion_receiver_(runtime.register_completion_receiver()),
+      acquisition_buffers_(profile.buffer_chunk_capacity) {}
 
 AOnlySubmitResult InstrumentKernel::submit_a_only(
     const AOnlySweepRequest& request) noexcept {
@@ -96,6 +97,7 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
     const auto board_now = board_execution_.monotonic_tick();
     const bool request_is_valid = request.point_count > 0U &&
         request.point_count <= capabilities.maximum_points &&
+        request.point_count <= AOnlyResourceLimits::kMaximumPoints &&
         request.start_hz > 0.0 &&
         (request.point_count == 1U
              ? request.stop_hz == request.start_hz
@@ -106,9 +108,30 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
         profile_.budget_units > 0U && profile_.budget_units != maximum_tick &&
         profile_.deadline_span_ticks < maximum_tick - now &&
         profile_.board_continuation_span_ticks > 0U &&
-        profile_.board_continuation_span_ticks < maximum_tick - board_now;
+        profile_.board_continuation_span_ticks < maximum_tick - board_now &&
+        profile_.ingress_chunk_capacity > 0U &&
+        profile_.ingress_chunk_capacity <=
+            AOnlyResourceLimits::kMaximumIngressChunks &&
+        profile_.buffer_chunk_capacity > 0U &&
+        profile_.buffer_chunk_capacity <=
+            AOnlyResourceLimits::kMaximumBuffers;
     if (!request_is_valid || !profile_is_valid) {
         return reject(AOnlySubmitErrc::InvalidRequest, capabilities);
+    }
+
+    const auto chunks_per_observation =
+        static_cast<std::size_t>(request.point_count) /
+            board::kMaximumContractChunkSamples +
+        (request.point_count % board::kMaximumContractChunkSamples == 0U
+             ? 0U
+             : 1U);
+    const auto required_chunks =
+        AOnlyResourceLimits::kRequiredObservations * chunks_per_observation;
+    // 这是纯 O(1) 保守准入；不足时不能先占 Board execution 或创建可见事实。
+    if (profile_.ingress_chunk_capacity < required_chunks ||
+        profile_.buffer_chunk_capacity < required_chunks) {
+        return reject(
+            AOnlySubmitErrc::AcquisitionResourcesUnavailable, capabilities);
     }
 
     const auto slot_index = find_free_slot();
@@ -135,7 +158,7 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
             plan_digest,
             capabilities,
             request.point_count,
-            static_cast<std::uint32_t>(kAOnlyChunkCapacity),
+            static_cast<std::uint32_t>(required_chunks),
             request.start_hz,
             request.stop_hz});
     if (!acquisition_result.has_value()) {
@@ -151,7 +174,7 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
     const auto logical_sweep_id = acquisition::LogicalSweepId{
         next_logical_sweep_id_++};
     auto delivery_result = acquisition_buffers_.reserve_delivery(
-        work.value(), kAOnlyChunkCapacity);
+        work.value(), profile_.buffer_chunk_capacity);
     if (!delivery_result.has_value()) {
         return reject(
             AOnlySubmitErrc::AcquisitionResourcesUnavailable, capabilities);
@@ -192,7 +215,7 @@ AOnlySubmitResult InstrumentKernel::submit_a_only(
         snapshot_id,
         logical_sweep_id,
         work,
-        kAOnlyChunkCapacity,
+        profile_.ingress_chunk_capacity,
         board::AcquisitionContinuationAttestation{
             continuation_digest,
             board_now + profile_.board_continuation_span_ticks},

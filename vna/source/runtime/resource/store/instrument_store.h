@@ -213,7 +213,10 @@ struct StoreSnapshot final {
 /// B/Stage/C。所有接口均同步且不动态扩容，便于映射到 RTOS 有界资源模型。
 class InstrumentStore final {
 public:
+    /// 可见操作与预留生命周期的编译期槽位上限。
     static constexpr std::size_t kMaximumOperations = 16U;
+    /// 当前每项可见 Operation 最多产生一个终态 Event，故上限与操作槽一致。
+    static constexpr std::size_t kMaximumEvents = kMaximumOperations;
 
     /// @param capacity 可见操作与预留生命周期合计上限；超过
     ///        kMaximumOperations 的值会被截断。

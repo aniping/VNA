@@ -26,8 +26,9 @@
 - `PrepareDraining` 会把具名 Board drain owner 与本地/Board 容量一起转入 `Quarantined`；当前 seam 没有后续排空证明，因此 Kernel 持续隔离整组 owner，绝不谎报 `Drained` 或复用容量；
 - Mock 同步 Prepare/Run 拒绝不产生 callback；Prepare 接受后的异步失败必须等携带 cleanup evidence 的唯一 terminal，才允许上层提交失败并释放 owner。Prepare 已成功但 Manifest 无效、Run 同步拒绝，或 Runtime stop/deadline/budget 已阻止进入 Run 时，上层会显式提交 Prepared discard，并在非内联唯一 discard terminal 前持续持有 Prepared 及相关 owner；discard 被拒绝或清理失败则隔离资源。失败路径在同一 Store revision 原子写入 Failed Operation、status、fence 和类型化 Event，保留 phase、Manifest/session/revision、相关 ID、retry class 和执行生命周期 safety impact，且 A/B/Stage/C 正式发布计数保持为 0；
 - Prepared Manifest 以有界 required observation map 声明本轮必需接收机波量；Mock 成功输出的点数、身份与形状只从该实际清单派生，不再使用独立场景点数；
-- Kernel 在首次派发前从固定 `AcquisitionBufferPool` 为 a/b 两项 201 点观测原子预留最坏 8 个回退槽并绑定到 `RunDeliveryGrant`；Mock 用不可转移源数组模拟底软，每个块在 callback 前只复制一次到 Pool，之后 `AcquisitionChunkLease` 只移动槽位指针和 generation；
-- 正式 chunk 通过固定容量 `AcquisitionIngress` 把 move-only `AcquisitionChunkLease` 从 Board callback 转交给唯一长期 owner `NetworkObservationBuilder`；拒绝也会消费 payload，回调不生成轴、不写 Store；
+- Kernel 用 `2 × ceil(point_count / 64)` 在 O(1) 时间内计算 a/b 的保守正式块数；构造时冻结的 Ingress 或 Buffer Profile 容量不足会在任何 Board execution reservation、Operation 或 Event 之前同步拒绝，默认产品切片容量为 8 块且 Run 开始后不扩张；
+- Kernel 在首次派发前从固定 `AcquisitionBufferPool` 原子预留 Profile 声明的回退槽并绑定到 `RunDeliveryGrant`；Mock 用不可转移源数组模拟底软，每个块在 callback 前只复制一次到 Pool，之后 `AcquisitionChunkLease` 只移动槽位指针和 generation；driver-buffer-reuse 剧本会在每次 `on_chunk()` 返回后立刻用毒值覆写源数组，201 点验收仍逐点保留 a/b 复数值和质量；
+- 正式 chunk 通过固定容量 `AcquisitionIngress` 把 move-only `AcquisitionChunkLease` 从 Board callback 转交给唯一长期 owner `NetworkObservationBuilder`；拒绝也会消费 payload，回调不生成轴、不写 Store。底软意外多送块时，Ingress 饱和会形成 `IngressRejected/AbortRunCapacityBreach` 账本；Buffer 回退槽耗尽会形成失败 Run terminal，二者均不发布部分 A，并在终态后恰好一次归还资源；
 - Builder 按 Manifest 中 `source state + receiver path + wave` 的观测集合和点覆盖重组乱序块，不依赖 callback 顺序或固定 a/b 数组位置；只有实际轴、全部必需覆盖、质量和唯一 Completed terminal 均闭合后才密封 `CandidateCommitLease`，缺少必需观测时不发布部分 A；
 - Builder 对整项缺失、内部 gap、冲突重复、部分 overlap、越界范围、成功 terminal 早于完整覆盖、failed terminal 和 Ingress 拒绝形成稳定失败账本；失败 Event 保存 Manifest/Prepared/Run/generation、相关观测、被拒绝块，以及期望点、已接收唯一点和首段缺口摘要。Completed terminal 不能覆盖账本错误，旧 A 不会被补零、最后写入覆盖或后续失败扫描修改；
 - L2 在 Runtime Completed 后才把 candidate 交给 Store；Store 在一个 revision 内共同发布不可变 `CompletedSweepBundle`、Completed Operation、status/fence 和完成 Event，receipt 返回后才终结 A-only completion 与 disabled Preview owner；
@@ -42,11 +43,11 @@
 - Web、SCPI、cpp-httplib、Eigen3 和 JSON；
 - 公司 AArch64 SDK 编译与目标机/HIL 验证。
 
-当前单个 Pool 槽最多携带 64 个复数样本，Mock 波形源和正式 A 快照上限为 201 点；一项观测最多 4 块，当前 a/b A-only 在首次派发前统一准入 8 块。底软回调后立即复用源内存以及 BufferPool/Ingress 容量压力矩阵仍由后续工单验收，不能把当前 Mock 产品切片带入真实板卡能力声明。
+当前单个 Pool 槽最多携带 64 个复数样本，Mock 波形源和正式 A 快照上限为 201 点；一项观测最多 4 块，当前 a/b A-only 的 Operation、必需观测、点、chunk、Event、Ingress 和 Buffer 均有公开编译期上限。driver-buffer-reuse、可预测容量不足、运行期 Ingress 超限与 Buffer 回退耗尽矩阵已由 Mock 合同测试验收；这些结果仍只证明当前项目 Buffer/所有权边界，不能替代公司底软 ABI、真实板卡能力或目标机容量证据。
 
 当前可执行产品组合只包含 `VnaBoardMock`，没有 Real Board Adapter、SafetyLane、RF-off/readback 或 HIL 证据。A-only 授权明确命名为 Mock diagnostics；不得把该纵切连接真实 RF 或宣称具备生产安全能力。
 失败事实中的 safety impact 只区分“Run 未接受”“匹配 Run terminal 已观察到”与“资源必须隔离”，不等价于物理 RF-off 或真实单板安全证明。
-Mock 可确定性注入错误 Manifest/Prepared/Run/generation、重复 terminal 和 terminal 后回调。Acquisition 将首个违约保存为类型化失败事实，并在 callback 返回后的 Runtime 步骤隔离当前 Board session；同一会话的新执行在 Run 前拒绝，关闭并重新打开得到新 SessionId 后才恢复。
+Mock 可确定性注入错误 Manifest/Prepared/Run/generation、重复 terminal、terminal 后回调、底软源 Buffer 立即复用以及正式接收容量突破。Acquisition 将身份/终态首个违约保存为类型化失败事实，并在 callback 返回后的 Runtime 步骤隔离当前 Board session；同一会话的新执行在 Run 前拒绝，关闭并重新打开得到新 SessionId 后才恢复。Ingress/Buffer 容量突破则闭合当前失败 Run 并释放或转交 owner，不把普通容量事实误报成会话身份隔离。
 
 ## MinGW 构建与测试
 

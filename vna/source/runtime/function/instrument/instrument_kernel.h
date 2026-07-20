@@ -46,6 +46,29 @@ struct AOnlySweepRequest final {
     std::uint64_t expected_capability_revision{0U};
 };
 
+/// 当前 A-only tracer bullet 在编译期冻结的产品资源上限。
+///
+/// 这些值只描述本切片，不代表真实板卡或完整 VNA 产品能力；运行时 Profile
+/// 可以选择更小的 Ingress/Buffer 容量，但不能越过这里的固定边界。
+struct AOnlyResourceLimits final {
+    /// Kernel 内同时保活的 A-only Operation 上限。
+    static constexpr std::size_t kMaximumOperations = 16U;
+    /// A-only Manifest 必须包含的 a/b 观测数量。
+    static constexpr std::size_t kRequiredObservations = 2U;
+    /// 一项 A-only 观测允许的最大点数。
+    static constexpr std::size_t kMaximumPoints =
+        acquisition::kMaximumCompletedSweepPoints;
+    /// a/b 两项最大点数观测需要的最坏正式 chunk 数。
+    static constexpr std::size_t kMaximumChunks =
+        kRequiredObservations * board::kMaximumChunksPerObservation;
+    /// 当前每项 Operation 最多对应一个终态 Event。
+    static constexpr std::size_t kMaximumEvents = kMaximumOperations;
+    /// A-only Profile 允许配置的最大正式 Ingress 深度。
+    static constexpr std::size_t kMaximumIngressChunks = kMaximumChunks;
+    /// A-only Profile 允许配置的最大回退 Buffer 槽数。
+    static constexpr std::size_t kMaximumBuffers = kMaximumChunks;
+};
+
 /// A-only 公共提交入口的有限执行配置。
 struct AOnlyKernelProfile final {
     /// 从提交时单调 tick 起算的 Runtime deadline 距离；必须大于 0。
@@ -54,6 +77,15 @@ struct AOnlyKernelProfile final {
     std::uint64_t budget_units{0U};
     /// 从提交时 Board 单调 tick 起算的 Ingress attestation 有限跨度；必须大于 0。
     std::uint64_t board_continuation_span_ticks{1000000U};
+    /// 每项已接受 Run 可同时排队的正式 chunk 数，范围必须为
+    /// [1, AOnlyResourceLimits::kMaximumIngressChunks]；小于本次请求保守块数时在
+    /// 首次 Board reservation 前同步拒绝。
+    std::size_t ingress_chunk_capacity{
+        AOnlyResourceLimits::kMaximumIngressChunks};
+    /// Kernel 固定 BufferPool 为一次 Run 预留的回退槽数，范围必须为
+    /// [1, AOnlyResourceLimits::kMaximumBuffers]；小于本次请求保守块数时在
+    /// 首次 Board reservation 前同步拒绝。构造后容量固定，不动态扩张。
+    std::size_t buffer_chunk_capacity{AOnlyResourceLimits::kMaximumBuffers};
 };
 
 /// A-only 提交被拒绝的稳定分类。
@@ -139,14 +171,16 @@ struct InstrumentIntegritySnapshot final {
 class InstrumentKernel final : private runtime::RuntimeCompletionSink {
 public:
     /// Kernel 内同时保活的 A-only Operation 上限。
-    static constexpr std::size_t kMaximumAOnlyOperations = 16U;
+    static constexpr std::size_t kMaximumAOnlyOperations =
+        AOnlyResourceLimits::kMaximumOperations;
 
     /// @param runtime 固定容量 OperationRuntime；必须比本对象活得更久。
     /// @param store 权威 Operation/Event Store；必须比本对象活得更久。
     /// @param board_execution 已打开 Mock 产品组合的 Board execution seam；不转移所有权。
     /// @param acquisition_resources 首次派发前取得关键采集容量的池；必须比本对象活得更久。
     /// @param clock 与 Runtime 相同时间域的单调时钟；用于冻结每项 deadline。
-    /// @param profile 有限 deadline 距离和预算；构造后按值冻结。
+    /// @param profile 有限 deadline、预算及 Ingress/Buffer 固定容量；构造后
+    ///        按值冻结，运行期间不扩张。
     InstrumentKernel(
         runtime::OperationRuntime& runtime,
         store::InstrumentStore& store,
@@ -177,10 +211,6 @@ public:
     }
 
 private:
-    /// A-only 最多包含 a/b 两项 201 点观测；Claim、Pool 与 Ingress 共用此上界。
-    static constexpr std::size_t kAOnlyChunkCapacity =
-        2U * board::kMaximumChunksPerObservation;
-
     struct Slot final {
         bool active{false};
         bool release_pending{false};
@@ -213,8 +243,9 @@ private:
     runtime::RuntimeMonotonicClock& clock_;
     AOnlyKernelProfile profile_{};
     runtime::RuntimeCompletionReceiver completion_receiver_;
-    /// 单板一次只允许一项 execution，A-only 为 a/b 的最坏分块数原子预留槽位。
-    board::AcquisitionBufferPool acquisition_buffers_{kAOnlyChunkCapacity};
+    /// 单板一次只允许一项 execution；实例容量由构造时 Profile 固定。
+    board::AcquisitionBufferPool acquisition_buffers_{
+        AOnlyResourceLimits::kMaximumBuffers};
     std::array<Slot, kMaximumAOnlyOperations> slots_{};
     std::uint64_t next_operation_id_{1U};
     std::uint64_t next_work_id_{1U};

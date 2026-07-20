@@ -39,3 +39,10 @@ vna_add_test(
     vna::runtime
     vna::board_mock
 )
+
+vna_add_test(
+    vna_buffer_ingress_boundary_contract_tests
+    buffer_ingress_boundary_contract_tests.cpp
+    vna::runtime
+    vna::board_mock
+)

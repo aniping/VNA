@@ -584,11 +584,9 @@ public:
         if (!delivery_plan.valid) {
             return reject(BoardErrc::ContractViolation, true);
         }
-        if (scenario_.run_behavior == MockRunBehavior::Succeed &&
-            delivery.remaining_fallback_capacity() < delivery_plan.count) {
-            return reject(BoardErrc::ResourceExhausted, true);
-        }
-
+        // 不用 Mock 已知的显式剧本数量替代 Board 契约：合法容量只需覆盖
+        // Manifest 必需块。超量剧本模拟真实底软在 Run callback 期间违约，
+        // 由 copy_fallback()/Ingress 的有界边界终止整轮，而不是预先藏掉故障。
         // 捕获当前场景，保证一旦接受，输出波形和质量标记就不再被配置修改影响。
         ++observations_.accepted_run_calls;
         execution_reservation_phase_ = MockExecutionReservationPhase::Running;
@@ -873,6 +871,7 @@ private:
                 auto payload = pending.delivery.copy_fallback(
                     source_chunk, delivery.point_count);
                 if (!payload.has_value()) {
+                    ++observations_.failed_buffer_copies;
                     pending.delivery_failed = true;
                     break;
                 }
@@ -937,6 +936,15 @@ private:
                     deliver(std::move(lease));
                 } else {
                     deliver(std::move(lease));
+                }
+                if (pending.scenario.driver_buffer_behavior ==
+                    MockDriverBufferBehavior::ReuseImmediatelyAfterCallback) {
+                    // 只有 on_chunk() 已经返回后才覆写，精确模拟“底软 callback
+                    // 内存立即复用”。若正式数据仍引用 source_chunk，验收值会被毒化。
+                    for (auto& sample : source_chunk) {
+                        sample = ComplexSample{-99999.0F, 99999.0F};
+                    }
+                    ++observations_.reused_driver_buffers;
                 }
             }
         }

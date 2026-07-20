@@ -33,6 +33,14 @@ enum class MockRunBehavior {
     Reject
 };
 
+/// Mock 模拟的底软 callback 源 Buffer 生命周期行为。
+enum class MockDriverBufferBehavior {
+    /// 测试不额外覆写源数组；Adapter 仍不得把它作为长期 payload 使用。
+    NoExplicitReuse,
+    /// 每次上层 on_chunk() 返回后立即用毒值覆盖源数组，模拟底软复用内存。
+    ReuseImmediatelyAfterCallback
+};
+
 /// Mock Prepare 成功终态中实际 Manifest 的一致性故障剧本。
 enum class MockManifestBehavior {
     /// 返回与接受时意图及能力 cut 完全匹配的正常 Manifest。
@@ -129,6 +137,9 @@ struct MockScenario final {
     MockRunBehavior run_behavior{MockRunBehavior::Succeed};
     /// Run 从接受到唯一终态的虚拟毫秒数；有效范围为 [300, 400]。
     VirtualDuration run_duration{350U};
+    /// 底软源 Buffer 在上层 callback 返回后的模拟生命周期策略。
+    MockDriverBufferBehavior driver_buffer_behavior{
+        MockDriverBufferBehavior::NoExplicitReuse};
     /// 成功 Run 如何交付 Manifest 要求的观测；接受 Run 时按值冻结。
     MockObservationBehavior observation_behavior{
         MockObservationBehavior::Complete};
@@ -175,6 +186,10 @@ struct MockObservationSnapshot final {
     std::uint32_t run_chunk_callbacks{0U};
     /// on_chunk() 返回后 Adapter 观察到 payload 已失效的累计块数。
     std::uint32_t consumed_chunk_payloads{0U};
+    /// on_chunk() 返回后立即覆写底软源数组的累计次数。
+    std::uint32_t reused_driver_buffers{0U};
+    /// 因预留回退 Buffer 已耗尽而无法生成 lease 的累计块数。
+    std::uint32_t failed_buffer_copies{0U};
     std::uint32_t run_terminal_callbacks{0U};
     /// Healthy 首次转入 IsolatedContractViolation 的累计次数；每个会话最多 1。
     std::uint32_t isolated_session_transitions{0U};

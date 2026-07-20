@@ -374,9 +374,11 @@ runtime::RuntimeWorkStep AcquisitionEngine::resume(
             snapshot_id_, logical_sweep_id_, work_, intent_.digest);
         if (terminal.kind != board::RunTerminalKind::Completed) {
             if (candidate_result.has_value()) {
+                // 数据即使完整，也不能把 Board 明确的失败 terminal 改写成成功；
+                // 该情况仍是异步执行失败，而不是伪造一个 callback 身份违约。
                 return fail(
                     AcquisitionFailurePhase::Run,
-                    AcquisitionFailureReason::BoardContractViolation);
+                    AcquisitionFailureReason::BoardTerminalFailed);
             }
             return fail_observation(
                 AcquisitionFailurePhase::Run,
