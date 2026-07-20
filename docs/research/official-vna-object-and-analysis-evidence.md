@@ -112,7 +112,7 @@ R&S 主证据定位如下：ZNA v39 §4.1.3 p.113 定义 Trace、Channel、Diagr
 | LIM-02 | LIM-E01 | E1/E2 upper/lower/single/off segments | 已由证据定案 |
 | LIM-03 | LIM-E01/02 | E2 端点包含和插值方言差异 | 待兼容目标 |
 | LIM-04 | LIM-E01、厂商 formatted-data flow | E1 格式化标量输入；E2 convert/reject；E4 单位/格式算法 | 待算法/计量验证 |
-| LIM-05 | LIM-E03、采集质量证据 | E3 safety invariant：无效数据不得静默 Pass；E3 三态；最终 safety aggregation 是产品策略 | 待产品确认 |
+| LIM-05 | LIM-E03、采集质量证据 | E3 safety invariant：无效数据不得静默 Pass；产品已确认任一参与点无效，或者零参与点、空输入、没有任何有效参与数据时，核心总体为 Indeterminate；生产 Safety Policy 可汇总为 Fail 但不得映射 Pass 或改写原始结果 | 已明确 |
 | LIM-06 | LIM-E03 | E1 总 Fail、失败点/刺激；E3 margin、失败区间、worst point 扩展 | 已由证据定案 |
 | LIM-07 | LIM-E02/03、SCPI status 证据 | E2 lock/latch/aggregate；E3 revision-keyed aggregation | 待兼容目标 |
 | LIM-08 | 控制证据 FIL-04 | E1/E2 Limit 文件/表；E3 独立 schema、version、staging validation | 已由证据定案 |

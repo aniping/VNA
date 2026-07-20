@@ -342,7 +342,7 @@ CommitResult InstrumentStore::commit(DomainCommitBundle&& bundle,
 
 当前 `last_good_b/last_good_c` 与 `ChannelAverageHead` 是受 ProductProfile 上限约束的 retention root；正在使用的 `PinnedInputSet`、`TypedSnapshotLeaseSet`、`CandidateCommitLease`、purpose-specific `AcquisitionContinuationOwner/ContinuationStoreHandoff`、Query/Reader lease，以及 CalibrationSession 中已接受但尚未完成生命周期转换的 Observation closure 也会阻止其所需 payload 被回收。已经物化且自包含的 child 在不再承诺重算时可允许祖先大 payload 过期，但祖先 tombstone、digest 和最小 provenance 必须保留。`DiagramFrameRefSet` 本身只含软引用，不额外无限 pin 历史 C。浏览器打开数据时仍通过 QueryTicket 获取有配额的 ResultPinLease；若它尝试读取已退出 Head 且已过 retention 的旧 frame，明确得到 Gone 并 resnapshot。
 
-Marker 的 `Invalid/Incomplete` 与 Limit 的 `Indeterminate` 是成功计算出的领域结果，可以随 C 原子发布；只有输入闭包不一致、evaluator 内部失败、资源失败或 Catalog batch commit 失败才使新 C 整批不可见。
+Marker 的 `Invalid/Incomplete` 与 Limit 的 `Indeterminate` 是成功计算出的领域结果，可以随 C 原子发布；任一参与 Limit 判定的点过载、缺失、NaN 或质量无效，或者零参与点、空输入、没有任何有效参与数据时，结果携原因以 `Indeterminate` 发布，生产 Safety 聚合可映射 Fail 但不能改写原始三态或映射 Pass。只有输入闭包不一致、evaluator 内部失败、资源失败或 Catalog batch commit 失败才使新 C 整批不可见。
 
 ## 4. Single、Continuous 与 Average 的同一条主链
 
@@ -782,7 +782,7 @@ StopEventFeedResult stop_event_feed(
 5. **Average clear 竞态**：clear 与旧 generation 的 stage/C worker 并发，旧 Snapshot 可读但不能覆盖新 Head。
 6. **惰性 Stage**：同一 canonical roots + graph 的并发 Touchstone/SCPI query 只计算一次；回收内部中间 cache 后最终 Stage 仍可读。
 7. **历史精确查询不倒退 Head**：当前 Head 已指向较新 Live C 时，对旧 B/Stage 的 exact query 能发布并读取历史 C，但 `TraceAnalysisHead` 保持不变；只有仍匹配 current token 的 Live candidate 可 CAS 提升 Head。
-8. **C 原子闭包**：Marker Invalid、Limit Indeterminate 能成功发布；注入 Limit evaluator 内部错误时不出现半套 C。
+8. **C 原子闭包**：Marker Invalid、Limit Indeterminate 能成功发布；分别注入参与点无效、段外无效及有效 Fail+参与点无效，验证核心三态、原因与生产 fail-safe 聚合；再注入 Limit evaluator 内部错误，确认不出现半套 C。
 9. **Ready 与多 waiter 隔离**：direct Ready 配额不足同步 Rejected 且无 Ticket；三个 caller join 同一 single-flight 时各自持 `PendingResultPinReservation`，让其中一个 quota 失败、cancel 或 TTL，只终止该 Ticket，shared publication 与另外两个 Ready/open/read closure 不受影响。
 10. **publication commit 故障终态化**：分别在 A/B/C、Calibration、Export 与 Query result commit 注入 validation/write failure；candidate/Head/Event 全败且 last-good 不变，已有 Operation/Ticket 必须通过已安装 terminal reservation 进入 Failed/AlreadyTerminal，Wait/Fence 被满足，绝不永久 Pending/Publishing；再注入 Store integrity failure 时 Instrument fail-stop 并拒绝新工作。
 11. **Event gap**：暂停 Dispatcher、淘汰 Journal 后，SCPI fence 仍按时完成，Web 被要求 resnapshot，权威 Snapshot/Head 不丢。

@@ -247,7 +247,7 @@ Linux HI1213 5.10.0 #1 SMP PREEMPT Thu Jun 1 CST 2023 aarch64 GNU/Linux
 3. `FILE-10`：报告、图片、签名结果包是否作为 Pro 交付；推荐与不可变 Snapshot/模板 revision 绑定。
 4. `PLAT-12`：Pro/HW 能力的静态 ProductProfile 组合与授权方式；推荐静态注册，不采用目标机动态 C++ ABI 插件。
 
-其余 6 项真正产品取舍列在总矩阵的分析/显示组：`LIM-05`、`LIM-10`、`MATH-08`、`MATH-10`、`NET-03`、`NET-10`。本节后续条目不是额外产品决策。
+其余 5 项真正产品取舍列在总矩阵的分析/显示组：`LIM-10`、`MATH-08`、`MATH-10`、`NET-03`、`NET-10`。`LIM-05` 的核心 Indeterminate 与生产 fail-safe 汇总政策已经定案；本节后续条目不是额外产品决策。
 
 ### 8.2 兼容目标、工程默认与硬件闭合（不新增产品决策）
 

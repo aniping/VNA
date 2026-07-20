@@ -176,7 +176,7 @@ R&S 和 Keysight 都支持混合模，但拓扑、命名和选件范围不同，
 5. `CorrectedMeasurement`：应用误差修正后的复数网络结果；
 6. `ProcessedMeasurement`：端口延伸、夹具、混合模、时域/门控、迹线数学等处理结果；
 7. `FormattedTraceData`：LogMag、Phase、Smith 等显示数据；
-8. `AnalysisResult`：Marker、带宽、统计、Limit pass/fail；
+8. `AnalysisResult`：Marker、带宽、统计和带无效原因的 Limit `Pass/Fail/Indeterminate`；
 9. `CompletedSweepBundle`：一次完整逻辑采集原子发布的 A 层 receiver-observation 集合；`CompletedMeasurementBundle` 是完成 RF/平均/校准处理后的 B 层正式网络结果；从 A/B 惰性物化的 receiver/ratio/corrected/ProcessedNetwork 使用不带 Trace/Marker/Limit revision 的 `MeasurementStageSnapshot`；`AnalysisPublication` 才是逐 Trace 的 C 层求值。Live 路径为 A→B→C 且失败隔离；Frozen/Imported/Derived C 使用 typed `AnalysisInputRefSet` 引用静态、导入或一个/多个上游 C，不伪造 A/B。
 
 预览数据可按点/块流向 Web，但失败、取消或未完成预览不得提升为正式快照。Marker/Limit 固定 C 层 publication；Touchstone/网络数据固定 B 或 `MeasurementStageSnapshot(ProcessedNetwork)`；receiver 数据固定 A/B stage；CSV 按 `data_stage` 固定 B/stage/C。非 C 层缺少物化结果时启动/共享 `MaterializeMeasurementStageOperation`，不能伪造 AnalysisTrace。SCPI/保存命令必须显式映射上述 typed result，等待命令绑定具体 Operation/QueryTicket，而不是笼统读取“最近一次扫频”。
@@ -231,10 +231,10 @@ Keysight 的 Marker 支持带宽搜索，返回 bandwidth、center、Q、loss，
 - `LimitTest` 与 `LimitLine/Segment` 分离：一个测试包含有序的 upper、lower、single-point/off Segment；每段有起止刺激与起止限值。
 - Limit 绑定 AnalysisTrace 的 projection/格式/单位和结果代次。修改格式时必须转换、拒绝或使 Limit 失效，不能继续用旧单位静默判断；Diagram 只保存 Limit Line 的 Placement/可见性。
 - 判断基于实际测量点；是否判断插值线段必须固定。Keysight/CMT 基本语义是逐点判断。
-- 输出：整体 pass/fail、失败点数量、失败点刺激和值、对应 upper/lower、最大裕量/最差点；显示开关与测试开关分离。
+- 输出：不可变整体 `Pass/Fail/Indeterminate`、无效原因、失败点数量、失败点刺激和值、对应 upper/lower、最大裕量/最差点；显示开关与测试开关分离。任一启用段参与点过载、缺失、NaN 或质量无效，或者零参与点、空输入、没有任何有效参与数据时，总体为 Indeterminate，并保留已知失败明细；生产 Safety Policy 可将其汇总为 Fail，但绝不当 Pass，也不改写原始结果。
 - Channel/Instrument 聚合状态：只聚合本次指定执行中的测试，不能让陈旧失败状态污染新批次。
 - Limit 定义导入/导出、版本、名称、单位、创建者/时间；生产测试保存判定时同时保存所依据的结果和 Limit 版本。
-- Web、SCPI 使用同一判定服务；SCPI 至少可设置表、开关、查询 fail、失败点/报告。
+- Web、SCPI 使用同一判定服务；SCPI 至少可设置表、开关、查询三态、无效原因及失败点/报告。若兼容方言只有布尔 Fail 面，Indeterminate 必须以非 Pass 的 fail-safe 结果并配套原因/质量查询暴露，不能静默变成 Pass。
 
 Keysight 的 Limit 命令支持 max/min Segment、总 Fail 和逐点报告，见 [CALCulate:MEASure:LIMit](https://helpfiles.keysight.com/csg/N52xxB/Programming/GP-IB_Command_Finder/Calculate/MeasureLIMit.htm)；CMT 同样公开 limit table、failed points 和报告，见 [CALC:LIM:DATA](https://coppermountaintech.com/help-cmtvna/Programming-Manual/calclimdata.html)。
 
@@ -487,7 +487,7 @@ Time Domain/Gating、完整 de-embedding、mixed-mode、TRL/Unknown-Thru、Equat
 5. 校准算法和首版精度验收方法；支持的 SOLT/TRL 误差模型不能只由命令名决定。
 6. CalSet 插值、外推和失效的保守策略；建议普通 S 参数默认不超出校准频率覆盖外推。
 7. 正式快照数量、内存上限、Web preview 限速、历史结果和文件保留策略。
-8. Limit 判断的边界包含关系、无效点政策、NaN/过载是 fail、skip 还是 indeterminate。
+8. Limit 判断的端点包含、插值、报告字段和锁存/清除方言；NaN、过载、缺失或质量无效的参与点固定产生 Indeterminate，不再作为 Profile 或产品开放项。
 9. Marker 插值、峰相等时选择、tracking 更新时机、非单调 Segment 轴行为。
 10. RTOS Linux 上可用的文件系统、TLS、WebSocket/SSE、线程与 socket 能力；三方库引入前的交叉编译验证。
 

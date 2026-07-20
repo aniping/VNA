@@ -247,6 +247,7 @@ public:
 - `inspect` 只读权威 Ticket Snapshot，不分配大 Buffer，也不改变 read-clear 状态。
 - `open_read` 原子执行 Ready→Reading 和 ResultPin→ReaderLease；返回的 handle 是一次性授权能力。
 - L1 只能通过 handle 的 bounded metadata 和只读 chunks 编码；不能取得内部 lease、文件路径或可写 Buffer。
+- Limit Query 必须读取同一个不可变 `LimitTestResultSnapshot`。`Indeterminate` 是带无效原因的成功领域结果，不是 Transport/Operation 错误；Web 必须显示三态和原因，SCPI Compatibility Profile 必须提供可观察的非 Pass 映射及原因/质量查询，Adapter 不得把它折叠为 Pass。生产 Safety 聚合可以另行输出 Fail，但不能改写被查询的原始三态结果。
 - 编码完成、断线或 timeout 后必须调用 `finish_read`，它消费 handle，并同批完成 Reading→Consumed/Failed/Abandoned 与 ReaderLease 释放。兜底 TTL 只处理异常遗留，不代替正常 terminal。
 
 ### 5.3 initial_view/watch

@@ -371,7 +371,7 @@ Derived Trace 的定义引用稳定 AnalysisTrace ID，求值时再解析并冻�
 - FFT、time-domain 和 gating 对输入有全局依赖：遇到缺点时默认整体拒绝；若 Product Profile 允许插补，算法和整个派生结果的 `imputed_input` 质量标志必须显式。
 - Average 保存每点有效 sample count；未达到规定样本数时不发布“平均完成”。
 - Marker 固定点遇到无效数据时返回 invalid；搜索是否跳过无效点、是否允许跨 gap 以及 gap 边缘峰值规则由 Analysis Projection 明确，不设静默默认。
-- Limit 遇到参与判定的无效点不得误报 Pass；究竟在“任一参与点无效”还是“无法确定最终判定”时返回 `Indeterminate`，由 Limit Policy 固定，Product Profile 可选择更保守的 Fail。
+- Limit 采用已确认的 fail-safe 三态：存在参与点且全部参与点有效时才判 `Pass/Fail`；任一参与点过载、缺失、NaN 或质量无效，或者零参与点、空输入、没有任何有效参与数据时，总体判 `Indeterminate`，同时保留已知失败点。生产 Safety Policy 可以把 `Indeterminate` 汇总为 Fail，但不能映射为 Pass 或改写原始结果。
 - 绘图抽稀只影响像素，Marker、Limit、统计、保存和导出始终使用全分辨率 Trace 数据。
 
 ### 6.3 三层发布、完成栅栏与不重扫的派生分析链
@@ -807,7 +807,7 @@ Limit 不是 Diagram 上的一条装饰线。至少分为：
 - `LimitPresentation(placement_id, limit_id)`：该 Placement 上的颜色、可见性、标签和 overlay；删除 Placement 只删除这份呈现，不删除 LimitDefinition 或判定结果；
 - `LimitTestResultSnapshot`：绑定 `analysis_publication_id + trace_evaluation_snapshot_id + trace/pipeline/limit revision` 的不可变判定；来源通过该 publication 的 typed `AnalysisInputRefSet` 追溯，不能强制所有 Trace 伪造一个 B 层 ID。
 
-Core 输出 `Pass / Fail / Indeterminate`、每个失败点的 actual/limit/margin、失败区间、最坏点、最小裕量和失败数量。测试在全分辨率、已格式化且单位明确的有序标量 Trace 数据上执行；普通 Smith/Polar/Complex Trace 默认拒绝常规上下限，专用 mask 属于独立 Pro 类型。显示开关与测试开关分离；format/unit 改变必须 convert、reject 或使定义失配。NaN/无效点不得成为 Pass。`LimitAggregationSnapshot` 固定 `aggregation_policy_revision + ordered analysis_publication_ids[] + input_generation_vector`，并保存每条参与结果的 trace/limit revision；聚合器按 source-specific synchronization policy 验证一致性。全 Live 聚合可要求相同 `measurement_snapshot_id`，但不能把这个条件错误推广到 Frozen/Imported/Derived Trace，也不能混入任一 publication 的陈旧 revision。Web overlay、SCPI 查询和 Operation/Questionable 状态读取这些相同结果；锁存/清除副作用由冻结的 SCPI Profile revision 固定。
+Core 输出 `Pass / Fail / Indeterminate`、无效原因、每个已知失败点的 actual/limit/margin、失败区间、最坏点、最小裕量和失败数量。测试在全分辨率、已格式化且单位明确的有序标量 Trace 数据上执行；普通 Smith/Polar/Complex Trace 默认拒绝常规上下限，专用 mask 属于独立 Pro 类型。显示开关与测试开关分离；format/unit 改变必须 convert、reject 或使定义失配。启用 Limit Segment 内任一参与点为 NaN、过载、缺失或质量无效，或者没有产生任何参与点、输入为空、没有任何有效参与数据时，核心总体状态固定为 `Indeterminate`；段外无效点不参与，已知超限点仍保留为诊断明细。`LimitAggregationSnapshot` 固定 `aggregation_policy_revision + ordered analysis_publication_ids[] + input_generation_vector`，并保存每条参与结果的 trace/limit revision；生产 Safety Policy 可把 Indeterminate 汇总为 Fail，但原始 `LimitTestResultSnapshot` 保持 Indeterminate，任何层都不得把它变成 Pass。聚合器按 source-specific synchronization policy 验证一致性。全 Live 聚合可要求相同 `measurement_snapshot_id`，但不能把这个条件错误推广到 Frozen/Imported/Derived Trace，也不能混入任一 publication 的陈旧 revision。Web overlay、SCPI 查询、报告和 Operation/Questionable 状态读取相同原始结果及原因；确切 SCPI token、状态位和锁存/清除副作用由冻结的 SCPI Profile revision 固定。
 
 ### 9.7 Reference Plane、Fixture、Mixed-mode 与 Time Domain
 
@@ -1015,7 +1015,7 @@ Interface 就是主要测试表面，不以“每个类都有单测”宣布完�
 2. **Web/SCPI 同源**：Web 修改后 SCPI 查询一致，SCPI 修改后 Web 通过业务事件投影或重新读取权威状态更新；两类公共 schema 都不含内部 revision，复杂数组和快照 ID 相同。
 3. **连续扫频配置切换**：运行中改变 points/power，旧执行不撕裂，下一执行原子采用新的内部配置版本；Web/SCPI 全程不见 revision。
 4. **校准失败回滚**：已有有效校准时开始新 Guided Cal，中途取消/拔板，旧 Correction Set 继续有效且新 Set 不发布。
-5. **Trace/Marker/Limit**：Data-Memory、LogMag/Phase/Smith、多 Marker search、Bandwidth 和 Limit Fail 全部绑定同一正式快照，Web/SCPI 一致。
+5. **Trace/Marker/Limit**：Data-Memory、LogMag/Phase/Smith、多 Marker search、Bandwidth 和 Limit 三态全部绑定同一正式快照；分别注入有效 Pass、有效 Fail、参与点无效、段外无效及有效 Fail+参与点无效，验证 Web/SCPI 原始结果一致，生产 Safety 聚合可以 Fail 但绝不 Pass。
 6. **多 Channel/多板资源**：共享源串行、独立板并行、Continuous 不饿死 Single/Cal。
 7. **多会话冲突**：Web 正在校准，多个 SCPI 会话读写；同字段以后接受且成功提交的配置为准，不同字段窄 patch 均保留，长 Operation lease、selected context 和无 revision 错误可预测。
 8. **故障与恢复**：扫频 60% 时超时/热拔，所有 waiter 得到同一终态，last-good 保留，资源不死锁，Board 自检后才恢复。
@@ -1070,7 +1070,7 @@ Interface 就是主要测试表面，不以“每个类都有单测”宣布完�
 - Full 2-port forward/reverse trigger/route/average 顺序、error-term 插值算法和逐维 Correction Match Matrix。
 - Network Processing Profile：Core 正实数 per-port renormalization 与 Pro complex/balanced renormalization、port extension、fixture、mixed-mode 的默认顺序与允许重排；reference plane、Z0 和 wave convention。
 - Time-domain 算法：网格容差、重采样、DC、window、zero-padding、gate inverse transform 和无效点策略。
-- Trace Hold/Smoothing/Statistics stage、Memory/Frozen Trace 语义、Marker tie-break/search metric 和 Limit 边界/无效点政策。
+- Trace Hold/Smoothing/Statistics stage、Memory/Frozen Trace 语义、Marker tie-break/search metric，以及 Limit 端点包含、插值和锁存/清除方言；无效参与点映射为 Indeterminate 的核心语义不由 Profile 改写。
 - Time Domain/Gating、Touchstone de-embedding、mixed-mode、TRL/Unknown-Thru 已固定为 Pro；分别通过算法/计量、完整同代矩阵和硬件 capability 门禁后才暴露，未通过时返回 capability error，不形成额外产品范围决策。
 - Marker、Limit、Math/Memory/Statistics 中需要与哪家仪器兼容到命令和边界行为。
 
@@ -1093,4 +1093,4 @@ Interface 就是主要测试表面，不以“每个类都有单测”宣布完�
 
 推荐默认：REST + WebSocket + HTTP binary；仅 WebSocket 线程/长稳门禁不合格时可切换 SSE + REST，若 MinGW 或目标 SDK 的基础 HTTP 门禁不合格则替换整个 Web HTTP Transport Adapter。版本化 manifest + binary blob 原子存储；Web 需要身份认证，SCPI 至少限制在可信管理网或 allowlist。
 
-统一术语已经写入 `CONTEXT.md`。官方证据归类完成后，下一冻结门槛是逐项关闭上述兼容、算法计量、硬件与平台证据；只有 10 项真正的产品范围/部署取舍仍需要产品责任人决定。真实单板相关功能只有在 A、B、D 的对应参数、契约测试和黄金计量数据补齐后才能宣称 supported。
+统一术语已经写入 `CONTEXT.md`。官方证据归类完成后，下一冻结门槛是逐项关闭上述兼容、算法计量、硬件与平台证据；只有 9 项真正的产品范围/部署取舍仍需要产品责任人决定。真实单板相关功能只有在 A、B、D 的对应参数、契约测试和黄金计量数据补齐后才能宣称 supported。

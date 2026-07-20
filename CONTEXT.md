@@ -131,7 +131,10 @@ Channel 对某个 Correction Set 的版本化选择与独立 correction enable �
 属于 Analysis Trace 的分析规则，包括普通、参考、差值、固定、跟踪以及峰值、目标、带宽等搜索。标记计算结果与定义分开，并记录输入节点、数据投影和父快照。厂商兼容层可以用 Measurement 或 Trace 路径寻址它。
 
 **限制测试定义（Limit Test Definition）**：
-属于 Analysis Trace 的分段标量判定规则，描述上限、下限、断开段、插值和无效点政策。Limit Test enable 与显示可见性分开；Limit Line 是同一定义的显示 Overlay，不能另用一套判定算法。
+属于 Analysis Trace 的分段标量判定规则，描述上限、下限、断开段、参与范围和插值规则。Limit Test enable 与显示可见性分开；Limit Line 是同一定义的显示 Overlay，不能另用一套判定算法。无效参与点的三态映射属于固定核心语义，不是每份定义可改写的政策。
+
+**限制测试结果（Limit Test Result）**：
+绑定确切 Analysis Publication、Trace 求值和 Limit Definition 的不可变三态结果：`Pass` 表示存在参与点、全部参与点有效且满足限值，`Fail` 表示存在参与点、全部参与点有效但至少一点明确超限，`Indeterminate` 表示任一参与点过载、缺失、NaN、质量无效，或者零参与点、空输入、没有任何有效参与数据，因而无法完成可信判定。已知超限点仍可作为诊断明细保留，但只要存在参与判定的无效点或没有足够有效数据，核心总体状态就是 `Indeterminate`。生产 Safety Policy 可以把它汇总为 Fail，不能映射为 Pass，也不能改写原始结果；Web 与 SCPI 必须观察同一状态和原因。
 
 **迹线放置（Trace Placement）**：
 Diagram 对 Analysis Trace 的显示关联，只包含可见性、颜色、线型、坐标轴分配、缩放/reference、层级及该 Placement 的 Marker/Limit overlay 样式等视图属性。它有与 Analysis Trace 不同的作用域标识，但不是另一个测量对象；Product/Compatibility Profile 可以限制一条 Trace 允许的 Placement 数量。

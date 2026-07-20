@@ -127,7 +127,7 @@ flowchart TB
 | Calibration | L2 Kit/Method/Session/Binding 工作流 | L4 Acquisition 采标准件；Calibration Module 求解/匹配/验证 | Observation、CorrectionSet、VerificationResult | 校准向导、质量、应用与验证报告 |
 | Trace、Math、Memory、Statistics | L2 AnalysisTrace/Source/Pipeline revision | L4 Measurement Pipeline | TraceEvaluation、C、Accumulator/Frozen refs | Trace 设置与读数 |
 | Marker | L2 MarkerDefinition，归属于 AnalysisTrace | L4 Measurement Pipeline 在全分辨率 Trace 上求值 | MarkerEvaluation，属于 C 闭包 | Marker overlay/table；不从像素反算 |
-| Limit | L2 LimitDefinition，归属于 AnalysisTrace | L4 Measurement Pipeline 在全分辨率 Trace 上判定 | LimitResult，属于 C 闭包 | Limit 线、Pass/Fail/Indeterminate |
+| Limit | L2 LimitDefinition，归属于 AnalysisTrace | L4 Measurement Pipeline 在全分辨率 Trace 上判定；任一参与点无效或没有任何有效参与数据则总体 Indeterminate | LimitResult，属于 C 闭包；生产 Safety 聚合可映射 Fail 但不改写原始结果 | Limit 线、Pass/Fail/Indeterminate 与无效原因；不得把 Indeterminate 显示成 Pass |
 | Diagram、Placement | L2 Workspace/Diagram/Placement 规则 | Frame selector 选择既有 C；浏览器渲染/抽稀 | Workspace revision、DiagramFrameRefSet | 坐标、scale、style、overlay；不做测量判定 |
 | Web 与 SCPI | L1 协议/方言/session | 统一调用 L2 Interface | 相同 Operation、Ticket、Snapshot | 不建立第二套业务状态 |
 | Query、Export | L2 冻结 typed target | 缺 Stage/C 时 L3/L4 求值；Persistence 生成文件 | QueryTicket、ResultClosure、Blob refs | HTTP binary、SCPI ASCII/IEEE block |
