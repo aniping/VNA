@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — 让 A-only 命令走到 Mock 延迟失败终态
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] Runtime、Store、Buffer、Ingress 或 Board 容量不足，以及授权或 revision 失效时同步拒绝，且没有可见 Operation、Board callback 或 Event。
 - [x] 初始 Store 提交失败释放完整本地准入所有权，不派发 Runtime，也不调用 Board。

@@ -1,6 +1,6 @@
 # 单板 A-only Logical Sweep 端到端纵切
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 

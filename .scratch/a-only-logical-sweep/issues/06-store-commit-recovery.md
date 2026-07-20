@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — 原子发布第一份单板 A 快照
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 可对成功 A candidate 的最终提交注入 validation 或 write failure，并证明 candidate 在提交前仍不可见。
 - [x] 最终提交失败时，A、完成 Event、Completed 状态和完成 fence/status 全部不可见，不允许只成功其中一部分。

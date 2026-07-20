@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 — 按实际参数组装乱序多块观测
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] wrong Manifest、wrong prepared execution、wrong BoardRunId、wrong generation、multiple terminal 和 callback-after-terminal 均不发布 A。
 - [x] 每种违约都锁存稳定的 ContractViolation 分类，并保留阶段、相关类型化身份以及 retry/safety 分类；调用者不依赖错误文本解析。

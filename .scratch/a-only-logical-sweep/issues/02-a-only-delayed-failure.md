@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — 让扫描任务真正等待异步单板
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 公共提交入口接收类型化 A-only 扫描请求并返回明确的 SubmitResult：Accepted 分支携带 OperationId，Rejected 分支携带类型化错误；调用者不能传入内部 RuntimeWork、单板令牌或输出数组。
 - [x] A-only 必须携带明确的 raw/diagnostic 授权；普通 Channel Sweep 不能借该入口跳过后续测量处理。

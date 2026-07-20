@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — 让 A-only 命令走到 Mock 延迟失败终态
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] Mock 根据本次已接受的实际执行清单返回全部必需小写 a/b Receiver Wave Quantity，而不是使用与 Prepare 无关的私有点数生成结果。
 - [x] 首次派发前已经取得正式 A 输出、candidate metadata 和 commit/abort 所需的固定容量；采集开始后不得为候选结果临时扩张关键资源。

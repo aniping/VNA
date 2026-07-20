@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 — 按实际参数组装乱序多块观测
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 正式 chunk payload 通过 move-only lease 恰好转移一次，Adapter 与 Builder 不会同时长期拥有同一数据。
 - [x] Mock driver-buffer-reuse 场景在 callback 返回后立即覆盖源内存，最终发布 A 的每个复数值和质量项仍与场景定义完全一致。

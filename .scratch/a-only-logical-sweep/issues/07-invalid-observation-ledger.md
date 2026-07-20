@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 — 按实际参数组装乱序多块观测
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] missing range、gap、conflicting duplicate、overlap、out-of-range 和 terminal-before-complete 场景均不发布 A。
 - [x] Board 成功 terminal 只是必要条件；Manifest 声明的每项观测和每个点范围必须完整、唯一且身份一致才能密封 candidate。

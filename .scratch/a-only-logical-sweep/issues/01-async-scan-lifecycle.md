@@ -4,7 +4,7 @@
 
 **Blocked by:** None — can start immediately
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] 工作的“启动”和“完成”成为两个独立时刻；派发调用不内联启动工作，也不内联发出完成回调。
 - [x] 确定性 pump 启动工作后，即使连续多次 pump 都没有终态，工作仍保持 Running，运行槽不得被复用。

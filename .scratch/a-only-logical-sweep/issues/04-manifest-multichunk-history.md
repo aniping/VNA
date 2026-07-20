@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — 原子发布第一份单板 A 快照
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] Prepared Execution Manifest 是实际点数、实际频率轴和有界 required observation map 的唯一执行权威，Mock 输出必须从该 Manifest 派生。
 - [x] 每个正式数据块的身份足以区分 Manifest、prepared execution、Board run、generation、source state、receiver path、wave、sequence 和点范围。
