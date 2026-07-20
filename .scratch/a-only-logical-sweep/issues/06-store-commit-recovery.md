@@ -28,3 +28,4 @@
 - 2026-07-19：修复候选验证为 MinGW Debug 64/64 通过，其中 `StoreCommitRecoveryContract` 4/4；`BUILD_TESTING=OFF` 产品构建通过，build graph 对 GoogleTest、测试源码、Runtime/Store fault hook 宏引用为 0；`git diff --check` 通过。等待修复后的 Standards/Spec 双复审。
 - 2026-07-19：第二轮 Spec 复审为 9/9 PASS、0 blocking、0 judgement；Standards 确认首轮两个阻塞与失效安全均已闭合，但仍因测试访问器的类级 Doxygen 只描述 A 发布拒绝、未覆盖终态完整性故障和畸形回执职责而判定 FAIL。
 - 2026-07-19：第二轮 Standards 文档修复只更新测试访问器职责契约，明确其覆盖一次性正式 A 发布拒绝、终态提交完整性故障和畸形回执，并注明关闭测试的产品构建不包含该类型及入口。定向重新编译通过，`StoreCommitRecoveryContract` 4/4、MinGW Debug 全量 64/64 通过；等待最终 Standards/Spec 双复审。
+- 2026-07-19：代码候选 `e0ea193` 最终双审核通过：Standards 为 0 blocking、0 judgement；Spec 为 9/9 PASS、0 blocking、0 judgement。两边均独立确认 MinGW Debug 64/64、`BUILD_TESTING=OFF` 产品构建、零 GoogleTest/测试源码/Runtime+Store hook 构建图引用、`git diff --check` 和干净工作树，并确认工单 07–10 边界保持不变。
