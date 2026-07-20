@@ -131,7 +131,7 @@
 5. **Trace 与 Diagram**：格式、坐标、布局、叠加、抽稀、Math、Memory、Hold、Smoothing 和 Statistics。
 6. **Marker 与 Limit**：所有 Marker 类型/搜索/耦合/marker-to，以及 Limit Segment/边界/无效点/报告/状态聚合。
 7. **专业网络处理**：Port Extension、Z0、Fixture、De-embedding、Mixed-mode、Time Domain、Window 和 Gate。
-8. **Web 与并发控制**：完整操作面、事件/Preview、revision、lease、断线和大数据传输。
+8. **Web 与并发控制**：完整操作面、事件/Preview、不透明 Watch 恢复、服务器接受顺序、lease、断线和大数据传输；Web/SCPI 均不暴露内部 revision。
 9. **SCPI 与 IEEE 488.2**：主方言、parser、会话、队列、状态寄存器、完成同步和数据阶段。
 10. **State、文件、诊断、安全与平台**：保存恢复、Touchstone/CSV、自检、日志、权限、TLS、依赖和容量。
 

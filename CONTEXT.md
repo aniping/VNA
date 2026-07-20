@@ -144,6 +144,9 @@ Diagram 对 Analysis Trace 的显示关联，只包含可见性、颜色、线�
 
 ## 控制与执行
 
+**控制接受切面（Control Admission Cut）**：
+外部 Command 或 Query 被系统纳入统一接受顺序时，对目标仪器权威状态取得的一致视图。Web 与 SCPI 不提交、接收或比较内部 revision；启动扫频时系统在该切面解析并冻结当前 Channel 配置，之后的修改只影响后续 Logical Sweep。
+
 **操作（Operation）**：
 扫频、平均序列、测量阶段物化、校准/校准验证、迹线重算、保存恢复、导出和诊断等异步工作的统一可等待生命周期。原生 `SweepOperation` 在 B 层 Measurement 发布后完成；`MaterializeMeasurementStageOperation`、`EvaluateTraceOperation`、`AverageSequenceOperation` 有各自终态。Web 事件和 SCPI `*OPC?` 等同步机制按 Compatibility Profile 等待明确 Operation/fence，而不是读取全局忙碌布尔值。
 

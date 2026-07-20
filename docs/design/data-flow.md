@@ -89,7 +89,7 @@ struct RequestContext {
 };
 
 struct CommandEnvelope {
-    ExpectedRevisionSet expected;
+    TargetSelector target;
     OptionalIdempotencyKey idempotency;
     TypedCommand command;
 };
@@ -100,7 +100,7 @@ struct QueryEnvelope {
 };
 ```
 
-`RequestContext` 作为 `submit/admit` 的独立参数，是 transport-auth、session、Profile、deadline 和因果顺序的唯一来源；Envelope 不再内嵌第二份 context。SCPI parser context、selection 与错误队列仍是 Session 状态，但 Adapter 不能把字符串路径直接传进业务模块；Web JSON DOM、HTTP 对象也不能穿过 Kernel Interface。Kernel 接受时重新验证权限，并冻结确切 target ID、Profile revision、typed stage、父 refs 和 ordering；不能信任 Adapter 自己选择的“当前数组”。`QueryAdmission` 是 `InlineResult | ReadyTicket | PendingTicket | RejectedQuery` 的有类型和，只有有硬大小上限的状态/metadata 可以 inline。
+`RequestContext` 作为 `submit/admit` 的独立参数，是 transport-auth、session、Profile、deadline 和因果顺序的唯一来源；Envelope 不再内嵌第二份 context，也不接收 Web/SCPI 提供的 revision。SCPI parser context、selection 与错误队列仍是 Session 状态，但 Adapter 不能把字符串路径直接传进业务模块；Web JSON DOM、HTTP 对象也不能穿过 Kernel Interface。Kernel 在 Control Admission Cut 中重新验证权限，从同一权威 Catalog cut 解析确切 target ID，并冻结内部 Profile revision、对象 revisions、typed stage、父 refs 和 ordering；Adapter 既不能选择“当前数组”，也不能读取 revision 后代客户端补入。`QueryAdmission` 是 `InlineResult | ReadyTicket | PendingTicket | RejectedQuery` 的有类型和，只有有硬大小上限的状态/metadata 可以 inline。
 
 领域 commit 产生的通知统一为：
 
@@ -117,6 +117,8 @@ struct EventRecord {
 ```
 
 Event projection 只能是有上限的摘要，不能因某个 Web 页面需要方便就塞入数组或私有字段。
+
+`EventRecord` 是 L2/L5 内部事实，不直接作为 Web wire schema。L2 只投影稳定对象 ID、业务事件、有界业务摘要与不透明 `WatchResumeToken`；`catalog_revision`、`new_revision`、内部 cursor/boot/epoch 不序列化给 Web，SCPI raw TCP 也不接收该事件流。
 
 ## 2. 正式数据对象不是“一条数组”
 

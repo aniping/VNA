@@ -469,7 +469,7 @@ BlobWriteFinishResult finish_blob_write(
 
 Preview 与 Blob 不是把协议对象塞进核心的例外。Preview 通过 access-revision 绑定的 `PreviewSinkRegistration` 消费有界 Hub mailbox；L4 Acquisition 只持 Operation/generation 绑定的 `AuthorizedPreviewPublisher`，队满可丢并报告 gap，权限变化立即终止该 consumer。publisher 终结能力以 `PreviewFinalizationOwnerSet` 随 Acquisition typed terminal 回到 L2；A commit 后 B-target 与依赖该 B 的 C-target 都进入 `RuntimeHeldPreviewEscrow`，由 L3 跨 MeasurementPipeline 调用持有并附加到 Runtime terminal/Drain，不传入 L4。只有 L2 可按目标正式 commit receipt 发送 Superseded/Unavailable/Discarded/Failed，Drain 则整体接管。大文件上传先通过 credit-based `BlobWriteHandle` 在 Binary Transfer Lane 形成 owner/purpose/TTL/digest 绑定的 `StagedBlobRef`，后续 Import/Recall Command 只携带该有界 ref；下载统一使用 snapshot/blob variant 的 `QueryReadHandle` 与同一 `finish_read`，不另暴露路径、FD 或 `BlobReadHandle`。完整 terminal/Drain 规则见[跨层 Interface 契约](interface-contracts.md)。
 
-初次加载不能采用“先任意 GET、再从当前时刻订阅”的两步窗口。`initial_view` 在同一个授权 Catalog cut 上返回业务状态与 `InitialViewSnapshot{catalog_revision,event_cursor,boot_id,event_epoch}`；随后 `watch` 必须携带这四项和 filter/access，从 `event_cursor + 1` 开始重放并继续实时投递。注册期间新提交的事件仍按 sequence 重放，重放与实时交叠按 sequence 去重；Watch 的内部 cursor 会跨过无权查看或被 filter 排除的 sequence 而不暴露内容，客户端只把 Dispatcher/Journal 发出的显式 gap marker 当作缺口，不能把正常的可见序号跳跃误判为数据丢失。若 boot/epoch 不同、cursor 超出 retention 或收到显式 gap，Watch 不猜测缺失状态，而是返回 `ResnapshotRequired`，客户端重新调用 initial_view。由此 Snapshot 与 Watch 之间不存在永久漏事件窗口。
+初次加载不能采用“先任意 GET、再从当前时刻订阅”的两步窗口。`initial_view` 在同一个授权 Catalog cut 上捕获业务状态与内部 replay cut，但只向 Web 返回业务状态和不可比较、不可用于 mutation 的不透明 `WatchResumeToken`；随后 `watch` 原样提交该 token 与 filter/access。Store/Kernel 在内部从对应 cursor 之后重放并继续实时投递，注册期间新提交的事件仍按 sequence 重放，重放与实时交叠按 sequence 去重；Watch 的内部 cursor 会跨过无权查看或被 filter 排除的 sequence 而不暴露内容。若内部 boot/epoch 不同、cursor 超出 retention 或发现 gap，Watch 不猜测缺失状态，而是返回 `ResnapshotRequired`，客户端重新调用 `initial_view`；Web wire schema 不出现 catalog/object revision、cursor、boot 或 epoch。由此 Snapshot 与 Watch 之间不存在永久漏事件窗口，也没有把内部 revision 伪装成客户端同步前置条件。
 
 `WatchSinkRegistration` 是 move-only 的内部 mailbox/dispatcher 生命周期能力，不是跨异步周期保存的裸 `EventSink&`。Accepted 后即使 Socket 断线，Kernel 仍持有 registration 直到 stop/gap/shutdown 的唯一 Watch terminal；网络对象只负责消费 registration 中的有界投影。Rejected 则归还 registration 且零 callback。
 
@@ -858,10 +858,10 @@ Instrument 生命周期为 `Booting → SelfTesting → Ready/Degraded/Fault →
 
 ### 11.1 共同 Command/Query/Event 模型
 
-- Command 带 Actor、Session、Deadline；Web mutation 还带 `expected_revision`。
-- 批量设置用原子的 `ApplyChannelPatch`，避免网页发送几十个单字段 setter 形成半套配置。
+- Command 的内部上下文带 Actor、Session、Deadline；Web 与 SCPI payload 都不带内部 revision。Kernel 在 Control Admission Cut 中解析当前目标与内部 commit preconditions。
+- 批量设置用原子的字段/稳定行 ID `ApplyChannelPatch`，避免网页发送几十个单字段 setter 形成半套配置，也避免把旧页面的完整 Channel 对象整体写回；只有显式 Replace 才替换整个聚合。
 - Query 读取 authoritative state 或不可变快照。
-- Event 带单调序号和 revision；Web 初次读取使用同一 Catalog cut 的 `InitialViewSnapshot`，从其 cursor+1 订阅；客户端发现 epoch/retention gap 后获取新快照 resync。
+- 内部 EventRecord 带单调序号与 revision；Web 只接收稳定对象 ID、业务事件、有界投影与不透明 Watch token。初次读取和内部 replay cut 来自同一 Catalog cut；发现 gap 后获取新快照 resync。
 - Instrument 级 `StatusRegisterCatalog`（Condition/Event/Enable/Summary）、每连接 `ScpiSessionStateCatalog`（error FIFO、ESR/ESE/SRE、overflow/read-clear revision）与 `WaitRegistry` completion predicate 在领域 commit/Operation terminal 时由唯一写者同步更新；SCPI Adapter 消费 Event 只作 wake hint。Journal gap 后重读这些权威 Status/Session/Fence Catalog，绝不能靠易失 Event 回放重建锁存位；raw TCP 不主动插入 unsolicited response 字节。
 - 多步骤校准、State Recall、Preset 等持有明确 owner/resource lease；普通读操作不被阻止。
 
@@ -870,7 +870,7 @@ Instrument 生命周期为 `Booting → SelfTesting → Ready/Degraded/Fault →
 推荐协议形态：
 
 - HTTP REST/Command：配置、查询、文件、操作控制；
-- WebSocket：revision/event、Operation progress 和限速 preview；
+- WebSocket：业务状态变更事件、Operation progress 和限速 preview；
 - HTTP binary endpoint：全分辨率复数/迹线数组和大文件，避免 JSON 文本膨胀；
 - 静态 HTML/CSS/TypeScript/JavaScript 在开发机生成 bundle，目标机只托管静态文件，不需要 Node 运行时。
 
@@ -902,9 +902,9 @@ SCPI 对客户端保持同步协议语义，但实现不得让 session worker �
 ### 11.4 多会话控制策略（推荐默认）
 
 - 所有领域 mutation 最终在同一 Control Executor 中有序提交；入口使用有保留容量的 SafetyIngress、每 SCPI Session 保留分区的 SessionStateIngress、只读 PriorityReadIngress 和有界 NormalIngress。安全动作优先且有最大调度延迟，但遵守同 Session causal predecessor；普通队列满载不能阻塞跨 Session `ABORt`/Cancel/RF-off/shutdown、SCPI error/status 的有序记录/read-clear，或不可变 health/status/readiness 读取。
-- Web 用 optimistic revision 防止旧页面覆盖新配置。
-- SCPI 按连接内顺序执行；跨连接冲突根据当前资源 lease 返回 execution error。
-- 校准、Preset/Recall、网络设置和恢复类操作取得独占 lease；普通 Channel 编辑使用对象 revision，不使用全局永久锁。
+- Web 和 SCPI 普通 mutation 都由唯一 Control Executor 线性化；协议不使用 optimistic revision。推荐让窄字段/行级 patch 应用于接受时最新状态，并让同一逻辑字段组的后接受修改覆盖先前值；这项普通编辑冲突政策尚未定案，最终以 `WEB-09` 的产品确认结果为准。
+- SCPI 按连接内因果顺序执行；跨连接资源冲突根据当前 lease 返回不含内部版本值的 Busy/Locked/StateChanged error。
+- 校准、Preset/Recall、网络设置和恢复类操作取得独占 lease；普通 Channel 编辑不使用全局永久锁，内部 revision 只用于原子 commit、审计和异步重验。
 - Web selected Channel/Trace/Marker 为 session-local；SCPI selection 按 Compatibility Profile 使用共享或连接局部状态。真实 Channel、Trace 定义和正式数据始终属于同一台 instrument。
 - owner 断开不自动杀死共享 Sweep；校准等交互 Operation 进入可配置的 grace period，之后取消或由管理员接管。
 
@@ -1012,12 +1012,12 @@ vna-app        composition root，只在此选择具体 Adapter
 Interface 就是主要测试表面，不以“每个类都有单测”宣布完成。成熟核心至少跑通：
 
 1. **完整双向 2-port**：一个 Channel 创建 `S11/S21/S12/S22`，调度最少的硬件 sub-sweep，完成 SOLT correction，并在多个 Diagram 显示 LogMag/Phase/Smith。
-2. **Web/SCPI 同源**：Web 修改后 SCPI 查询一致，SCPI 修改后 Web 通过 revision/event 更新；复杂数组和快照 ID 相同。
-3. **连续扫频配置切换**：运行中改变 points/power，旧执行不撕裂，下一执行原子采用新 revision。
+2. **Web/SCPI 同源**：Web 修改后 SCPI 查询一致，SCPI 修改后 Web 通过业务事件投影或重新读取权威状态更新；两类公共 schema 都不含内部 revision，复杂数组和快照 ID 相同。
+3. **连续扫频配置切换**：运行中改变 points/power，旧执行不撕裂，下一执行原子采用新的内部配置版本；Web/SCPI 全程不见 revision。
 4. **校准失败回滚**：已有有效校准时开始新 Guided Cal，中途取消/拔板，旧 Correction Set 继续有效且新 Set 不发布。
 5. **Trace/Marker/Limit**：Data-Memory、LogMag/Phase/Smith、多 Marker search、Bandwidth 和 Limit Fail 全部绑定同一正式快照，Web/SCPI 一致。
 6. **多 Channel/多板资源**：共享源串行、独立板并行、Continuous 不饿死 Single/Cal。
-7. **多会话冲突**：Web 正在校准，多个 SCPI 会话读写；lease、revision、selected context 和错误可预测。
+7. **多会话冲突**：Web 正在校准，多个 SCPI 会话读写；lease、Control Executor 接受顺序、selected context 和无 revision 错误可预测。
 8. **故障与恢复**：扫频 60% 时超时/热拔，所有 waiter 得到同一终态，last-good 保留，资源不死锁，Board 自检后才恢复。
 9. **State/掉电/换板**：原子保存后模拟损坏回退；换板恢复布局但校准显式失效；Touchstone 回读与复数结果一致。
 10. **最大负载与慢客户端**：最大点数、多个 Trace/Web/SCPI 大查询下内存有界，preview 可降级，正式事实先提交；事件投递过载显式 gap/resync，控制不被反压。

@@ -134,7 +134,7 @@ enum class ReadTerminal {
 };
 ```
 
-`RequestContext` 是 transport-auth、session、Profile、deadline 和因果顺序的唯一来源；`CommandEnvelope`/`QueryEnvelope` 只含有界 typed payload、target/expected revision 与可选 idempotency，不得再内嵌另一份 context。Kernel 重新验证该上下文并把所需字段冻结进工作或 Ticket。
+`RequestContext` 是 transport-auth、session、Profile、deadline 和因果顺序的唯一来源；`CommandEnvelope`/`QueryEnvelope` 只含有界 typed payload、稳定 target 或 selection intent 与可选 idempotency，不得再内嵌另一份 context，也不得携带 Web/SCPI 提供的 revision。Kernel 在 Control Admission Cut 中重新验证上下文，从权威 Catalog cut 解析并冻结当前内部 revisions，再自行构造 Store commit 所需的 `CommitPreconditionSet`。
 
 | 对象 | 产生者 | 消费者 | 所有权/可见性 |
 |---|---|---|---|
@@ -152,7 +152,7 @@ enum class ReadTerminal {
 | `QueryReadHandle` | L5 Store | L2 → L1 codec | 一次性读取授权；内部拥有由 ResultPin 原子转换而来的 `ReaderLease`，不暴露裸 Buffer |
 | `BlobWriteHandle` | L2 upload admission | L1 Binary Transfer lane | actor/session/intent/quota/TTL 绑定的 staging capability；大字节不进入 CommandEnvelope |
 | `AuthorizedPreviewPublisher` | L2/L3 admission | L4 或 Preview Drain | 只允许某 Operation/generation 向有界 PreviewHub 投递 provisional tile；不授予正式发布权 |
-| `EventRecord` | L2 bundle/L5 Journal | L5 EventFeed → L2 Watch projection → L1 dispatcher | 仅 typed ID、revision、cursor 和有界摘要；不保活数据 |
+| `EventRecord` | L2 bundle/L5 Journal | L5 EventFeed → L2 Watch projection → L1 dispatcher | 内部可含 typed ref、revision、cursor 和有界摘要；L2 投影给 Web 时只输出稳定 ID、业务事件和不透明 Watch token，SCPI 不接收该记录；不保活数据 |
 
 ## 4. Interface 地图
 
@@ -233,11 +233,11 @@ public:
 
 ### 5.1 submit
 
-- L1 已把 HTTP/SCPI 语法转换成有类型 Command，但 L2 重新验证 actor、session、Profile、capability、revision 和领域不变量。
-- 纯配置 Command 只在 `DomainCommitBundle` 成功后返回 committed revision。
-- 长操作返回 `Accepted{OperationId, accepted_revision}`；这不是完成。
+- L1 已把 HTTP/SCPI 语法转换成有类型 Command，但 L2 仍在当前 Control Admission Cut 中重新验证 actor、session、Profile、capability、目标和领域不变量，并冻结提交所需的内部 revisions。
+- 纯配置 Command 只在 `DomainCommitBundle` 成功后返回无 revision 的成功回执。
+- 长操作返回 `Accepted{OperationId}`；这不是完成，Operation 内部保存接受切面与来源版本。
 - admission 失败不创建幽灵 Operation；若创建 Operation 与派发之间失败，Operation 必须有可查询的失败终态。
-- 同一 SCPI Session 的 `session_sequence + causal_predecessor` 保持 Profile 规定的因果顺序；Web 的 expected revision 冲突明确返回。
+- 同一 SCPI Session 的 `session_sequence + causal_predecessor` 保持 Profile 规定的因果顺序；不同 Web/SCPI 客户端的 mutation 由唯一 Control Executor 线性化。协议不返回 revision conflict；字段/行级 patch 只在其声明范围内作用于接受时的最新状态。若目标政策要求显式编辑 lease，未持 lease 的竞争命令返回 Locked；否则同一字段按接受顺序决定，最终政策见 WEB-09。
 
 ### 5.2 admit/inspect/open_read/finish_read
 
@@ -271,8 +271,8 @@ using StopPreviewResult = Variant<
     StopRejected<PreviewStopError>>;
 ```
 
-- `initial_view` 从一个授权 Catalog cut 返回状态与 `{catalog_revision,event_cursor,boot_id,event_epoch}`。
-- `watch` 从 `event_cursor + 1` 重放并转实时；重放/实时交叠按 sequence 去重。
+- `initial_view` 从一个授权 Catalog cut 返回业务状态与不可比较、不可用于 mutation 的不透明 `WatchResumeToken`，不返回 catalog/object revision、cursor、boot 或 epoch。
+- `watch` 只接受该 token；Store/Kernal 在内部解析 replay cut，从对应内部 cursor 之后重放并转实时，重放/实时交叠按 sequence 去重。
 - boot/epoch 改变、cursor 超出 retention、显式 gap 或 access-set 变化返回 `ResnapshotRequired`。
 - `WatchSinkRegistration` 是 move-only 的投递端与生命周期能力，不是跨异步时长保存的 `EventSink&`。Rejected 归还 registration 且零 callback；Accepted 后由 Kernel 持有到有序事件流和恰好一次 Watch terminal 完成。Socket 断线只停止 wire 编码，不销毁内部 registration，也不免除 terminal 义务。
 - `stop_watch` 必须校验 owner/session/access；可猜的 `WatchId` 本身不是授权能力。`StopAccepted` 只表示发起停止，registration 继续保活到唯一 Watch terminal；`AlreadyTerminal` 表示 terminal 已完成；`StopRejected` 零 stop callback，原 Watch/registration 保持原状态并可继续交付，错误 ID/权限不能吞掉 owner。registration 析构也不是 stop。
@@ -322,7 +322,7 @@ public:
 };
 ```
 
-`plan` 无副作用、无 I/O、不创建 Operation/lease、不调用 Board/Runtime/Store，且受 ProductProfile 的 boards/points/segments/ports/observation 数量硬上界约束。它从同一授权 `CatalogCut` 组装的冻结输入中合并 Live Measurement、Calibration/Verification 与显式导出需求；输出尽量保持符号化，不能在 Control Executor 上展开几十万点数组。输出的 job、Runtime claim、typed refs 和 conservative claim 共享一个不可变 plan digest，后续任一 revision/epoch/digest 不匹配都必须拒绝。若目标 Profile 下的 planner WCET 不能满足 Control/Safety ingress 延迟预算，则在配置 revision 生成时缓存 `SweepPlanRevision`，或在固定 Planning lane 纯计算后回到 L2 重验 expected revisions，不能长时间占住唯一 Control Executor。
+`plan` 无副作用、无 I/O、不创建 Operation/lease、不调用 Board/Runtime/Store，且受 ProductProfile 的 boards/points/segments/ports/observation 数量硬上界约束。它从同一授权 `CatalogCut` 组装的冻结输入中合并 Live Measurement、Calibration/Verification 与显式导出需求；输出尽量保持符号化，不能在 Control Executor 上展开几十万点数组。输出的 job、Runtime claim、typed refs 和 conservative claim 共享一个不可变 plan digest，后续任一内部 revision/epoch/digest 不匹配都必须拒绝。若目标 Profile 下的 planner WCET 不能满足 Control/Safety ingress 延迟预算，则在内部配置 revision 生成时缓存 `SweepPlanRevision`，或在固定 Planning lane 纯计算后回到 L2 重验内部 cut token；若已过期则有界重算或返回不含版本值的 Busy/StateChanged，不能要求客户端重交 expected revision，也不能长时间占住唯一 Control Executor。
 
 `SweepAdmissionPlanner` 是纯 Module；`ResourceArbiter` 不是。后者维护当前 ResourceGraph 占用，按 canonical Board/Resource ID 顺序和同一 topology epoch 为单板或多板 **全有或全无**地签发排他 `PreAdmissionLease`。不能把“资源看起来可用”的纯校验冒充 lease，否则两个并发 Sweep 会同时驱动同一 source/route。
 
@@ -855,7 +855,7 @@ sequenceDiagram
 | 分类 | 典型含义 | 是否创建 Operation | 重试方式 |
 |---|---|---|---|
 | `InvalidArgument` | 类型/范围/组合非法 | 否 | 修改请求 |
-| `RevisionConflict` | expected revision 或 current-input token 过期 | 否或已有 Operation 失败 | 重新读取 Catalog 后决定 |
+| `StateChanged` | 接受时目标已删除、命令前提已不成立，或内部 cut token 过期且有界重算仍未收敛；不包含 expected/current revision | 否或已有 Operation 失败 | 重新读取业务状态后决定；内部 Head/Candidate 的 CAS 失配不直接映射到协议 |
 | `UnsupportedCapability` | Product/Board/Profile 不支持 | 否 | 更换能力/Profile，不盲重试 |
 | `ResourceExhausted` | queue/pin/buffer/temp quota 不足 | 视入口而定 | 按 retry-after/资源终态重试 |
 | `DeadlineExceeded` | 用户等待或工作 deadline 到期 | 可能进入 Drain | 等待 Drain/恢复，不立即复用资源 |
@@ -899,7 +899,7 @@ sequenceDiagram
 
 | Suite | 从哪个 Interface 测试 | 必须证明 |
 |---|---|---|
-| Protocol equivalence | `InstrumentKernel` | 等价 Web/SCPI 输入得到相同领域 revision、Operation、Snapshot 和错误语义 |
+| Protocol equivalence | `InstrumentKernel` | 等价 Web/SCPI 输入得到相同可观察业务状态、Operation、Snapshot 和错误语义；公共 schema 均无内部 revision |
 | Kernel behavior | `InstrumentKernel` + Mock Board/File | revision、权限、Command/Query、Operation、Event、last-good |
 | Transfer/preview | Kernel upload/read/preview Interface | 跨 actor 拒绝、quota/credit、断线/TTL/Drain 清理、blob reader 统一 finish、Preview gap/terminal 且不影响正式结果 |
 | Runtime model/pressure | `OperationRuntime` | admission 上限、公平、cancel、deadline、Drain、唯一 completion |

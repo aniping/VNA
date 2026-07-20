@@ -157,10 +157,10 @@ Linux HI1213 5.10.0 #1 SMP PREEMPT Thu Jun 1 CST 2023 aarch64 GNU/Linux
 | 行 | 证据判断 | 等级 | 架构处置 | 剩余闭合门禁 | 对齐行 |
 |---|---|---|---|---|---|
 | WEB-E01 | R&S 明确 GUI 与 remote command 双向关联；CMT GUI、SCPI 和 Demo Mode 面向同一仪器能力。厂商资料不证明我们的页面信息架构。 | E1 / E3 | Web/SCPI 只做协议适配，共用 Kernel、Command、Query、Operation、Snapshot；所有已暴露的 Core/Pro/HW 能力都必须有完整 Web 操作面，ProductProfile 只负责 capability gating。 | 页面信息架构、响应式布局和可用性验收；不缩减已暴露功能。 | WEB-01, WEB-02, WEB-12 |
-| WEB-E02 | 厂商 Web/LXI 证明浏览器可成为远程入口，但不证明完整 VNA Web API、初始快照或增量事件协议。 | E2 / E3 | 从同一 Catalog cut 返回 `InitialViewSnapshot{catalog_revision,event_cursor,boot_id,event_epoch}`；Watch 从 `cursor+1` 重放并按 sequence 去重。epoch/retention gap 或 actor/session 的 access-set 任一扩张/收缩都关闭旧 Watch，重新鉴权并取得新 Snapshot，不能在旧授权快照上续订。 | 事件保留窗口、重连 SLA、角色/ACL 变化测试。 | WEB-03, WEB-04 |
+| WEB-E02 | 厂商 Web/LXI 证明浏览器可成为远程入口，但不证明完整 VNA Web API、初始快照或增量事件协议。 | E2 / E3 | 内部从同一 Catalog cut 捕获状态与 replay cut，只向 Web 返回业务状态和不可比较、不可用于 mutation 的不透明 `WatchResumeToken`。Watch 在内部从对应 cursor 后重放并去重；epoch/retention gap 或 actor/session 的 access-set 任一扩张/收缩都关闭旧 Watch，重新鉴权并取得新 Snapshot。 | 事件保留窗口、重连 SLA、角色/ACL 变化测试；公共 schema 无 catalog/object revision。 | WEB-03, WEB-04 |
 | WEB-E03 | Sweep 完成后才读取数据/Marker 是跨厂商要求；progress preview 传输是项目设计。 | E1 / E3 | Preview 标 `provisional`、可丢/合并；B 层先发布 `measurement.completed`，C 层逐 Trace 原子发布 Trace/Marker/Limit，单 Trace 失败隔离。 | Preview 速率、抽稀策略、目标吞吐。 | WEB-05, WEB-06 |
 | WEB-E04 | SCPI binary block 证明大数组应避免文本膨胀；HTTP binary endpoint 不是厂商共同事实。 | E1 / E3/E4 | JSON 仅 metadata；全分辨率独立 binary endpoint。QueryTicket 到 Ready 时先取得有配额 `ResultPinLease`，`open_read` 再原子转为 ReaderLease，限 size/time/lease。 | dtype/endian、下载上限、目标吞吐与 pin 配额。 | WEB-07, PLAT-09 |
-| WEB-E05 | 复合表格原子编辑、多浏览器 optimistic concurrency 未由厂商手册规定。 | E3 | Patch 全量校验后提交一个 revision；mutation 带 expected revision；长操作用 lease。 | 冲突 UI、接管权限、lease timeout。 | WEB-08, WEB-09 |
+| WEB-E05 | 复合表格原子编辑、多浏览器 optimistic concurrency 未由厂商手册规定。 | E3 | ADR-0014 的产品决策拒绝在 Web/SCPI 暴露 revision。字段/稳定行 ID patch 在 Control Admission Cut 上整体校验并用内部 revision 原子提交；普通同字段竞争推荐按 Control Executor 接受顺序生效，显式编辑 lease 仍是待确认备选；长操作继续用 lease。 | 同字段覆盖或 Locked 政策、接管权限、lease timeout；协议错误不得回传内部版本值。 | WEB-08, WEB-09 |
 | WEB-E06 | Sweep/Cal/Recall/Export/self-test 是长操作；刷新不取消共享操作是项目可靠性规则。 | E1 / E3 | 统一 Operation Catalog，HTTP 仅创建/查询/取消/订阅；owner 为 actor/session。 | cancel 点、断线 grace、管理员接管。 | WEB-10 |
 | WEB-E07 | 厂商资料不证明目标机需要 Node 或浏览器可计算校准真值。 | E3/E4 | 前端主机构建静态 bundle；浏览器只交互/渲染；正式分析在 C++；API/bundle schema 版本绑定。 | 前端栈、升级/回滚和缓存策略。 | WEB-11, WEB-12 |
 
@@ -184,7 +184,7 @@ Linux HI1213 5.10.0 #1 SMP PREEMPT Thu Jun 1 CST 2023 aarch64 GNU/Linux
 | SCPI-14 | 厂商同步语义要求完整结果，但不公开 immutable snapshot pin 算法。 | E3 | query 接受时按 Profile 解析 selection，再 pin 最近兼容 completed snapshot。 | pin timeout、回收压力、stale policy。 | SCPI-14 |
 | SCPI-15 | 断线释放传输资源但是否取消共享 Sweep 未有跨厂商统一规则。 | E3 | cancel waiter/transfer；Operation 按 owner/command 语义继续或取消。 | Cal 断线 grace、共享 Sweep、管理员接管。 | SCPI-15 |
 | SCPI-16 | R&S RawSocket 无 SRQ control channel；Keysight PNA raw Socket 可另开专有 control connection 接收 SRQ。 | E2 | 基础 raw TCP 只承诺 `*STB?` polling；异步服务请求作为独立 Transport capability，不能由寄存器实现自动推导。 | 是否兼容 PNA control socket，或增加 HiSLIP/VXI-11/项目事件协议。 | SCPI-16 |
-| SCPI-17 | `*IDN?`/版本/选件查询是成熟自动化面，项目 capability manifest 为推导。 | E1/E2 / E3/E4 | 返回当前 ProfileSet、Session 冻结的 ScpiCompatibilityProfile、ProductProfile 与 BoardCapability revision，命令暴露与拒绝一致。 | 产品 ID、版本 schema、运行时降级规则。 | SCPI-17 |
+| SCPI-17 | `*IDN?`/产品与固件版本/选件查询是成熟自动化面，项目 capability manifest 为推导。 | E1/E2 / E3/E4 | 返回产品身份、软件/固件版本、选件和实际能力值；内部 ProfileSet、ScpiCompatibilityProfile、ProductProfile 与 BoardCapability revision 不进入 SCPI 响应，但命令暴露与拒绝仍由同一冻结内部 Profile 决定。 | 产品 ID、版本 schema、运行时降级规则。 | SCPI-17 |
 
 ### 7.3 STA 与 FIL
 
@@ -277,13 +277,13 @@ Linux HI1213 5.10.0 #1 SMP PREEMPT Thu Jun 1 CST 2023 aarch64 GNU/Linux
 |---|---|---|---|
 | WEB-01 | WEB-E01 | 厂商只证明 GUI/远程能力同源；完整 Web 页面范围是已冻结的产品基线。 | 已明确 |
 | WEB-02 | WEB-E01 | Web/SCPI 共用 Kernel、Command、Query、Operation 和 Snapshot；这是 E3 一致性边界。 | 已由证据定案 |
-| WEB-03 | WEB-E02 | 厂商 Web/LXI 不证明项目快照协议；同 revision 初始 Snapshot 是 E3 设计。 | 已由证据定案 |
-| WEB-04 | WEB-E02 | sequence/revision、gap 检测与 resync 是 E3 可靠性协议；access-set 任一升降都关闭旧 Watch 并要求重新鉴权/取快照。 | 已由证据定案 |
+| WEB-03 | WEB-E02 | 厂商 Web/LXI 不证明项目快照协议；同一内部 Catalog cut 的业务 Snapshot 与不透明 Watch token 是 E3 设计，内部 revision 不序列化。 | 已由产品决策定案 |
+| WEB-04 | WEB-E02 | 内部 sequence、gap 检测与 resync 是 E3 可靠性协议；Web 只回传不透明 token，access-set 任一升降都关闭旧 Watch 并要求重新鉴权/取快照。 | 已由产品决策定案 |
 | WEB-05 | WEB-E03, CAP-05 | Preview 仅是可丢的临时视图；具体传输、吞吐和长稳必须在目标机 E4 验证。 | 待平台验证 |
 | WEB-06 | WEB-E03 | B 层 Measurement 与逐 Trace 的 C 层发布分离；失败隔离和原子代次是 E3 正式边界。 | 已由证据定案 |
 | WEB-07 | WEB-E04, CAP-05 | binary endpoint 与 snapshot pin 是 E3；dtype、限额和目标吞吐留 E4。 | 待平台验证 |
-| WEB-08 | WEB-E05 | 复合 Patch 全量校验后单 revision 提交，属于 E3 原子编辑规则。 | 已由证据定案 |
-| WEB-09 | WEB-E05 | expected revision 与长操作 lease 是 E3 并发控制，不冒充厂商内部实现。 | 已由证据定案 |
+| WEB-08 | WEB-E05 | 复合 Patch 按明确字段/行范围整体校验并用内部 revision 原子提交，外部不见半套配置或版本字段。 | 已由产品决策定案 |
+| WEB-09 | WEB-E05 | Web/SCPI 都不使用 expected revision 已定案；普通同字段竞争采用后接受者生效还是显式编辑 lease 仍待产品确认。 | 待产品确认 |
 | WEB-10 | WEB-E06 | 长操作统一进入 Operation Catalog，HTTP 生命周期不拥有共享操作。 | 已由证据定案 |
 | WEB-11 | WEB-E07 | 主机构建静态 bundle、目标机托管及升级回滚需 E4 平台闭环。 | 待平台验证 |
 | WEB-12 | WEB-E01, WEB-E07 | 浏览器只交互/渲染，正式测量与分析在共享 C++ 核心，属于 E3 职责边界。 | 已由证据定案 |
@@ -303,7 +303,7 @@ Linux HI1213 5.10.0 #1 SMP PREEMPT Thu Jun 1 CST 2023 aarch64 GNU/Linux
 | SCPI-14 | SCPI-14 | query 接受时固定目标和 completed snapshot，是 E3 防撕裂语义。 | 已由证据定案 |
 | SCPI-15 | SCPI-15 | 断线释放会话资源但不任意终止共享 Operation，是 E3 生命周期规则。 | 已由证据定案 |
 | SCPI-16 | SCPI-16 | RawSocket 的 SRQ/control-channel 能力不一致，是否兼容副通道必须显式选择。 | 待兼容目标 |
-| SCPI-17 | SCPI-17 | 当前 ProfileSet、Session ScpiCompatibilityProfile、ProductProfile 与 BoardCapability revision 同源暴露，命令显示和拒绝必须一致。 | 已由证据定案 |
+| SCPI-17 | SCPI-17 | 产品/固件版本和实际能力值同源暴露；内部 Profile、Product 与 Board capability revision 只驱动命令显示和拒绝，不进入 SCPI 响应。 | 已由产品决策定案 |
 | FILE-01 | STA-01, STA-02, STA-03, STA-04 | inclusion、CalSet 引用、scope、Trace/Memory 恢复与默认 HoldSafeOff 共同约束 State manifest/RecallActivationPolicy。 | 已由证据定案 |
 | FILE-02 | STA-03, STA-04, STA-05 | Recall scope 与 Hold 有厂商方向性证据；staging 后单 revision commit、显式 run 另起完整 admission Operation 是 E3。 | 已由证据定案 |
 | FILE-03 | STA-06, SEC-E05 | Preset/`*RST`/FactoryReset 无统一保留矩阵，必须随兼容目标冻结。 | 待兼容目标 |
