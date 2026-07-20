@@ -112,12 +112,12 @@ R&S 主证据定位如下：ZNA v39 §4.1.3 p.113 定义 Trace、Channel、Diagr
 | LIM-02 | LIM-E01 | E1/E2 upper/lower/single/off segments | 已由证据定案 |
 | LIM-03 | LIM-E01/02 | E2 端点包含和插值方言差异 | 待兼容目标 |
 | LIM-04 | LIM-E01、厂商 formatted-data flow | E1 格式化标量输入；E2 convert/reject；E4 单位/格式算法 | 待算法/计量验证 |
-| LIM-05 | LIM-E03、采集质量证据 | E3 safety invariant：无效数据不得静默 Pass；产品已确认任一参与点无效，或者零参与点、空输入、没有任何有效参与数据时，核心总体为 Indeterminate；生产 Safety Policy 可汇总为 Fail 但不得映射 Pass 或改写原始结果 | 已明确 |
+| LIM-05 | LIM-E03、采集质量证据 | E3 safety invariant：无效数据不得静默 Pass；产品已确认任一参与点无效，或者零参与点、空输入、没有任何有效参与数据时，核心总体为 Indeterminate；`ProductionQualificationPolicy` 可按冻结规则派生 Fail 但不得映射 Pass 或改写原始结果 | 已明确 |
 | LIM-06 | LIM-E03 | E1 总 Fail、失败点/刺激；E3 margin、失败区间、worst point 扩展 | 已由证据定案 |
 | LIM-07 | LIM-E02/03、SCPI status 证据 | E2 lock/latch/aggregate；E3 revision-keyed aggregation | 待兼容目标 |
 | LIM-08 | 控制证据 FIL-04 | E1/E2 Limit 文件/表；E3 独立 schema、version、staging validation | 已由证据定案 |
 | LIM-09 | LIM-E01..03、统一 Web/SCPI Kernel | E3 consistency closure：单一 `LimitResultSnapshot` 服务 Web、SCPI 与状态入口；不是厂商内部复用事实 | 已由证据定案 |
-| LIM-10 | LIM-E03 与高级分析证据 | 无三家共同 E1 下限；E3 独立 Pro evaluator，不污染基础 Segment | 待产品确认 |
+| LIM-10 | LIM-E03 与[高级 Limit 商用/开源证据](advanced-limit-commercial-open-source-evidence.md) | E1/E2 证明普通 Limit、Ripple、Flatness 与 Circle 等外部能力并非一个含糊模板；E3 将无状态单次 evaluator、不可变原始结果和有状态 `ProductionQualificationPolicy` 分离。项目已确认 Ripple 为 Core 独立判定，几何类型显式 capability-gated，连续 N/锁存/bin/QMS 不得进入 Segment 或改写原始结果；不声称厂商采用相同内部架构 | 已明确 |
 | MATH-01 | MTH-01 | E1 Data→Memory；E2 容量/对象差异；E3 immutable Memory snapshot | 已由证据定案 |
 | MATH-02 | MTH-02 | E1 复数 Data/Memory 四则；E2 快捷副作用；E3 typed node | 已由证据定案 |
 | MATH-03 | MTH-03 | E2 Keysight interpolation 与厂商差异；E3 默认 `ExactAxis`、禁止静默按下标错配 | 待兼容目标 |

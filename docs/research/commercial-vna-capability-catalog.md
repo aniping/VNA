@@ -222,7 +222,7 @@ Keysight 的 Marker 支持带宽搜索，返回 bandwidth、center、Q、loss，
 
 **Pro**
 
-- 多区间统计 Marker、flatness、ripple、峰表、自动标注所有峰、marker table 导出、跨 Trace marker link。
+- 多区间统计 Marker、flatness、峰表、自动标注所有峰、marker table 导出、跨 Trace marker link。Ripple 是独立单次测试，不列作 Marker 类型。
 
 ### 3.9 Limit Line、Limit Test 与生产判定
 
@@ -231,16 +231,20 @@ Keysight 的 Marker 支持带宽搜索，返回 bandwidth、center、Q、loss，
 - `LimitTest` 与 `LimitLine/Segment` 分离：一个测试包含有序的 upper、lower、single-point/off Segment；每段有起止刺激与起止限值。
 - Limit 绑定 AnalysisTrace 的 projection/格式/单位和结果代次。修改格式时必须转换、拒绝或使 Limit 失效，不能继续用旧单位静默判断；Diagram 只保存 Limit Line 的 Placement/可见性。
 - 判断基于实际测量点；是否判断插值线段必须固定。Keysight/CMT 基本语义是逐点判断。
-- 输出：不可变整体 `Pass/Fail/Indeterminate`、无效原因、失败点数量、失败点刺激和值、对应 upper/lower、最大裕量/最差点；显示开关与测试开关分离。任一启用段参与点过载、缺失、NaN 或质量无效，或者零参与点、空输入、没有任何有效参与数据时，总体为 Indeterminate，并保留已知失败明细；生产 Safety Policy 可将其汇总为 Fail，但绝不当 Pass，也不改写原始结果。
+- 输出：不可变整体 `Pass/Fail/Indeterminate`、无效原因、失败点数量、失败点刺激和值、对应 upper/lower、最大裕量/最差点；显示开关与测试开关分离。任一启用段参与点过载、缺失、NaN 或质量无效，或者零参与点、空输入、没有任何有效参与数据时，总体为 Indeterminate，并保留已知失败明细；`ProductionQualificationPolicy` 可按冻结规则派生 Fail，但绝不当 Pass，也不改写原始结果。
 - Channel/Instrument 聚合状态：只聚合本次指定执行中的测试，不能让陈旧失败状态污染新批次。
 - Limit 定义导入/导出、版本、名称、单位、创建者/时间；生产测试保存判定时同时保存所依据的结果和 Limit 版本。
 - Web、SCPI 使用同一判定服务；SCPI 至少可设置表、开关、查询三态、无效原因及失败点/报告。若兼容方言只有布尔 Fail 面，Indeterminate 必须以非 Pass 的 fail-safe 结果并配套原因/质量查询暴露，不能静默变成 Pass。
+- Ripple Test 是与普通 Segment Limit 并列的 Core 单次 evaluator：在每个频带内用实际参与点计算 `max(response) - min(response)` 并与阈值比较，使用同一不可变输入与三态质量规则，但拥有独立定义和结果。Flatness 仍是 Marker/Metric，不与 Ripple 混名。
 
 Keysight 的 Limit 命令支持 max/min Segment、总 Fail 和逐点报告，见 [CALCulate:MEASure:LIMit](https://helpfiles.keysight.com/csg/N52xxB/Programming/GP-IB_Command_Finder/Calculate/MeasureLIMit.htm)；CMT 同样公开 limit table、failed points 和报告，见 [CALC:LIM:DATA](https://coppermountaintech.com/help-cmtvna/Programming-Manual/calclimdata.html)。
 
-**Pro**
+**专用判定与生产能力**
 
-- Ripple limit、peak limit、margin line、频带模板、连续 N 次通过/失败、handler 输出、蜂鸣/告警、批量报告。Ripple 在 Keysight 和 CMT 均有专门命令，但不应挤占首版常规 upper/lower limit 的交付质量，见 [Keysight Ripple Limit](https://helpfiles.keysight.com/csg/N52xxB/Programming/GP-IB_Command_Finder/Calculate/MeasureRLIMit.htm)。
+- Peak threshold、复数平面 Circle 等只以明确的单次 evaluator 类型和 capability 交付；Eye Mask 仍归时域应用，禁止建立同时兜底频率包络、复数区域和眼图的万能 Mask。margin 是普通单次结果的派生报告字段，不是另一种模板。
+- 连续 N 次、锁存、bin、批次与 QMS 由独立 `ProductionQualificationPolicy` 按顺序消费不可变单次结果，并发布自己的结果；handler/继电器、蜂鸣/告警和批量报告只能显式消费单次或生产结果，不能改写或替换原始三态。具体授权组合由 ProductProfile 决定。
+
+Ripple 在 Keysight、R&S 和 CMT 均有独立配置语义，见 [Keysight Ripple Limit](https://helpfiles.keysight.com/csg/N52xxB/Programming/GP-IB_Command_Finder/Calculate/MeasureRLIMit.htm) 及[高级 Limit 商用/开源证据](advanced-limit-commercial-open-source-evidence.md)。
 
 ### 3.10 Trace Math、Memory、Hold、Smoothing 与 Statistics
 

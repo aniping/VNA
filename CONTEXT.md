@@ -6,7 +6,7 @@
 
 项目统一使用 [六层职责模型](docs/design/layered-architecture.md)：L1 协议 Adapter、L2 仪器应用、L3 Operation Runtime、L4 领域执行、L5 权威事实、L6 资源 Adapter 与平台。层表示职责和依赖方向，不要求每个调用机械穿过全部层；`Instrument Kernel` 是控制主干，L3 调度 L4，只有 L2 可以通过 `DomainCommitBundle` 让 L5 的事实原子可见。方法、accepted/terminal、lease 与错误的共同规则见[跨层 Interface 契约](docs/design/interface-contracts.md)。
 
-A/B/Stage/C 是 L5 中的正式**数据阶段**，不是四个软件层。Marker/Limit 定义在 L2、求值在 L4、结果随 C 存入 L5、最后由浏览器呈现；Diagram 只组织 C 的显示引用，不参与测量判定。`BoardPort` 是 L4 Acquisition 拥有的硬件 seam，Real/Mock/Replay 是它的 L6 Adapter；每块板通过同一 `OpenedBoard` 暴露 Execution、Safety、Maintenance 三个权限分面，字段级规则见 [Board Adapter 契约](docs/design/board-adapter-contract.md)，不能把单板差异带入 Channel、Trace、Calibration 或 Diagram 语义。
+A/B/Stage/C 是 L5 中的正式**数据阶段**，不是四个软件层。Marker 与各 typed 单次 evaluator 定义在 L2、求值在 L4、原始结果随 C 存入 L5、最后由浏览器呈现；跨发布 Production Qualification 另以 L2 policy/sequence、L4 状态转移和 L5 Snapshot 形成独立派生事实。Diagram 只组织 C 的显示引用，不参与任何判定。`BoardPort` 是 L4 Acquisition 拥有的硬件 seam，Real/Mock/Replay 是它的 L6 Adapter；每块板通过同一 `OpenedBoard` 暴露 Execution、Safety、Maintenance 三个权限分面，字段级规则见 [Board Adapter 契约](docs/design/board-adapter-contract.md)，不能把单板差异带入 Channel、Trace、Calibration 或 Diagram 语义。
 
 ## 采集
 
@@ -116,7 +116,7 @@ Channel 对某个 Correction Set 的版本化选择与独立 correction enable �
 本节是项目内部的归一化语言，不宣称 Keysight、R&S、CMT 公开了相同的内部对象切分。协议 Adapter 负责把 Keysight 的 Measurement/显示 Trace、R&S/CMT 的复合 Trace 映射到这些对象。
 
 **分析迹线（Analysis Trace / Trace Definition）**：
-面向用户和协议的稳定可分析对象。它拥有 `TraceSourceSpec`、处理图、分析投影、Marker、Limit、Memory、Hold 与统计定义；它可以没有任何 Trace Placement，Live Source 内含的 Measurement Spec 仍可进入 Sweep Compiler，其他 Source 可以引用 Math、Frozen/Memory Snapshot 或导入数据；它独立于任何 Diagram，并可在不重新扫频的情况下基于 last-good 数据重新求值。
+面向用户和协议的稳定可分析对象。它拥有 `TraceSourceSpec`、处理图、分析投影、Marker、普通分段 Limit、Ripple 与其他有类型单次分析定义，以及 Memory、Hold 与统计定义；它可以没有任何 Trace Placement，Live Source 内含的 Measurement Spec 仍可进入 Sweep Compiler，其他 Source 可以引用 Math、Frozen/Memory Snapshot 或导入数据；它独立于任何 Diagram，并可在不重新扫频的情况下基于 last-good 数据重新求值。
 
 **迹线求值快照（Trace Evaluation Snapshot）**：
 某个正式输入快照与某个 Analysis Trace 版本计算得到的不可变结果。Marker、Limit、SCPI 查询和导出必须绑定明确的求值快照。
@@ -125,25 +125,34 @@ Channel 对某个 Correction Set 的版本化选择与独立 correction enable �
 一次 Trace 求值冻结的有类型来源：Live 输入引用一个 B 层 `measurement_snapshot_id`，需要矩阵处理分支时也可引用一个 `measurement_stage_snapshot_id`；Frozen/Memory 输入引用静态快照；Imported 输入引用导入数据快照；Derived 输入引用一个或多个上游 C 层 publication，并记录同步政策和 generation vector。非 Live Trace 不伪造 Sweep 或 B 层父对象。
 
 **分析发布（Analysis Publication）**：
-把 Analysis Input Ref Set、Analysis Trace revision、Marker/Limit revision 和求值结果绑在一起的 C 层不可变发布。单条 Trace 求值失败只使该发布失败或 stale，不回滚任何已经成功的父快照；Live Trace 仍可沿输入引用反查 B 层 Measurement。失败 Sweep 不产生以该 Sweep 为父的新 A/B，也不产生以其结果为父的新 Live C；基于旧 B 的重算以及 Frozen/Imported/Derived C 与该失败独立。
+把 Analysis Input Ref Set、Analysis Trace revision、Marker 与各有类型单次 evaluator revision 及求值结果绑在一起的 C 层不可变发布。单条 Trace 求值失败只使该发布失败或 stale，不回滚任何已经成功的父快照；Live Trace 仍可沿输入引用反查 B 层 Measurement。失败 Sweep 不产生以该 Sweep 为父的新 A/B，也不产生以其结果为父的新 Live C；基于旧 B 的重算以及 Frozen/Imported/Derived C 与该失败独立。
 
 **标记定义（Marker Definition）**：
-属于 Analysis Trace 的分析规则，包括普通、参考、差值、固定、跟踪以及峰值、目标、带宽等搜索。标记计算结果与定义分开，并记录输入节点、数据投影和父快照。厂商兼容层可以用 Measurement 或 Trace 路径寻址它。
+属于 Analysis Trace 的分析规则，包括普通、参考、差值、固定、跟踪以及峰值、目标、带宽、Flatness 等搜索或指标。Flatness 是 Marker/Metric，不等同于频带内 `max-min` 的 Ripple；若需要按 Flatness 阈值判定，由明确的 Metric evaluator 消费该指标。标记计算结果与定义分开，并记录输入节点、数据投影和父快照。厂商兼容层可以用 Measurement 或 Trace 路径寻址它。
 
 **限制测试定义（Limit Test Definition）**：
-属于 Analysis Trace 的分段标量判定规则，描述上限、下限、断开段、参与范围和插值规则。Limit Test enable 与显示可见性分开；Limit Line 是同一定义的显示 Overlay，不能另用一套判定算法。无效参与点的三态映射属于固定核心语义，不是每份定义可改写的政策。
+属于 Analysis Trace 的普通分段标量判定规则，描述上限、下限、断开段、参与范围和插值规则。Ripple 不是一种 Limit Segment，Circle 等复数平面区域也不能伪装成 Segment；它们各自使用明确的 evaluator 类型。Limit Test enable 与显示可见性分开；Limit Line 是同一定义的显示 Overlay，不能另用一套判定算法。无效参与点的三态映射属于固定核心语义，不是每份定义可改写的政策。
 
 **限制测试结果（Limit Test Result）**：
-绑定确切 Analysis Publication、Trace 求值和 Limit Definition 的不可变三态结果：`Pass` 表示存在参与点、全部参与点有效且满足限值，`Fail` 表示存在参与点、全部参与点有效但至少一点明确超限，`Indeterminate` 表示任一参与点过载、缺失、NaN、质量无效，或者零参与点、空输入、没有任何有效参与数据，因而无法完成可信判定。已知超限点仍可作为诊断明细保留，但只要存在参与判定的无效点或没有足够有效数据，核心总体状态就是 `Indeterminate`。生产 Safety Policy 可以把它汇总为 Fail，不能映射为 Pass，也不能改写原始结果；Web 与 SCPI 必须观察同一状态和原因。
+绑定确切 Analysis Publication、Trace 求值和 Limit Definition 的不可变三态结果：`Pass` 表示存在参与点、全部参与点有效且满足限值，`Fail` 表示存在参与点、全部参与点有效但至少一点明确超限，`Indeterminate` 表示任一参与点过载、缺失、NaN、质量无效，或者零参与点、空输入、没有任何有效参与数据，因而无法完成可信判定。已知超限点仍可作为诊断明细保留，但只要存在参与判定的无效点或没有足够有效数据，核心总体状态就是 `Indeterminate`。生产资格策略可以按冻结的 fail-safe 规则派生 Fail，不能映射为 Pass，也不能改写原始结果；Web 与 SCPI 必须观察同一原始状态和原因。
+
+**纹波判定（Ripple Test）**：
+属于 Analysis Trace 的基础单次判定。它在每个已配置频带内使用实际参与测量点计算 `max(response) - min(response)`，再与该频带阈值比较；定义、结果和无效数据原因都与普通 upper/lower Segment Limit 分开。Ripple 结果绑定一份确切 Analysis Publication，后续 Sweep 不会改写它。
+
+**单次发布判定（Single-Publication Evaluation）**：
+对一份冻结 `AnalysisInputRefSet` 和全分辨率 `TraceEvaluationSnapshot` 做的无状态分析；若判定依赖 Marker/Metric，依赖必须是同一候选批有向无环图中的显式 typed 上游。普通分段 Limit、Ripple、明确的 Metric threshold 或 Circle 等几何判定分别产生有类型的原始结果，再由同次聚合器组合；Trace、Marker 与全部结果在一个 Analysis Publication 中原子发布并绑定其 ID，evaluator 不能反向读取尚未形成的 publication。这个词不只指 Live Sweep，Frozen、Imported 或 Derived 输入也可以形成一次发布。禁止用一个万能 `Mask` 类型或在 `LimitSegment` 中堆条件分支。普通 Continuous 的显示型 C 可以按既有策略合并；一旦某轮被生产资格策略跟踪，其所需原始 evaluator bundle 就是不可合并的必达后继，必须先提交才能推进生产状态。
+
+**生产资格策略、序列与结果（Production Qualification Policy / Sequence / Result）**：
+按参与 ordinal 严格消费单次发布的不可变原始结果，维护连续 N 次、锁存、分档、批次或 QMS 所需的跨发布状态，并发布独立的 Production Qualification Snapshot。策略必须固定允许参与的 source、序列/被测件上下文、Pass/Fail/Indeterminate 的状态转移和重置条件；上下文或策略改变时不得沿用不相容的旧计数。raw commit 同批把结果与 ordinal 追加到有界 Production Qualification Sequence；生产 transition 成功提交才原子消费队首并推进 cursor。失败队首阻塞后续项并按原输入幂等重试，预算耗尽后序列进入 Faulted；同一序列不能静默跳项，显式 reset 或新序列必须把未消费 entry 以 `AbandonedByReset` 原子终结、留审计并释放 pin。它永不回写 Analysis Publication 或单次原始结果，Web 与 SCPI 通过不同 typed target 分别查询原始判定和派生生产结果，Adapter 不得用后者替换前者。
 
 **迹线放置（Trace Placement）**：
-Diagram 对 Analysis Trace 的显示关联，只包含可见性、颜色、线型、坐标轴分配、缩放/reference、层级及该 Placement 的 Marker/Limit overlay 样式等视图属性。它有与 Analysis Trace 不同的作用域标识，但不是另一个测量对象；Product/Compatibility Profile 可以限制一条 Trace 允许的 Placement 数量。
+Diagram 对 Analysis Trace 的显示关联，只包含可见性、颜色、线型、坐标轴分配、缩放/reference、层级及该 Placement 的 Marker/typed evaluator overlay 样式等视图属性。它有与 Analysis Trace 不同的作用域标识，但不是另一个测量对象；Product/Compatibility Profile 可以限制一条 Trace 允许的 Placement 数量。
 
 **图表（Diagram）**：
-实际绘图区，拥有坐标系、轴、网格、标题、Trace Placement 顺序和布局，并渲染各 Placement 的 Marker/Limit overlay。它不拥有 Analysis Trace、Marker/Limit 业务定义或正式分析结果。项目核心把删除 Placement、删除 Analysis Trace、删除 Diagram 和删除 Channel 建模为不同 Command；厂商兼容命令的组合副作用由 Compatibility Profile 映射。
+实际绘图区，拥有坐标系、轴、网格、标题、Trace Placement 顺序和布局，并渲染各 Placement 的 Marker/typed evaluator overlay 或 production badge。它不拥有 Analysis Trace、任何判定定义或正式分析/生产结果。项目核心把删除 Placement、删除 Analysis Trace、删除 Diagram 和删除 Channel 建模为不同 Command；厂商兼容命令的组合副作用由 Compatibility Profile 映射。
 
 **图表帧引用集合（Diagram Frame Ref Set）**：
-运行期 Diagram View Catalog 中的一次刷新选择，为每个 Trace Placement 固定确切 `analysis_publication_id`。普通视觉叠加可以选择各 Placement 最新可用结果但必须显示 generation/stale；跨 Trace Math、Marker coupling 或共享 Limit 必须先满足更严格的同步政策再原子切帧。它是结果选择器，不是新的数据处理层，也不会因每轮刷新改写持久 Workspace revision。
+运行期 Diagram View Catalog 中的一次刷新选择，为每个 Trace Placement 固定确切 `analysis_publication_id`。普通视觉叠加可以选择各 Placement 最新可用结果但必须显示 generation/stale；跨 Trace Math、Marker coupling 或共享单次聚合必须先满足更严格的同步政策再原子切帧。production badge 另引用独立 `ProductionQualificationSnapshot`，不能替换 raw frame。它是结果选择器，不是新的数据处理层，也不会因每轮刷新改写持久 Workspace revision。
 
 ## 控制与执行
 
@@ -169,7 +178,7 @@ Control Executor 在提交 Accepted/Pending 并派发计算前，先从 Runtime 
 Control Executor 把可选的 `PublicationCandidateBatch`、有类型的 `DomainCatalogPatchSet` 与 Head、Operation/fence、Instrument Status Register、SCPI Session State、WaitRegistry、QueryTicket/ResultPin、EventJournal 和 retention patches 组合成一次提交，通过公开 `InstrumentStore::commit` 持 `DomainCommitPermit` 全有或全无地生效；Measurement Data Store 与 Domain Commit Coordinator 只是 Store 的内部实现。A commit 可携 Store-only `ContinuationStoreJoinRequestSet`，但 bundle/result 不得包含或透传 `ReservedWorkDispatch`、`RuntimeCompletionRegistration` 或 Preview owner。Domain Catalog patch 覆盖 Instrument/Channel/Calibration/Analysis/Display 等小型可变 revision，不得退化成任意 key/value。典型提交包括 Disabled Average 的 B + `ChannelMeasurementHead`，Enabled Average 的 B + accumulator snapshot + `ChannelAverageHead` + `ChannelMeasurementHead`，CorrectionSet publication + CalibrationSession terminal，或可提升的当前 Live C closure + `TraceAnalysisHead`。direct Ready 在创建 Ticket 的同一 commit 中取得精确 `ResultPinLease`；Pending→Ready 只转换该 caller 在 admission 时已安装的 `PendingResultPinReservation`，一个 waiter 的 quota/cancel 不得影响共享 publication 或其他 waiter。publication commit 失败时不得留下可见 snapshot、半更新领域 revision、已推进 Head、未锁存的 status、丢失的 waiter wakeup、Ready ticket 或孤立 Event；已有可见 lifecycle 必须用其预留 terminal capacity reconcile 或 state-only commit Failed，只有 Store integrity fault 才 fail-stop。
 
 **结果闭包租约（Result Closure Lease）**：
-QueryTicket Ready 时由 `ResultPinLease` 保活的自包含结果闭包，例如 C publication 连同 Trace/Marker/Limit children、axis、quality 及结构共享 Buffer，或已提交的 Blob result，而不是只 pin 一个顶层 ID。`ResultPinLease` 始终留在 Store；L2 `open_read` 只提供授权，Store `open_result` 在 Ticket Ready→Reading 时将它原子转换为只封装在 opaque snapshot/blob `QueryReadHandle` 内的 `ReaderLease`，传输 terminal 再与 Reading→Consumed/Failed/Abandoned 同批释放；Event 不持有该租约，祖先 payload 可以按 retention 回收，但最小 tombstone/digest/provenance 保留。
+QueryTicket Ready 时由 `ResultPinLease` 保活的自包含结果闭包，例如 raw C publication 连同 Trace/Marker/typed evaluator children、axis、quality 及结构共享 Buffer，独立 production snapshot 的 policy/state/source evidence，或已提交的 Blob result，而不是只 pin 一个顶层 ID。`ResultPinLease` 始终留在 Store；L2 `open_read` 只提供授权，Store `open_result` 在 Ticket Ready→Reading 时将它原子转换为只封装在 opaque snapshot/blob `QueryReadHandle` 内的 `ReaderLease`，传输 terminal 再与 Reading→Consumed/Failed/Abandoned 同批释放；Event 不持有该租约，祖先 payload 可以按 retention 回收，但最小 tombstone/digest/provenance 保留。
 
 **测量与分析头（Measurement / Analysis Head）**：
 Catalog 中选择“最近尝试”和“last-good 正式结果”的小型可变记录；`last_good_b` 表示最近一次满足结构完整性并成功发布的 B，可以携带 Degraded 逐点质量，不等同于“所有点均有效”。`ChannelMeasurementHead` 与 `TraceAnalysisHead` 在失败时更新 attempt/status，但不改写不可变 B/C。`ChannelAverageHead` 是 `Disabled{revision}` 或 `Enabled{generation, current_accumulator_snapshot_id, count, complete, revision}`；只有 Enabled 状态才选择权威 accumulator，并要求每次贡献的 B、accumulator snapshot、`ChannelAverageHead` 和 `ChannelMeasurementHead` 在同一个 `DomainCommitBundle` 切换，Disabled 的 B 则不创建 accumulator。只有匹配 expected current-input token 的 Live C 可以 compare-and-set 提升 `TraceAnalysisHead`；历史 B/Stage exact query 默认只返回 C，不倒退 Head。stale 是 Head、当前配置和 last-good 之间的关系，不是历史 Snapshot 被原地修改。

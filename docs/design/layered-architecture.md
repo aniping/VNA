@@ -78,11 +78,11 @@ flowchart TB
 
 | 层 | 主要 Module | 必须实现 | 向相邻层交付 | 明确禁止 |
 |---|---|---|---|---|
-| L1 协议 Adapter | Web Transport、SCPI Transport、Event/Preview/Binary Transfer | HTTP/TCP 生命周期、认证入口、parser、framing、SCPI session/方言、JSON/二进制/IEEE block 编解码、Watch/Preview 传输 | `CommandEnvelope`、`QueryEnvelope`；反向编码 `SubmitResult`、Ticket、Reader、Event | Channel/校准/Marker/Limit 业务规则；直接调用 Board；保存“当前数组”；把 HTTP、JSON DOM、SCPI 字符串传入核心 |
-| L2 仪器应用 | `InstrumentKernel`，其 Implementation 内含唯一 `ControlExecutor`、纯 `SweepAdmissionPlanner`、有状态 `ResourceArbiter` 和各工作流 | 权限、selection/target 解析、Profile/revision 冻结、能力与领域不变量、Sweep planning/全有或全无 pre-admission、Command/Query admission、Operation/Fence、Channel/Trace/Marker/Limit/Diagram/Calibration 定义、组装 `DomainCommitBundle` | `FrozenWorkItem`、执行 permits、typed refs；对外返回 Operation/Ticket/View | 网络/文件 I/O、Eigen 数值计算、阻塞硬件、直接操作厂商 SDK、在回调线程等待 |
+| L1 协议 Adapter | Web Transport、SCPI Transport、Event/Preview/Binary Transfer | HTTP/TCP 生命周期、认证入口、parser、framing、SCPI session/方言、JSON/二进制/IEEE block 编解码、Watch/Preview 传输 | `CommandEnvelope`、`QueryEnvelope`；反向编码 `SubmitResult`、Ticket、Reader、Event | Channel/校准/Marker/单次判定/生产策略业务规则；把 raw 与 production target 偷换；直接调用 Board；保存“当前数组”；把 HTTP、JSON DOM、SCPI 字符串传入核心 |
+| L2 仪器应用 | `InstrumentKernel`，其 Implementation 内含唯一 `ControlExecutor`、纯 `SweepAdmissionPlanner`、有状态 `ResourceArbiter` 和各工作流 | 权限、selection/target 解析、Profile/revision 冻结、能力与领域不变量、Sweep planning/全有或全无 pre-admission、Command/Query admission、Operation/Fence、Channel/Trace/Marker/typed evaluator/Diagram/Calibration 定义、`ProductionQualificationPolicy/Sequence` 编排、组装 `DomainCommitBundle` | `FrozenWorkItem`、执行 permits、typed refs；对外返回 Operation/Ticket/View | 网络/文件 I/O、Eigen 数值计算、阻塞硬件、直接操作厂商 SDK、在回调线程等待 |
 | L3 Operation Runtime | Ingress、Scheduler、Worker Lanes、Budget/Deadline、Drain/Quarantine | 固定容量队列与 worker、优先级、公平性、取消、timeout、进度限速、真实 terminal、不可中断工作所有权转交 | 向 L4 派发冻结任务；向 L2 返回 typed terminal/candidate | 解释 Web/SCPI Command、决定领域语义、修改 Catalog/Head、发布 Snapshot/Event、把 accepted 当 terminal |
-| L4 领域执行 | Acquisition、Measurement Pipeline、Calibration、Persistence、Diagnostics | actual Manifest 校验/本地收窄与采集成形；A→B/Stage/C；平均、校准、Trace、Marker、Limit、Math；文件 staging/迁移；诊断采集 | `Succeeded / Failed / Draining` typed terminal；仅 Success 携 candidate/result；Acquisition Success/Failed 可显式归还 `PreviewFinalizationOwnerSet`，Processing 期间由 L3 持 Runtime preview escrow，Drain 携完整执行 owner | 读取“当前选中对象”、重新编译/扩容/换板、自己 pin 未授权输入、直接 commit、推进 Head、发布 Event、解释协议、让一个 worker 隐式调用另一个工作流 |
-| L5 权威事实 | `InstrumentStore`；内部 Domain/Snapshot/Operation/Query Catalog、Measurement Data Store、Domain Commit Coordinator、Heads、Wait/Status、EventJournal | 不可变 A/B/Stage/C 图、领域 revision、全有或全无提交、pin/reader/retention、QueryTicket、last-good Head、状态与事件序号 | Catalog cut、`PinnedInputSet`、reservation、`CommitReceipt`、Event feed；`ResultPinLease` 留在 Store，只交付 opaque `QueryReadHandle`（内含 ReaderLease） | 执行测量算法、解释协议、调度 Sweep、驱动硬件、根据页面需要改写历史事实 |
+| L4 领域执行 | Acquisition、Measurement Pipeline、Production Qualification Evaluator、Calibration、Persistence、Diagnostics | actual Manifest 校验/本地收窄与采集成形；A→B/Stage/C；平均、校准、Trace、Marker、无状态单次 evaluator；独立跨发布生产状态转移；文件 staging/迁移；诊断采集 | `Succeeded / Failed / Draining` typed terminal；仅 Success 携 candidate/result；Acquisition Success/Failed 可显式归还 `PreviewFinalizationOwnerSet`，Processing 期间由 L3 持 Runtime preview escrow，Drain 携完整执行 owner | 读取“当前选中对象”、重新编译/扩容/换板、自己 pin 未授权输入、直接 commit、推进 Head、发布 Event、解释协议、让一个 worker 隐式调用另一个工作流 |
+| L5 权威事实 | `InstrumentStore`；内部 Domain/Snapshot/Operation/Query Catalog、Measurement Data Store、Domain Commit Coordinator、Heads、Wait/Status、EventJournal | 不可变 A/B/Stage/C 图、typed raw result、ProductionQualificationSequence、独立 Snapshot/Head、领域 revision、全有或全无提交、pin/reader/retention、QueryTicket、last-good Head、状态与事件序号 | Catalog cut、`PinnedInputSet`、reservation、`CommitReceipt`、Event feed；`ResultPinLease` 留在 Store，只交付 opaque `QueryReadHandle`（内含 ReaderLease） | 执行测量算法、解释协议、调度 Sweep、驱动硬件、根据页面需要改写历史事实 |
 | L6 资源 Adapter 与平台 | `BoardPort` seam 的 Real/Mock/Replay Adapter；每块板的 `OpenedBoard` 暴露 Execution/Safety/Maintenance 权限分面；另有 File Adapter、Platform Clock、固定 BufferPool、线程/Socket/日志适配 | 隔离公司 SDK 和 OS 差异；板卡 capability/prepare/start/abort/safe-state/health/recover；文件原子写；单调时钟和有界资源 | Manifest、chunk lease、唯一 terminal、安全/健康证据、文件/平台 typed result | 反调 Kernel、直接 commit/Event、泄漏厂商结构体/Eigen/httplib/JSON 类型、在单板 Adapter 内偷偷组合多板 |
 
 浏览器中的页面和绘图库位于设备进程之外：它们编辑领域对象、呈现正式结果和 provisional Preview，但不产生 VNA 测量真值。
@@ -95,7 +95,8 @@ flowchart TB
 | L2 内部 planning/admission | `SweepAdmissionPlanner::plan(FrozenSweepPlanningInput)` + stateful `ResourceArbiter::try_pre_admit(...)` | Planner 纯计算并产生同 digest 的 job/claims/typed refs；Arbiter 才按 topology epoch 全有或全无签发排他 lease |
 | L2 → L3 | `OperationRuntime::reserve_work(...) → ReservedWorkDispatch` + `dispatch(FrozenWorkItem, WorkPermitSet, RuntimeCompletionRegistration)` | commit 前同时预留固定 lane/queue 与可靠 completion slot；L2 保留 WorkId 映射，dispatch 时把其 permit 纳入 WorkPermitSet 并单独 move completion registration；隐藏预算、取消、deadline、Drain 和真实 terminal |
 | L3 → L4 Acquisition | `AcquisitionEngine::run(FrozenSweepJob, AcquisitionLeaseSet, ExecutionContext)` | 隐藏 actual Manifest validation/finalization、Composite Coordinator、Board/Builder、Preview producer 和安全收尾 |
-| L3 → L4 Measurement | `MeasurementPipeline::run(FrozenProcessingJob, PinnedInputSet, OutputReservation, ExecutionContext)` | 隐藏 Eigen、RF graph、平均、修正、Stage、Trace/Marker/Limit 算法 |
+| L3 → L4 Measurement | `MeasurementPipeline::run(FrozenProcessingJob, PinnedInputSet, OutputReservation, ExecutionContext)` | 隐藏 Eigen、RF graph、平均、修正、Stage、Trace/Marker/普通 Limit/Ripple/明确几何等单次算法 |
+| L3 → L4 Production | `ProductionQualificationEvaluator::evaluate(FrozenProductionQualificationJob, PinnedRawResultSet, OutputReservation, ExecutionContext)` | 冻结 policy、sequence ID/expected ordinal/queue entry、source/context、reset/retry 与 prior state，只消费队首不可变 raw bundle；隐藏连续 N、锁存、bin/QMS 状态转移且不改 C |
 | L3 → L4 Calibration | `CalibrationModule::run(FrozenCalibrationJob, PinnedInputSet, OutputReservation, ExecutionContext)` + bounded `match(...)` | 隐藏 Observation 规则、误差项求解、适用性匹配与独立验证算法；Session 流程仍归 L2 |
 | L2 → L5 | `InstrumentStore` 的 Catalog read、pin/output/lifecycle-terminal/pending-result-pin reserve、commit、Query open/finish、Event feed begin/stop | L2 只依赖一个 transaction boundary；每个可见 lifecycle 预留终态，每个 Pending waiter 独立预留 ResultPin 上界；Data Store/Commit Coordinator 是其内部实现，Runtime/Preview capability 不进入 bundle/result |
 | L4 Acquisition → L6 | `BoardPort` seam 上的 `OpenedBoard{Execution,Safety,Maintenance}` Interface | Real、Mock、Replay 至少三种 Adapter，是真实可替换 seam；显式两阶段执行保留 actual Manifest admission，一组分面只代表一块板 |
@@ -127,7 +128,8 @@ flowchart TB
 | Calibration | L2 Kit/Method/Session/Binding 工作流 | L4 Acquisition 采标准件；Calibration Module 求解/匹配/验证 | Observation、CorrectionSet、VerificationResult | 校准向导、质量、应用与验证报告 |
 | Trace、Math、Memory、Statistics | L2 AnalysisTrace/Source/Pipeline revision | L4 Measurement Pipeline | TraceEvaluation、C、Accumulator/Frozen refs | Trace 设置与读数 |
 | Marker | L2 MarkerDefinition，归属于 AnalysisTrace | L4 Measurement Pipeline 在全分辨率 Trace 上求值 | MarkerEvaluation，属于 C 闭包 | Marker overlay/table；不从像素反算 |
-| Limit | L2 LimitDefinition，归属于 AnalysisTrace | L4 Measurement Pipeline 在全分辨率 Trace 上判定；任一参与点无效或没有任何有效参与数据则总体 Indeterminate | LimitResult，属于 C 闭包；生产 Safety 聚合可映射 Fail 但不改写原始结果 | Limit 线、Pass/Fail/Indeterminate 与无效原因；不得把 Indeterminate 显示成 Pass |
+| 单次分析判定 | L2 普通 Segment Limit、Ripple、Metric threshold、明确 Geometric evaluator 定义，归属于 AnalysisTrace；Flatness 留在 Marker/Metric | L4 Measurement Pipeline 在一份全分辨率 Trace 上无状态求值；任一参与点无效或无可判数据则总体 Indeterminate | SegmentedLimit/Ripple/其他 typed raw result，属于同一 C 原子闭包 | raw overlay/query 显示 Pass/Fail/Indeterminate 与原因；禁止万能 Mask 和空数据 Pass |
+| Production Qualification | L2 `ProductionQualificationPolicy`、source/sequence/DUT context、reset/retry 和 Handler/报告选择 | L4 独立 evaluator 只消费 Sequence 队首 raw bundle 与 prior state；普通 UI C 可合并，但被策略跟踪的本轮 raw bundle 与 queue slot 必达 | `ProductionQualificationSequence` + 独立 Snapshot/Head；raw commit 入队，成功 production commit 才消费队首；失败不得越过或改写 C | Web/SCPI production query、锁存/bin/QMS/Handler；Faulted/reset 可观察；不得替换 raw result |
 | Diagram、Placement | L2 Workspace/Diagram/Placement 规则 | Frame selector 选择既有 C；浏览器渲染/抽稀 | Workspace revision、DiagramFrameRefSet | 坐标、scale、style、overlay；不做测量判定 |
 | Web 与 SCPI | L1 协议/方言/session | 统一调用 L2 Interface | 相同 Operation、Ticket、Snapshot | 不建立第二套业务状态 |
 | Query、Export | L2 冻结 typed target | 缺 Stage/C 时 L3/L4 求值；Persistence 生成文件 | QueryTicket、ResultClosure、Blob refs | HTTP binary、SCPI ASCII/IEEE block |
@@ -138,7 +140,7 @@ flowchart TB
 几个最容易放错的位置：
 
 - A/B/Stage/C 是正式数据阶段，不是四个软件层。
-- Marker/Limit 定义在 L2、计算在 L4、结果在 L5、显示在浏览器；Diagram 从不参与判定。
+- Marker 与各 typed 单次 evaluator 定义在 L2、计算在 L4、raw C 在 L5、显示在浏览器；Production Qualification 另有 L2 policy、L4 状态转移和 L5 Snapshot。Diagram 从不参与任何判定。
 - Calibration Session 流程在 L2，标准件采集和求解在 L4，Observation/CorrectionSet 在 L5，Channel 只保存 Binding。
 - SCPI selected object 是 L1 session/Profile 解析上下文，不是 Channel 或 Snapshot 的所有者。
 - Multi-board 由 L4 Acquisition 的 Composite Coordinator 编排；一个 L6 Board Adapter 永远只代表一块板。
@@ -287,7 +289,8 @@ sequenceDiagram
 2. Board run terminal 到达，只说明底软本轮结束；
 3. A 发布，说明完整接收机观测已经形成；
 4. B 与 Sweep fence 同批提交，才是原生网络测量完成；
-5. 每条 C 可独立晚于 B 完成，不能拖住其他 Trace 或改写 B。
+5. 每条普通显示 C 可独立晚于 B 完成，不能拖住其他 Trace 或改写 B；
+6. 若生产资格策略已武装，参与本轮的 raw evaluator bundle 与 sequence queue slot 是不可合并的必达后继；raw C 与 ordinal 同批入队，生产状态只从队首推进，仍不改写 B/C。
 
 ## 5. 正式数据如何逐层流动
 
@@ -304,7 +307,8 @@ flowchart LR
         Preview["Preview projector"]
         BuildB["ratio、average、correction、network semantics"]
         Materialize["按需 Materialize Stage"]
-        Evaluate["Trace、Math、Marker、Limit 求值"]
+        Evaluate["Trace、Math、Marker 与 typed single-publication evaluator"]
+        Qualify["Production Qualification 状态转移"]
         CalObserve["Calibration Observation builder"]
         CalSolve["Calibration solver 与 verification"]
     end
@@ -324,6 +328,8 @@ flowchart LR
         B["B：CompletedMeasurementBundle"]
         Stage["MeasurementStageSnapshot"]
         C["C：AnalysisPublication 原子闭包"]
+        Sequence["ProductionQualificationSequence<br/>有界 pending raw bundles"]
+        Production["ProductionQualificationSnapshot<br/>独立派生事实"]
         Observation["CalibrationObservationSnapshot"]
         Correction["CorrectionSetRevision"]
         Frame["DiagramFrameRefSet"]
@@ -346,8 +352,12 @@ flowchart LR
     Commit -->|"publish Stage"| Stage
     B -->|"pinned input 经 L2/L3"| Evaluate
     Stage -->|"pinned input 经 L2/L3"| Evaluate
-    Evaluate -->|"C candidate with Trace、Marker、Limit"| RuntimeReturn
-    Commit -->|"publish C"| C
+    Evaluate -->|"C candidate with Trace、Marker、SegmentedLimit、Ripple、typed results"| RuntimeReturn
+    Commit -->|"publish C；armed 时同批 append ordinal"| C
+    Commit -->|"armed raw commit updates sequence"| Sequence
+    Sequence -->|"head immutable raw bundle 经 L2/L3；no overtaking"| Qualify
+    Qualify -->|"production candidate"| RuntimeReturn
+    Commit -->|"publish snapshot + consume head + advance cursor；never rewrite C"| Production
     C -->|"选择既有 C refs"| FrameSelect
     Commit -->|"publish DiagramFrameRefSet"| Frame
     Frame --> Browser
@@ -364,9 +374,9 @@ flowchart LR
     classDef publication fill:#fff4e6,stroke:#e67700,color:#4b2e00
     classDef fact fill:#d3f9d8,stroke:#2f9e44,color:#153d22
     classDef preview fill:#fff4e6,stroke:#e67700,color:#4b2e00
-    class Normalize,Builder,BuildB,Materialize,Evaluate,CalObserve,CalSolve execution
+    class Normalize,Builder,BuildB,Materialize,Evaluate,Qualify,CalObserve,CalSolve execution
     class RuntimeReturn,FrameSelect,Bundle,Commit,PreviewHub publication
-    class A,B,Stage,C,Observation,Correction,Frame fact
+    class A,B,Stage,C,Sequence,Production,Observation,Correction,Frame fact
     class Preview,Browser preview
 ```
 
@@ -375,7 +385,8 @@ flowchart LR
 - A/B/Stage/C 是 L5 中不同语义的不可变事实，不是四个软件层。
 - 小写 `a/b` 是底软上送的接收机复数波量；大写 A/B 是正式快照阶段，二者不能混写。
 - Stage 是从 canonical A/B roots 按需物化的分支，不是每轮 Sweep 必经步骤，也不能把另一个 Stage 当 canonical parent。
-- Marker、Limit 在 L4 对全分辨率 Trace 求值，并与 Trace 一起形成 C；DiagramFrameRefSet 只选择 C，浏览器最后才做像素抽稀。
+- Marker、普通 Limit、Ripple 与明确 typed evaluator 在 L4 对全分辨率 Trace 无状态求值，并与 Trace 一起形成 raw C；DiagramFrameRefSet 只选择 C，浏览器最后才做像素抽稀。Flatness 保持 Marker/Metric，Circle 等声明明确坐标域，不存在万能 Mask。
+- Production Qualification 不是新数据层：raw C commit 把参与 ordinal 原子追加到有界 Sequence；L4 只消费队首 raw bundle 和 prior state，成功 production commit 才发布 Snapshot 并推进 cursor。普通 UI C 可合并；策略已武装时参与轮次的 raw bundle 与 queue slot 必达且不可合并。失败队首按相同 canonical key 有界重试并阻止后来项越过，预算耗尽进入 Faulted，绝不回滚 C。
 - Calibration Step 只能使用本次 Attempt 的完整 A 集合和方法明确允许、roots 完全匹配的 Stage；求解出的 CorrectionSet 由后续 Channel Binding 进入新的 B 路径。
 - 多板只会让 A 的 `BoardRunEvidence[]` 包含多个逐板证据；它不会增加新的数据层。任一成员失败或 coherence gate 不通过都不发布组合 A。
 
@@ -488,8 +499,9 @@ Event/等待规则：
 
 | 主流程 | 逐层路径 | 关键边界 |
 |---|---|---|
-| Marker/Limit/format 修改 | L1 Command → L2 新 definition revision → L3/L4 基于 last-good B/Stage 求值 → L5 新 C | 不重扫；不经过 Diagram 像素；历史 exact query 不倒退 Trace Head |
-| Diagram 修改 | L1 Command → L2 Workspace/Placement validation → L5 revision/frame refs → 浏览器重绘 | 不进入 L3/L4/L6；不改变 Trace、Marker、Limit 正式数值 |
+| Marker/普通 Limit/Ripple/typed evaluator/format 修改 | L1 Command → L2 新 definition revision → L3/L4 基于 last-good B/Stage 求值 → L5 新 raw C | 不重扫；不经过 Diagram 像素；历史 exact query 不倒退 Trace Head；禁止把连续 N 等状态塞入 Segment |
+| Production policy 修改/推进 | L1 Command 创建/reset sequence，或 raw C commit 原子追加 ordinal → L2 冻结 policy/队首 entry/reset/retry/prior state → L3/L4 独立求值 → L5 同批发布 Snapshot、消费队首并推进 cursor | 不重解释历史 raw；策略/上下文改变开启新序列；production commit 失败保留 raw C、队首和上一 Head，后来项不得越过；预算耗尽 Faulted 后显式恢复 |
+| Diagram 修改 | L1 Command → L2 Workspace/Placement validation → L5 revision/frame refs → 浏览器重绘 | 不进入 L3/L4/L6；不改变 Trace、Marker、typed raw 或 production 正式数值 |
 | Calibration Step | L1 → L2 Session/Step workflow → L3/L4 Acquisition → L6 Board → L5 A/Observation | 不继承 DUT 当前 Average/Correction；失败 Step 不覆盖旧 CorrectionSet |
 | Calibration Solve/Apply | L2 pin accepted observations → L3/L4 solver → L5 同批发布 Set + Session terminal；Apply 再改 Channel Binding | 求解与应用分离；Session 不是 Channel 开关 |
 | Save | L1 → L2 冻结保存范围 → L5 Catalog cut/leases → L3/L4 Persistence → L6 File Adapter | 文件成功替换后再提交 Operation terminal；输入始终固定 |
@@ -550,12 +562,12 @@ platform_linux/mingw   -> vna_platform_port
 | 测试 | 穿过的 Interface | 不测试什么 |
 |---|---|---|
 | Kernel 行为契约 | L1 等价输入 → `InstrumentKernel`，注入 Mock Board 与内存 File Adapter | 不依赖 HTTP/SCPI 语法细节 |
-| Web/SCPI 等价契约 | 两个 L1 Adapter → 同一 Command/Query 与领域结果 | 不复制领域断言实现 |
+| Web/SCPI 等价契约 | 两个 L1 Adapter → 同一 Command/Query 与领域结果；raw 与 production typed target 分开且各自同源 | 不复制领域断言实现，不用 production 替换 raw |
 | Runtime 模型/压力 | FrozenWorkItem → terminal/cancel/drain | 不解释 Channel/Marker 语义 |
 | Board 合同测试 | 同一 `OpenedBoard` suite 跑 Real/Mock/Replay | 按 [Board Adapter 契约](board-adapter-contract.md)验证 Execution/Safety/Maintenance；Mock 成功不代替真实相干与 RF 安全证据 |
-| 算法黄金测试 | L4 Measurement Pipeline 与 Calibration Interface | 不通过 Diagram 或协议读回再比对 |
-| Store 竞态测试 | read/pin/reserve/commit/open/finish/event-feed begin/stop/retention Interface | 不调用底软或 Eigen |
-| 端到端验收 | Web/SCPI → Mock/回放 → A/B/C → Query/Event | 再以 HIL 补真实板卡、时序、性能和计量证据 |
+| 算法黄金测试 | L4 Measurement、Production Qualification 与 Calibration Interface | 覆盖普通 Limit/Ripple/Circle/Flatness、三态、连续 N/reset/锁存/bin 和相同队首输入的幂等重试；不通过 Diagram 或协议读回再比对 |
+| Store 竞态测试 | read/pin/reserve/commit/open/finish/event-feed begin/stop/retention Interface | raw C 与 queue append 同批；production commit 失败保留队首、不改 raw，后续 entry 不越过；不调用底软或 Eigen |
+| 端到端验收 | Web/SCPI → Mock/回放 → A/B/C → optional Production Snapshot → Query/Event | 普通 UI C 可合并，策略跟踪 raw bundle/queue slot 必达；覆盖 retry/Faulted/reset/满队列准入，再以 HIL 补真实板卡、时序、性能和计量证据 |
 
 ## 9. 一句话检查分层是否被破坏
 
@@ -565,7 +577,7 @@ platform_linux/mingw   -> vna_platform_port
 - worker 是否读取了 current state 或直接发布事实？
 - 正式数据是否绕过 `DomainCommitBundle`？
 - Board Adapter 是否知道 Channel/Trace/Diagram？
-- Marker/Limit 是否从像素或 Preview 计算？
+- Marker/单次 evaluator 是否从像素或 Preview 计算？Production policy 是否绕过 raw result 直接读 B/Trace，或反向改写 raw？
 - Event 是否携带或保活了大数组？
 - Mock 与 Real 是否跑同一 BoardPort 契约？
 - 任何队列、Buffer、Ticket、Watcher、worker 或历史引用是否无界？

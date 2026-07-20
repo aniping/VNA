@@ -133,9 +133,13 @@ Event projection 只能是有上限的摘要，不能因某个 Web 页面需要�
 | B `CompletedMeasurementBundle` | 按 Profile 完成 ratio、平均、用户修正等后的网络测量事实 | Measurement Pipeline | Live Trace、网络查询、校准验证、导出 | 每个被接受贡献必须发布；RF graph 失败不覆盖 last-good B |
 | `MeasurementStageSnapshot` | 从 canonical A/B roots 按完整 graph revision 惰性物化的非 Trace 阶段 | Stage Materializer | Trace、Touchstone、receiver/raw/corrected query | 不串联另一个 Stage 作为父；中间节点是私有缓存实现 |
 | `CalibrationObservationSnapshot` | 某校准步骤一次可求解的正式观测 | Calibration Acquisition flow | Calibration Solver | 绑定标准件、方法、实际轴、路由、独立平均闭包与本 attempt 的 A/受许可 Stage；排除 DUT B 和用户修正 |
-| `TraceEvaluationSnapshot` | 一条 Trace 在冻结输入与 pipeline/projection 上的全分辨率结果 | Trace Evaluator | Marker、Limit、导出 | 不包含 Diagram 像素或浏览器抽稀 |
-| C `AnalysisPublication` | Trace、Marker、Limit 子结果的原子闭包 | Control Executor 提交 evaluator candidate | Diagram、SCPI Trace/Marker/Limit query | 单 Trace 失败不回滚 B 或其他 C |
+| `TraceEvaluationSnapshot` | 一条 Trace 在冻结输入与 pipeline/projection 上的全分辨率结果 | Trace Evaluator | Marker、typed single-publication evaluator、导出 | 不包含 Diagram 像素或浏览器抽稀 |
+| C `AnalysisPublication` | Trace、Marker、普通 Limit、Ripple 与明确几何等单次子结果的原子闭包 | Control Executor 提交 evaluator candidate | Diagram、SCPI raw analysis query | 单 Trace/单次 evaluator 失败不回滚 B 或其他 C；已发布 children 永不被后续 Sweep 改写 |
+| `ProductionQualificationSequence` | policy/context 下的 next ordinal、有界 pending raw bundle 队列和 Active/Faulted 状态 | 武装策略的 raw C commit；生产 commit 消费队首 | Production Qualification Evaluator、准入和审计 | raw C 与 queue append 同一 commit；只允许处理队首，失败不得跳项；满队列在参与轮次开始前拒绝或 Hold |
+| `ProductionQualificationSnapshot` | 连续 N、锁存、bin、批次/QMS 的跨发布派生事实 | Production Qualification Evaluator + Control Executor commit | Web/SCPI production query、Handler、报告 | 只消费 sequence 队首 ordered raw result refs 与 prior state；成功提交同批消费队首并推进 cursor，失败不回滚或改写 C/raw result |
 | `DiagramFrameRefSet` | 运行期 Diagram 刷新选择的确切 C publication 集合 | Display/View selector | Browser renderer | 只选择结果，不拥有测量或分析数据，也不改写 Workspace revision |
+
+Production Qualification 是从 C/raw results 派生的独立事实，不是 A/B/Stage/C 之外的新测量数据层，也不是 Diagram 状态。它的顺序状态和提交失败边界必须单独建模。
 
 `SnapshotHeader` 只统一稳定 ID、schema、build、commit revision、时间、Profile refs 与质量摘要；各层使用有类型的 provenance variant，不能把所有来源塞入一个可任意扩展的字符串字典。`OperationId`、`LogicalSweepId`、`BoardRunId`、`CompletedSweepSnapshotId`、`CompletedMeasurementSnapshotId`、`MeasurementStageSnapshotId`、`AnalysisPublicationId`、`QueryTicketId` 和 digest 都是不同类型，禁止隐式转换。
 
@@ -234,7 +238,9 @@ ProcessingTerminal run(FrozenProcessingJob&& job,
 
 - `BuildMeasurement` 从一个新 A 和冻结的 accumulator/correction/profile 输入产生同一 batch 内的 B 与新 accumulator candidates；
 - `MaterializeStage` 从 canonical A/B roots 与一份完整 RF/network graph revision 产生最终 Stage；
-- `EvaluateAnalysis` 从 B 或 `MeasurementStageInput`，以及 Frozen/Imported/Derived/Accumulator supplemental refs，产生 Trace/Marker/Limit/C batch candidate。
+- `EvaluateAnalysis` 从 B 或 `MeasurementStageInput`，以及 Frozen/Imported/Derived/Accumulator supplemental refs，产生 Trace/Marker/SegmentedLimit/Ripple/其他明确 typed evaluator/C batch candidate；它只做无状态单次求值。
+
+跨发布 `ProductionQualificationEvaluator` 是独立工作：Control Executor 冻结 policy revision、sequence ID、expected ordinal、queue-entry ref、source/DUT context、队首 ordered raw refs、prior-state 与 reset/retry 规则并 pin 输入；worker 只返回新的 `ProductionQualificationSnapshot` candidate。它不读取 B/Trace 当前值，不进入 C batch，也不把结果写回任何 raw child。L2 只在队首与 prior state 仍匹配时，把 candidate、队首消费、cursor/state 推进和 production Head 原子提交。
 
 `MeasurementStageSnapshot` 的 provenance 始终保存 canonical A/B roots。一个请求即使包含多级 fixture → renormalize → mixed-mode → gate，Materializer 也从 roots 按完整 graph revision 运行到目标 stage；Stage 不把另一个 Stage 当成正式父对象。内部中间结果可以缓存，但缓存淘汰不改变正式谱系。
 
@@ -265,20 +271,31 @@ flowchart LR
     B --> Evaluate["EvaluateAnalysis job"]
     Stage --> Evaluate
     Static["Frozen / Imported / Derived / Accumulator refs"] --> Evaluate
-    TraceDef["Trace + Projection + Marker + Limit revisions"] --> Evaluate
+    TraceDef["Trace + Projection + Marker + typed evaluator revisions"] --> Evaluate
     Evaluate --> Trace["TraceEvaluationSnapshot"]
-    Evaluate --> Marker["MarkerEvaluationSnapshot"]
-    Evaluate --> Limit["LimitTestResultSnapshot"]
+    Trace --> Marker["MarkerEvaluationSnapshot<br/>including typed metrics"]
+    Trace --> Limit["SegmentedLimitResultSnapshot"]
+    Trace --> Ripple["RippleTestResultSnapshot"]
+    Trace --> Geometry["Explicit typed result<br/>for example Circle"]
+    Marker --> MetricLimit["Optional MetricThresholdResultSnapshot"]
     Trace --> C["C：AnalysisPublication 原子闭包"]
     Marker --> C
     Limit --> C
+    Ripple --> C
+    Geometry --> C
+    MetricLimit --> C
+
+    C -->|"armed only; append ordinal in same raw commit"| Sequence["Bounded ProductionQualificationSequence<br/>ordered pending raw bundles"]
+    Sequence -->|"head only; no overtaking"| Qualify["ProductionQualificationEvaluator"]
+    Policy["Policy + source/DUT context<br/>reset/retry rules + prior state"] --> Qualify
+    Qualify -->|"success consumes head + advances cursor atomically"| Production["ProductionQualificationSnapshot<br/>independent fact; never rewrites C"]
 
     classDef fact fill:#e9f7ef,stroke:#37845a,color:#173a27
     classDef job fill:#e8f1ff,stroke:#3973ac,color:#142b42
     classDef definition fill:#fff3dc,stroke:#b47618,color:#4b310d
-    class A,Acc,Corr,B,Stage,Static,Trace,Marker,Limit,C fact
-    class Build,Materialize,Evaluate job
-    class Graph,TraceDef definition
+    class A,Acc,Corr,B,Stage,Static,Trace,Marker,Limit,Ripple,Geometry,MetricLimit,C,Sequence,Production fact
+    class Build,Materialize,Evaluate,Qualify job
+    class Graph,TraceDef,Policy definition
 ```
 
 ### 3.3 提交与 current/last-good 分开
@@ -334,15 +351,15 @@ CommitResult InstrumentStore::commit(DomainCommitBundle&& bundle,
 
 `DomainCatalogPatchSet` 是 Instrument/Channel/CalibrationSession/AnalysisTrace/Diagram/Frame 等小型可变领域 revision 的有类型 patch 集合；它不接收任意 key/value，也不代替不可变 publication。公开 `InstrumentStore::commit` 在同一 Catalog revision 内校验全部 expected revisions、配额与引用，然后由内部 Measurement Data Store/Domain Commit Coordinator 全成或全败地使 publication、领域 revision、Head、Operation/Fence、Instrument Status Register、SCPI Session State、WaitRegistry predicate/wakeup、QueryTicket/ResultPin、EventJournal sequence 和 retention delta 可见。任何 Operation/Pending Ticket/Drain 在首次可见前都预留并随初始 commit 安装自己的 `LifecycleTerminalReservationSet`；后续 publication bundle 失败时旧 reservation 仍在 L5，L2 必须 reconcile 已有终态或在同一有界 Control turn 内提交不带 candidate 的 state-only Failed bundle，普通资源错误不得留下 Pending/Publishing，只有 Store 完整性故障才 fail-stop。A commit 前，L2 把 continuation 拆成 Store-owned join owner 与由自己持有的 Runtime escrow；Store 事务只把新 A candidate 与 purpose-specific 冻结依赖转换成 `ContinuationStoreHandoff`，L2 再与 escrow 组合派发。`DomainCommitBundle/CommitResult` 不得包含或透传 `ReservedWorkDispatch`、`RuntimeCompletionRegistration` 或 Preview owner；失败时 Store 消费 candidate/Store owner，L2 恰好一次释放 escrow。Event 只能在该 revision 成功后经 InstrumentStore EventFeed、L2 授权投影与 L1 mailbox 看见，等待正确性不依赖 Dispatcher。领域提交保证的是内存与 Catalog 可见性的原子性，具体持久化级别由 Product/Profile 另行规定。
 
-特别地，接受一次平均贡献时，B、new accumulator、`ChannelAverageHead`、`ChannelMeasurementHead`、Operation/Fence、相关 status/wait predicate 和事件必须在同一 bundle 中提交；发布可提升的当前 Live C 时，结果闭包、`TraceAnalysisHead` 和事件必须同批提交。direct Ready admission 在创建 Ticket 的同一 commit 中取得精确 `ResultPinLease`；Pending Query 则在 admission 时为每个 caller 独立安装 `PendingResultPinReservation`，共享 publication commit 只把仍有效 Ticket 的 reservation 转成精确 lease。单个 caller 的 quota/cancel/TTL 不得回滚共享 publication或其他 Ticket。任一 publication commit 失败，整批 candidate 不可见并释放 `CandidateCommitLease`；若已有可见 Operation/Ticket，随后必须用已安装的 terminal reservation 提交失败 attempt/status/wait/Event，不能把终态化写成可选诊断，也不得改写 last-good Snapshot。
+特别地，接受一次平均贡献时，B、new accumulator、`ChannelAverageHead`、`ChannelMeasurementHead`、Operation/Fence、相关 status/wait predicate 和事件必须在同一 bundle 中提交；发布可提升的当前 Live C 时，Trace/Marker/全部已声明 typed evaluator children、`TraceAnalysisHead` 和事件必须同批提交。若 C 是武装生产序列的参与项，该 raw commit 还要使用参与工作开始前预留的 slot（Live 输入最迟在 RF start 前取得），把 `sequence_id + ordinal + raw bundle refs` 原子追加到 `ProductionQualificationSequence`；不能先让 C 可见再临时申请队列容量。`ProductionQualificationSnapshot` 使用后续独立 bundle，固定队首 entry、ordered raw refs 与 prior state，并在成功时同批消费队首、推进 cursor/state 和 Head；该 bundle 失败不撤销 raw C，队首与上一 production Head 都保留。direct Ready admission 在创建 Ticket 的同一 commit 中取得精确 `ResultPinLease`；Pending Query 则在 admission 时为每个 caller 独立安装 `PendingResultPinReservation`，共享 publication commit 只把仍有效 Ticket 的 reservation 转成精确 lease。单个 caller 的 quota/cancel/TTL 不得回滚共享 publication或其他 Ticket。任一 publication commit 失败，整批 candidate 不可见并释放 `CandidateCommitLease`；若已有可见 Operation/Ticket，随后必须用已安装的 terminal reservation 提交失败 attempt/status/wait/Event，不能把终态化写成可选诊断，也不得改写 last-good Snapshot。
 
 `TraceAnalysisHead` 不会被任意成功 C 推进。后台当前 Live 求值可携带 `HeadPromotionPolicy::RequireCurrent{trace_revision, source_binding_revision, input_generation}`，其 compare-and-set 只有仍匹配当前选择时才允许提交；针对历史 B/Stage 的 exact query 默认 `HeadPromotionPolicy::None`，只发布 C、使自己的 Ticket Ready，不更新 Head。若用户要显示该历史结果，应显式切换 `DiagramFrameRefSet` 或 Trace Source，而不是让一次读取产生隐藏的“当前结果倒退”。
 
 浏览器看到 stale 是 Head 与当前配置/最新 attempt 的关系，不是对历史快照做原地标记。
 
-当前 `last_good_b/last_good_c` 与 `ChannelAverageHead` 是受 ProductProfile 上限约束的 retention root；正在使用的 `PinnedInputSet`、`TypedSnapshotLeaseSet`、`CandidateCommitLease`、purpose-specific `AcquisitionContinuationOwner/ContinuationStoreHandoff`、Query/Reader lease，以及 CalibrationSession 中已接受但尚未完成生命周期转换的 Observation closure 也会阻止其所需 payload 被回收。已经物化且自包含的 child 在不再承诺重算时可允许祖先大 payload 过期，但祖先 tombstone、digest 和最小 provenance 必须保留。`DiagramFrameRefSet` 本身只含软引用，不额外无限 pin 历史 C。浏览器打开数据时仍通过 QueryTicket 获取有配额的 ResultPinLease；若它尝试读取已退出 Head 且已过 retention 的旧 frame，明确得到 Gone 并 resnapshot。
+当前 `last_good_b/last_good_c`、`ChannelAverageHead` 与 Active/Faulted `ProductionQualificationSequence` 的 pending raw refs 是受 ProductProfile 上限约束的 retention root；正在使用的 `PinnedInputSet`、`TypedSnapshotLeaseSet`、`CandidateCommitLease`、purpose-specific `AcquisitionContinuationOwner/ContinuationStoreHandoff`、Query/Reader lease，以及 CalibrationSession 中已接受但尚未完成生命周期转换的 Observation closure 也会阻止其所需 payload 被回收。生产 transition 成功消费队首，或显式 reset/new sequence 把未消费 entry 终结为带原因的 `AbandonedByReset` 后，才释放对应 pin；不能通过普通 retention 静默淘汰失败队首。已经物化且自包含的 child 在不再承诺重算时可允许祖先大 payload 过期，但祖先 tombstone、digest 和最小 provenance 必须保留。`DiagramFrameRefSet` 本身只含软引用，不额外无限 pin 历史 C。浏览器打开数据时仍通过 QueryTicket 获取有配额的 ResultPinLease；若它尝试读取已退出 Head 且已过 retention 的旧 frame，明确得到 Gone 并 resnapshot。
 
-Marker 的 `Invalid/Incomplete` 与 Limit 的 `Indeterminate` 是成功计算出的领域结果，可以随 C 原子发布；任一参与 Limit 判定的点过载、缺失、NaN 或质量无效，或者零参与点、空输入、没有任何有效参与数据时，结果携原因以 `Indeterminate` 发布，生产 Safety 聚合可映射 Fail 但不能改写原始三态或映射 Pass。只有输入闭包不一致、evaluator 内部失败、资源失败或 Catalog batch commit 失败才使新 C 整批不可见。
+Marker 的 `Invalid/Incomplete` 与单次 evaluator 的 `Indeterminate` 是成功计算出的领域结果，可以随 C 原子发布；普通 Limit、Ripple 和明确几何/Metric evaluator 都必须声明参与点和无效数据规则，任一参与点过载、缺失、NaN 或质量无效，或者零参与点、空输入、没有任何有效参与数据时，结果携原因以 `Indeterminate` 发布，绝不能空数据 Pass。`ProductionQualificationPolicy` 可按冻结规则派生 Fail，但不能改写原始三态或映射 Pass。只有输入闭包不一致、evaluator 内部失败、资源失败或 Catalog batch commit 失败才使新 C 整批不可见。
 
 ## 4. Single、Continuous 与 Average 的同一条主链
 
@@ -459,7 +476,7 @@ Single、Continuous、Groups 只是父 Operation 的调度政策不同；每轮 
 
 - failed、cancelled、缺 observation、实际轴不相容或质量政策拒绝的 Sweep 不更新 accumulator，也不增加 accepted count；
 - clear 原子建立新 generation 与新的 `ChannelAverageHead`；旧 B/A/C 保持可解释，旧 generation 的 in-flight Stage/C 不得越过 expected generation/revision 覆盖新 Head；
-- 每个被接受贡献都必须原子发布 B 与对应 accumulator 状态；Continuous/Average 过载时，后台 Live C 可以采用 latest-wins 合并，**不保证每个 B 都自动产生 C**。针对某个确切 B/Stage 的 Web/SCPI 查询进入非合并的 `EvaluateTraceOperation`（相同确切输入的并发查询仍可 single-flight），最终 factor 的 B 具有更高分析优先级；自动化若需要 C，必须显式查询并 pin 该确切结果，而不是只等待 B 事件。C provenance 记录 average generation/count/complete；
+- 每个被接受贡献都必须原子发布 B 与对应 accumulator 状态；Continuous/Average 过载时，普通显示型 Live C 可以采用 latest-wins 合并，**不保证每个 B 都自动产生 C**。针对某个确切 B/Stage 的 Web/SCPI 查询进入非合并的 `EvaluateTraceOperation`（相同确切输入的并发查询仍可 single-flight）。若 `ProductionQualificationPolicy` 已武装，每个参与轮次的冻结 evaluator bundle 和 sequence queue slot 都是不可合并的必达后继；raw C/result 与 ordinal 同批入队，策略只处理队首，失败项不得被后来结果越过。队列无容量时在参与工作开始前拒绝或 Hold，Live 输入最迟在 RF start 前完成轻量预留；策略不能从缺失 UI C 猜测一次结果。最终 factor 的 B 具有更高分析优先级；自动化若需要普通 C，必须显式查询并 pin 该确切结果，而不是只等待 B 事件。C provenance 记录 average generation/count/complete；
 - 只等待完整 factor 的调用绑定 `AverageSequenceOperation` fence；若还要求分析结果，则 fence 完成后对该最终 B 发起 exact C query；
 - 底软内部 average 只有被 Board/Compatibility Profile 明确声明且上层不会重复平均时才能使用。
 
@@ -500,7 +517,7 @@ flowchart LR
 
 求解成功只产生不可变 Correction Set；Set 与 Observation 都保留逐板 identity/capability/path condition/evidence 集合。将 Set 选给 Channel 和 enable correction 是单独 Command；每次执行的 correction match 接收非空 `PreparedExecutionManifestSet`（默认单板长度为 1），逐板判断后形成聚合 `CorrectionMatchReport`，不能只比较第一块板。校准验证重新采集独立 verification artifact，并让 B 明确记录“应用了哪个目标 CorrectionSetRevision”；它不能读取当前 Channel 恰好 last-good 的某个 DUT B，也不能把用于求解的同一数据静默当作独立验证证据。
 
-## 6. Diagram、Marker 与 Limit 如何融入数据流
+## 6. Diagram、Marker、单次判定与生产资格策略如何融入数据流
 
 Diagram 是正式结果的消费者，不是数据处理层。完整路径是：
 
@@ -508,32 +525,38 @@ Diagram 是正式结果的消费者，不是数据处理层。完整路径是：
 A/B 或其他 typed source
 → 可选 MeasurementStageSnapshot
 → TraceEvaluationSnapshot
-→ MarkerEvaluationSnapshot + LimitTestResultSnapshot
+→ MarkerEvaluationSnapshot
+  + SegmentedLimitResultSnapshot
+  + RippleTestResultSnapshot
+  + 明确类型的 Metric/Geometric Result
 → AnalysisPublication
-→ DiagramFrameRefSet
-→ TracePlacement 的 scale/style/overlay
-→ 浏览器像素
+  ├→ DiagramFrameRefSet → TracePlacement scale/style/overlay → 浏览器像素
+  └→ 已武装策略：raw commit 原子追加 ProductionQualificationSequence ordinal
+      → sequence head + ProductionQualificationPolicy + prior state
+      → ProductionQualificationSnapshot + 原子 cursor 推进
+      → Web/SCPI production query、Handler、报告
 ```
 
 规则如下：
 
-- Marker、Limit 和统计只读取全分辨率 `TraceEvaluationSnapshot`；Diagram decimation、光标像素和 Preview 不能成为其输入；
-- C 原子闭包让同一 Trace 的曲线、Marker、Limit 总是引用同一个 AnalysisInputRefSet 与 revision 组合；
+- Marker、普通 Limit、Ripple、明确的 Metric/Geometric evaluator 和统计只读取全分辨率 `TraceEvaluationSnapshot`；Diagram decimation、光标像素和 Preview 不能成为其输入；
+- C 原子闭包让同一 Trace 的曲线、Marker 和所有已启用单次结果总是引用同一个 AnalysisInputRefSet 与 evaluator-set 组合；Flatness 保持 Marker/Metric，Ripple 独立于普通 Segment，Circle 等必须声明明确坐标域，禁止万能 Mask；
+- `ProductionQualificationPolicy` 只消费 `ProductionQualificationSequence` 队首已提交 raw refs 和 prior state，另发 Snapshot。普通 UI C 可合并；被策略跟踪的每轮 evaluator bundle 不可合并。策略求值/提交失败保留队首并按相同 canonical key 有界重试，后来 raw 只能排队不能越过；预算耗尽进入 Faulted，显式 reset/new sequence 后才能继续，且全程不回滚 C 或改写原始三态；
 - `DiagramFrameRefSet` 为每个 Placement 固定确切 `analysis_publication_id`。普通视觉刷新可以采用“每 Placement 最新可用”，但必须呈现 generation、时间与 stale；
-- 跨 Trace Marker coupling、共享 Limit、Math 或需要同代比较时，使用更严格的 synchronization policy 先形成相容 C，再原子切换 FrameRefSet，不能因“看起来叠在同一张图”就混用不同代次；
+- 跨 Trace Marker coupling、共享单次聚合、Math 或需要同代比较时，使用更严格的 synchronization policy 先形成相容 C，再原子切换 FrameRefSet，不能因“看起来叠在同一张图”就混用不同代次；
 - Preview 只作为带明确 provisional 样式的 overlay。L4/Diagram 不宣布正式替换；L4 Acquisition 归还 `PreviewFinalizationOwnerSet`，B/C 工作期间由 L3 Runtime escrow 持有。L2 只在目标 A/B/已独立 admission 的 exact C 提交成功后以 typed publication ref 发送 `SupersededByFormalResult`。C-target owner 在 B commit 后才尝试有界 exact-C admission；失败时按冻结 policy 以 B ref、`FormalUnavailable` 或 Discarded 立即终结，不无限等 C；失败/取消在失败事实 commit 后由 L2 发送 Discarded/Failed，并继续显示 last-good FrameRefSet；
-- 删除 Diagram 或 Placement 不删除 A/B/C。删除 AnalysisTrace 才按领域所有权规则处理 Marker/Limit/Placement，而历史 Snapshot 仍按 retention 存在。
+- 删除 Diagram 或 Placement 不删除 A/B/C/Production Snapshot。删除 AnalysisTrace 不改写历史结果；停用/删除生产策略必须先显式终结其 active sequence，未消费 entry 以 `AbandonedByReset` 原因留审计后释放 pin，不能把删除当作静默跳项。历史 Snapshot 仍按 retention 存在。
 
 ## 7. Web、SCPI、查询与导出读取同一事实
 
 ### 7.1 QueryTicket 与结果闭包
 
-一个 Query 在接受时解析并冻结 target、selection scope、Profile、typed stage、snapshot refs 和 authorization。之后有两种路径：
+一个 Query 在接受时解析并冻结 target、selection scope、Profile、typed stage、snapshot refs 和 authorization。raw analysis target 固定 `analysis_publication_id + raw_result_id`；production target 固定 `production_qualification_snapshot_id` 及其 source evidence closure。Web/SCPI Adapter 不能自动把一种 target 替换成另一种。之后有两种路径：
 
 1. 结果已物化：在同一 `DomainCommitBundle` 中创建 Ticket、取得精确 `ResultPinLease` 并把 Ticket 置为 Ready；配额/closure/revision 失败同步 Rejected，不创建 Ticket；
 2. 结果未物化：先由 Runtime `reserve_work` 取得 queue/worker permit 与可靠 completion registration，再由 InstrumentStore 原子取得全部 `PinnedInputSet`、output reservation、可见 lifecycle 的 terminal reservation，并为该 caller 按 output-claim 上界取得独立 `PendingResultPinReservation`；全部成功后才创建或加入 Operation 并提交 Pending Ticket。任一资源或初始 commit 失败都释放此前 owner，不留下 Pending/幽灵 Operation，也不 dispatch。结果 candidate 与共享 Operation 事实提交时，只把当前 cut 上仍有效 Pending Ticket 的 reservation 转换为精确 `ResultPinLease`；配额不足的 caller 在 join 前已被拒绝，取消/TTL 只释放自己的 reservation。确切 B/Stage 的查询不会被 Live latest-wins 队列合并掉，也默认不提升 `TraceAnalysisHead`。
 
-`ResultPinLease` pin 的不是单个顶层 ID，而是自包含的 `ResultClosure`：例如 C publication、Trace/Marker/Limit children、axis/quality 和所有结构共享 Buffer。它不要求无限保留所有祖先 payload；祖先 tombstone、digest 与最小 provenance 继续存在，已经物化的自包含 child 仍可读取。若请求需要重新计算而祖先 payload 已被 retention 回收，则明确返回 `PayloadExpired/Gone`，由调用者重新选择当前 Snapshot，不能从 Event ID 猜数据。
+`ResultPinLease` pin 的不是单个顶层 ID，而是自包含的 `ResultClosure`：raw closure 包含 C publication、Trace/Marker/typed evaluator children、axis/quality 和结构共享 Buffer；production closure 包含 policy/state、ordered source evidence 以及复核决定所需的有界诊断。它不要求无限保留所有祖先 payload；祖先 tombstone、digest 与最小 provenance 继续存在，已经物化的自包含 child 仍可读取。若请求需要重新计算而祖先 payload 已被 retention 回收，则明确返回 `PayloadExpired/Gone`，由调用者重新选择当前 Snapshot，不能从 Event ID 猜数据。
 
 `open_read` 通过 Store `open_result(ticket, authorization, permit)` 在同一原子动作中把 Ticket 从 Ready 转为 Reading，并把 ResultPinLease 转换为 `QueryReadHandle` 内部的 `ReaderLease`，不是先释放再申请。Transport 只持完整的受限 handle/codec，不接触或拆出 lease 实现；完成、断线、超时或 cancel 后把完整 handle 连同 `ReadTerminal` 移回 L2，Store `finish_result` 消费它并原子完成 Reading→Consumed/Failed/Abandoned 与 ReaderLease 释放，不取消其他调用者共享的求值 Operation。
 
@@ -692,8 +715,9 @@ Touchstone/CSV、Cal Kit、Limit、Fixture 等导入同样先产生有类型 can
 | A 成功、RF graph/correction 失败 | A 保留，无新 B | ChannelMeasurementHead 的 attempt/status 更新，last-good B 不变 | measurement 不完成；receiver-stage query 可按权限读 A |
 | Average contribution 被拒绝 | A 可保留，accumulator/B 不推进 | 同 generation 旧 B/C 不变 | count 不增加；报告拒绝原因 |
 | B 成功、某 Trace evaluator 失败 | B 保留，无该 Trace 新 C | 其他 Trace 可正常发布；失败 Trace last-good C stale | 独立 analysis failure event/Operation terminal |
-| Marker Invalid 或 Limit Indeterminate | 新 C 可以成功发布 | Head 指向新 C | 返回有类型领域状态，不伪装为系统异常 |
-| C batch commit 失败 | 新 C 全部不可见 | 旧 C 保留 | 不允许半套 Trace/Marker/Limit；已有 EvaluateTrace Operation/Ticket 用预留 terminal fact capacity 转 Failed |
+| Marker Invalid 或任一单次 evaluator Indeterminate | 新 C 可以成功发布 | Head 指向新 C | 返回有类型领域状态和原因，不伪装为系统异常或空数据 Pass |
+| C batch commit 失败 | 新 C 全部不可见 | 旧 C 保留 | 不允许半套 Trace/Marker/SegmentedLimit/Ripple/typed result；已有 EvaluateTrace Operation/Ticket 用预留 terminal fact capacity 转 Failed |
+| Production qualification 求值或 commit 失败 | 原始 C/raw result 保持可见；不发布半套 production snapshot；失败 queue entry 仍为队首 | 旧 ProductionQualification Head、sequence cursor 与原始结果不变 | 独立生产 Operation/Ticket 失败；相同 policy/context/ordinal/raw/prior-state 幂等重试，后续 entry 不得越过；预算耗尽原子置 Faulted，必须显式 reset/new sequence；不把缺失轮次猜成 Pass/Fail，也不回滚 C |
 | 任一 DomainCommitBundle 校验/写入失败 | 该 bundle 的 publication、领域 revision、Head、Operation/Fence、Status/SCPI Session/WaitRegistry、Ticket/ResultPin、Event 与 retention delta 全部不可见 | 旧 revision 完整保留；CandidateCommitLease 在 abort 后释放；已安装的 lifecycle terminal reservation 仍有效 | 初始 commit 失败则无 lifecycle/dispatch；已有可见 lifecycle 时必须 reconcile 已有终态或 state-only commit Failed，满足 Wait/Fence 并发失败 Event；普通错误不得无限 Pending，Store integrity fault 才 fail-stop |
 | Event gap | Snapshot 不受影响 | Head/Catalog 仍权威 | 客户端 resnapshot，不能猜增量 |
 | Query 客户端断线 | Snapshot 不受影响 | 只释放该 Ticket/ReaderLease | 共享 Operation 不被误杀 |
@@ -778,19 +802,20 @@ StopEventFeedResult stop_event_feed(
 1. **单轮二端口**：F/R chunks 乱序投递但 sequence/coverage 可重组时发布一份 A/B；缺一个 required receiver 时不发布 A。
 2. **driver buffer 立即复用**：Mock 在回调返回后覆盖原内存，最终 A hash 仍正确，证明 copy/lease 边界有效。
 3. **Preview 拥塞与授权变化**：浏览器暂停读取，Preview gap 增长但 Acquisition Ingress、A/B deadline 与 Buffer Pool 不被反压；session/ACL revision 改变立即终止该 consumer 且不取消 Sweep。
-4. **Finite Average**：每个被接受贡献在一个 commit 中发布 B、accumulator 与两个 Channel Head，count 和 `average_complete` 正确；Live C 在过载时可合并而不承诺逐 B 发布；对任一指定 B 的 exact query 都能得到对应非合并 C；第 factor 次只发一次 `average.completed`，且其 C 求值优先级更高；失败贡献不计数。
+4. **Finite Average**：每个被接受贡献在一个 commit 中发布 B、accumulator 与两个 Channel Head，count 和 `average_complete` 正确；普通 Live C 在过载时可合并而不承诺逐 B 发布；对任一指定 B 的 exact query 都能得到对应非合并 C；武装生产策略后，参与轮次的 raw evaluator bundle 不得被该合并优化丢弃；第 factor 次只发一次 `average.completed`，且其 C 求值优先级更高；失败贡献不计数。
 5. **Average clear 竞态**：clear 与旧 generation 的 stage/C worker 并发，旧 Snapshot 可读但不能覆盖新 Head。
 6. **惰性 Stage**：同一 canonical roots + graph 的并发 Touchstone/SCPI query 只计算一次；回收内部中间 cache 后最终 Stage 仍可读。
 7. **历史精确查询不倒退 Head**：当前 Head 已指向较新 Live C 时，对旧 B/Stage 的 exact query 能发布并读取历史 C，但 `TraceAnalysisHead` 保持不变；只有仍匹配 current token 的 Live candidate 可 CAS 提升 Head。
-8. **C 原子闭包**：Marker Invalid、Limit Indeterminate 能成功发布；分别注入参与点无效、段外无效及有效 Fail+参与点无效，验证核心三态、原因与生产 fail-safe 聚合；再注入 Limit evaluator 内部错误，确认不出现半套 C。
+8. **C 原子闭包**：Marker Invalid，以及普通 Limit、Ripple、明确 Circle 的 Indeterminate 能成功发布；分别注入参与点无效、非参与无效及有效 Fail+参与点无效，验证各 typed evaluator、Flatness/Ripple 分型、无万能 Mask 和三态原因；再注入每类 evaluator 内部错误，确认不出现半套 C。
 9. **Ready 与多 waiter 隔离**：direct Ready 配额不足同步 Rejected 且无 Ticket；三个 caller join 同一 single-flight 时各自持 `PendingResultPinReservation`，让其中一个 quota 失败、cancel 或 TTL，只终止该 Ticket，shared publication 与另外两个 Ready/open/read closure 不受影响。
 10. **publication commit 故障终态化**：分别在 A/B/C、Calibration、Export 与 Query result commit 注入 validation/write failure；candidate/Head/Event 全败且 last-good 不变，已有 Operation/Ticket 必须通过已安装 terminal reservation 进入 Failed/AlreadyTerminal，Wait/Fence 被满足，绝不永久 Pending/Publishing；再注入 Store integrity failure 时 Instrument fail-stop 并拒绝新工作。
 11. **Event gap**：暂停 Dispatcher、淘汰 Journal 后，SCPI fence 仍按时完成，Web 被要求 resnapshot，权威 Snapshot/Head 不丢。
 12. **校准隔离**：DUT Continuous Sweep、Channel selection 和 Trace 修改不能改变已接受 CalibrationObservation；求解失败不覆盖旧 Set。
 13. **校准验证**：结果能反查目标 Set、verification standard、独立 A/B 与 tolerance revision；当前 Channel 绑定切换不重解释历史报告。
-14. **Diagram 多代次**：普通 overlay 明示每 Placement generation/stale；coupled Marker/Limit 只在同步政策满足时原子切 frame。
+14. **Diagram 多代次**：普通 overlay 明示每 Placement generation/stale；coupled Marker/typed evaluator 只在同步政策满足时原子切 frame；production badge 只引用独立 production snapshot，不能替换 raw overlay。
 15. **导出期间新 Sweep**：Touchstone/CSV/报告全程 hash 对应同一 refs；cancel/断线不泄漏 input/blob lease，也不留下已宣称成功的半文件。
 16. **可选跨板**：任何成员失败、skew 越界或 timebase unlock 都不发布组合 A，并完成 fan-out abort/safe-state/all-terminal。
+17. **生产资格顺序与隔离**：按 ordinal 提交三个参与轮次的 raw results，确认 raw C 与 queue append 原子，覆盖连续 N、Pass/Fail/Indeterminate 转移、reset、锁存、bin/QMS 和策略/上下文切换；让第二次 production commit 失败并继续产生第三次 raw，确认第二项保持队首、第三项不能越过，使用同一 canonical key 重试成功后才依次推进。再覆盖 retry 耗尽进入 Faulted、显式 reset/new sequence、队列满时 RF 前拒绝/Hold；全程 raw ID/hash 永不改变、上一 production Head 保留，Web/SCPI 对 raw 和 production 两类 target 分别一致。
 
 ## 12. 当前刻意不冻结的内容
 

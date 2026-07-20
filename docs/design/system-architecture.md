@@ -59,8 +59,9 @@ Channel、Analysis Trace、Marker、Diagram、快照、连接、队列、日志�
 | Measurement | 单端 `Sij`、receiver wave/ratio、常用派生量 | Mixed-mode、Z/Y/T 等网络变换、自定义表达式 | true-mode、变频、噪声、非线性 |
 | 校准 | Response、1-port SOL、one-path 2-port、full 2-port SOLT、Cal Kit/Session/Correction Set | Unknown-Thru/SOLR、TRL/LRL/LRM、多端口、校准验证 | ECal、source/receiver power cal、外部功率计 |
 | Trace/Diagram | 多图多迹线、常用格式、Memory/Math、Hold、Smoothing、沿 X 的单 Sweep Statistics、基础 frozen/reference trace | Ensemble 跨 Sweep Statistics（若启用 MATH-08）、任意表达式、跨 Channel 数学、多历史对比 | 高端应用专用视图 |
-| Marker | Normal、Reference、Delta、Fixed/Tracking、Max/Min/Next/Target、Bandwidth/Q | Ripple、peak table、跨 Trace 耦合、复杂分析 | 专用应用 Marker |
-| Limit | 上下限分段、Pass/Fail/Indeterminate、失败点和裕量报告 | Ripple/Mask、锁存、批次统计、自动报告 | Handler/继电器输出 |
+| Marker | Normal、Reference、Delta、Fixed/Tracking、Max/Min/Next/Target、Bandwidth/Q、Flatness Metric | peak table、跨 Trace 耦合、复杂分析 | 专用应用 Marker |
+| Limit/单次发布判定 | 上下限分段、独立 Ripple、Pass/Fail/Indeterminate、失败点和裕量报告 | 候选能力包括明确类型的 Metric threshold、复数平面 Circle 等专用 evaluator；禁止万能 Mask；具体交付组合待 `PLAT-12` | Eye Mask 仅作为时域眼图应用的候选能力；软件授权与硬件依赖待 `PLAT-12` 和平台验证 |
+| Production Qualification | 单次原始结果、同次聚合接口与严格有序策略边界 | 候选能力包括连续 N、锁存、bin、批次/QMS、自动报告；具体交付组合待 `PLAT-12` | 外部 Handler/继电器/产线外设只能消费明确结果；具体选件组合待 `PLAT-12` |
 | 信号处理 | Electrical delay、port extension、逐端口正实数 Z0 renormalization | complex/balanced Z0 与可选 wave theory、Time domain/window/gating、Touchstone embedding/de-embedding | AFR、眼图、增强 TDR |
 | 控制/文件 | Web、Socket SCPI、IEEE 488.2 状态、State/Cal/Touchstone/CSV | HiSLIP/VXI-11、录制回放、报告模板 | 厂商测试系统集成 |
 
@@ -140,8 +141,12 @@ Instrument [instrument_revision]
 │     │  ├─ FrozenSnapshot(snapshot ref)
 │     │  └─ ImportedData(data ref)
 │     ├─ TracePipelineRevision + AnalysisProjection
-│     ├─ MarkerDefinition*
-│     └─ LimitTestDefinition*
+│     ├─ MarkerDefinition* -> search / bandwidth / flatness metric
+│     └─ SinglePublicationEvaluatorDefinition*
+│        ├─ SegmentedLimitDefinition*
+│        ├─ RippleTestDefinition*
+│        ├─ MetricThresholdDefinition*
+│        └─ GeometricRegionDefinition* -> explicit Circle 等；无万能 Mask
 ├─ CalibrationCatalog
 │  ├─ ConnectorDefinition + CalibrationMethodSpec
 │  ├─ CalKitRevision -> ClassAssignment -> StandardModelRevision*
@@ -156,7 +161,9 @@ Instrument [instrument_revision]
 │  ├─ TraceAccumulatorDefinition -> latest AccumulatorSnapshot ref
 │  ├─ Fixture/DeembeddingProfileRevision
 │  ├─ TimeDomain/GateProfileRevision
-│  └─ MathExpressionRevision
+│  ├─ MathExpressionRevision
+│  ├─ ProductionQualificationPolicy* -> source/context/transition/reset/retry rules
+│  └─ ProductionQualificationSequence@revision* -> next ordinal + bounded pending raw refs + Active/Faulted + latest result ref
 ├─ DisplayWorkspace@revision
 │  └─ Diagram*
 │     └─ TracePlacement* -> AnalysisTraceRef
@@ -168,6 +175,7 @@ Instrument [instrument_revision]
 │  ├─ ContinuousRun / GroupRun
 │  ├─ MaterializeMeasurementStageOperation
 │  ├─ EvaluateTraceOperation
+│  ├─ EvaluateProductionQualificationOperation
 │  ├─ CalibrationOperation / CalibrationVerificationOperation
 │  ├─ SaveRecallOperation / ImportExportOperation / SelfTestOperation
 │  ├─ BoardRecoveryOperation
@@ -185,7 +193,9 @@ Instrument [instrument_revision]
    ├─ TraceEvaluationSnapshot*
    ├─ AnalysisPublication*
    ├─ MarkerEvaluationSnapshot*
-   └─ LimitTestResultSnapshot* / LimitAggregationSnapshot*
+   ├─ SegmentedLimitResultSnapshot* / RippleTestResultSnapshot* / TypedEvaluatorResultSnapshot*
+   ├─ SinglePublicationAggregationSnapshot*
+   └─ ProductionQualificationSnapshot*
 ```
 
 ### 5.1 身份与 revision
@@ -207,11 +217,12 @@ Instrument [instrument_revision]
 | Cal Kit/Standard | 被 Session/Correction Set 引用时只能 archive，不物理删除 | 历史校准继续解析旧 revision |
 | Correction Set | 被 Channel Binding 或 Snapshot 引用时拒绝物理删除，可 unbind/archive | 历史 MatchReport 始终有效 |
 | Memory/Frozen Trace | 被 Math/Profile 引用时拒绝；显式解除引用后删除当前目录项 | 已发布分析结果不改变 |
-| Snapshot | 先 tombstone；retention 到期后，只有在不再被 `PinnedInputSet`、`TypedSnapshotLeaseSet`、`CandidateCommitLease`/待提交 candidate、`ResultPinLease`、`ReaderLease`、当前 last-good/average Head 或 CalibrationSession 已接受 Observation 引用时才回收 Buffer | ID 不复用，审计仍保留最小元数据 |
+| ProductionQualificationPolicy/Sequence | active/faulted sequence 或 pending entry 存在时拒绝普通删除；显式 reset/new-sequence Command 在一个 commit 中把未消费 entry 终结为 `AbandonedByReset`、写审计并释放 pin，随后才允许停用/删除当前 Policy | 已发布 raw/production Snapshot 不改写，旧 sequence ID/ordinal/reason 保留最小审计 |
+| Snapshot | 先 tombstone；retention 到期后，只有在不再被 `PinnedInputSet`、`TypedSnapshotLeaseSet`、`CandidateCommitLease`/待提交 candidate、`ResultPinLease`、`ReaderLease`、当前 last-good/average Head、Active/Faulted `ProductionQualificationSequence` pending entry 或 CalibrationSession 已接受 Observation 引用时才回收 Buffer | ID 不复用，审计仍保留最小元数据 |
 
 SCPI 方言需要的特殊级联行为由 Adapter 映射为上述显式 Command 或原子复合 Command，不能绕过 Kernel 的引用校验。
 
-Retention 按 typed snapshot graph 计算闭包，而不是只数顶层 ID。已物化 child 的 `ResultClosure` 真正自包含时，只有在没有重算、校准会话、平均代次或其他生命周期承诺仍要求祖先 payload 的前提下，才允许回收祖先 Buffer；父 tombstone、strong digest、最小 provenance 与图边仍保留。任何 Head 或 lease 的切换/释放都与对应 retention delta 在同一个领域提交中生效，不能出现新引用已经可见而 payload 已被回收的窗口。
+Retention 按 typed snapshot graph 计算闭包，而不是只数顶层 ID。已物化 child 的 `ResultClosure` 真正自包含时，只有在没有重算、校准会话、平均代次、ProductionQualificationSequence pending entry 或其他生命周期承诺仍要求祖先 payload 的前提下，才允许回收祖先 Buffer；父 tombstone、strong digest、最小 provenance 与图边仍保留。任何 Head、sequence entry 或 lease 的切换/释放都与对应 retention delta 在同一个领域提交中生效，不能出现新引用已经可见而 payload 已被回收的窗口。
 
 #### ProfileSet 与执行语义 revision
 
@@ -248,7 +259,7 @@ flowchart LR
     Diagram2["Diagram 2<br/>Smith"] --> PlacementC["TracePlacement C"] --> TraceC
 ```
 
-图中的箭头表达引用而非数据所有权：AnalysisTrace 读取共享正式网络快照，Diagram 只经 Placement 呈现 Trace；Marker/Limit 始终读取 AnalysisTrace 的全分辨率正式求值，不读取浏览器像素或 Preview。相同 AnalysisTrace 出现在多个 Placement 时，定义和判定仍共享，而 overlay 可见性、颜色、标签位置和 reference level 等呈现属性由各 Placement 独立保存。
+图中的箭头表达引用而非数据所有权：AnalysisTrace 读取共享正式网络快照，Diagram 只经 Placement 呈现 Trace；Marker 与 typed single-publication evaluator 始终读取 AnalysisTrace 的全分辨率正式求值，不读取浏览器像素或 Preview。这里的 publication 可以来自 Live、Frozen、Imported 或 Derived source，不隐含必须存在 Logical Sweep。Production Qualification 只读取已提交 raw result refs，不读取 Diagram。相同 AnalysisTrace 出现在多个 Placement 时，定义和原始判定仍共享，而 overlay 可见性、颜色、标签位置和 reference level 等呈现属性由各 Placement 独立保存。
 
 ### 5.3 Session 不是仪器对象
 
@@ -289,16 +300,19 @@ flowchart TD
     Base --> Process["Typed Processing Graph + AnalysisTrace"]
     Stage --> Process
     Process --> Trace["Full-resolution TraceEvaluationSnapshot"]
-    Trace --> Marker["Typed Marker / Statistics Evaluators"]
-    Trace --> Limit["Limit Evaluator"]
+    Trace --> Marker["Typed Marker / Statistics Evaluators<br/>including Flatness Metric"]
+    Trace --> Limit["Typed Single-Publication Evaluators<br/>Segmented Limit / Ripple / explicit Circle"]
     Marker --> Publish["AnalysisPublication<br/>per Trace; not Sweep fence"]
     Limit --> Publish
     Trace --> Publish
+    Publish -->|"armed only; append ordinal in same raw commit"| Sequence["Bounded ProductionQualificationSequence<br/>ordered pending raw bundles"]
+    Sequence -->|"head only; no overtaking"| Qualification["ProductionQualificationPolicy<br/>stateful cross-publication transition"]
+    Qualification -->|"success consumes head + advances cursor atomically"| Production["ProductionQualificationSnapshot<br/>separate fact; never rewrites C"]
 ```
 
-顺序是强约束：L2 `SweepAdmissionPlanner` 从同一授权 Catalog cut 的冻结 Channel/Profile/Capability/Topology input 纯计算 `SweepAdmissionPlan`，产生 requested intent、observation plan、typed refs、Runtime claims 和覆盖最坏情况的 conservative claim；它不创建 Operation/lease、不调用 Board，也不在 Control Executor 上展开逐点大数组。第一次 Runtime dispatch 前，L2 先从 Runtime 分别取得 acquisition 与 purpose-specific 必达后继的 `ReservedWorkDispatch{WorkId, WorkDispatchPermit, RuntimeCompletionRegistration}`，再由 InstrumentStore 原子 pin 冻结依赖、预留输出与新 A join 的 pin/closure/quota slot，最后由**有状态** ResourceArbiter 按 canonical resource order/topology epoch 为单板或多板全有或全无地 `try_pre_admit`，同时保留逐板 prepare/run Adapter call/worker/queue slot 与 sink registrations，并封装 `ExactFinalizationCapability`。普通测量保活旧 accumulator、CorrectionSet、B graph/Profile 并预留 B MeasurementPublication；校准 Observation 保活 Session/Method/Standard 与独立 average closure且排除用户 Correction/DUT B；Verification 保活目标 Correction 与比较预算；只有授权 raw/diagnostic workflow 可 A-only。Store join owner 与 Runtime escrow 聚合成 `AcquisitionContinuationOwner`，再连同 Preview publisher 组成 move-only `PendingSweepAdmission/AcquisitionLeaseSet`，全部成功后才提交 Operation 并 dispatch；任何前置失败按统一逆序释放且不留下幽灵 Operation。L4 调用 `BoardExecutionPort::begin_prepare` 得到 actual Manifest 后，只能在该保守 envelope 内本地消费 finalization capability，做 Correction/capability validation 和无新分配的 exact finalization，收窄成 `AcquisitionRunResourceSet + StartAuthorization`；不得回调 L2/L5/Runtime 另取容量、换板或减少必要 observation。prepare 不得启动 RF、采集或持久提交；SDK staging 通过显式 discard terminal 收尾。Manifest 超界、epoch 变化或无法在 envelope 内成形时必须 discard 并失败；`StartAuthorization` 只证明 exact reservation ID/digest 仍有效，不携带 L4/L5 ownership，然后才可 `begin_run`。lazy Stage/C 仍是后续独立 admission；Continuous 每轮也重新取得 cut/plan/admission，父 Operation 不永久占用未来轮次资源。
+顺序是强约束：L2 `SweepAdmissionPlanner` 从同一授权 Catalog cut 的冻结 Channel/Profile/Capability/Topology input 纯计算 `SweepAdmissionPlan`，产生 requested intent、observation plan、typed refs、Runtime claims 和覆盖最坏情况的 conservative claim；它不创建 Operation/lease、不调用 Board，也不在 Control Executor 上展开逐点大数组。第一次 Runtime dispatch 前，L2 先从 Runtime 分别取得 acquisition 与 purpose-specific 必达后继的 `ReservedWorkDispatch{WorkId, WorkDispatchPermit, RuntimeCompletionRegistration}`，再由 InstrumentStore 原子 pin 冻结依赖、预留输出与新 A join 的 pin/closure/quota slot，最后由**有状态** ResourceArbiter 按 canonical resource order/topology epoch 为单板或多板全有或全无地 `try_pre_admit`，同时保留逐板 prepare/run Adapter call/worker/queue slot 与 sink registrations，并封装 `ExactFinalizationCapability`。普通测量保活旧 accumulator、CorrectionSet、B graph/Profile 并预留 B MeasurementPublication；校准 Observation 保活 Session/Method/Standard 与独立 average closure且排除用户 Correction/DUT B；Verification 保活目标 Correction 与比较预算；只有授权 raw/diagnostic workflow 可 A-only。Store join owner 与 Runtime escrow 聚合成 `AcquisitionContinuationOwner`，再连同 Preview publisher 组成 move-only `PendingSweepAdmission/AcquisitionLeaseSet`，全部成功后才提交 Operation 并 dispatch；任何前置失败按统一逆序释放且不留下幽灵 Operation。L4 调用 `BoardExecutionPort::begin_prepare` 得到 actual Manifest 后，只能在该保守 envelope 内本地消费 finalization capability，做 Correction/capability validation 和无新分配的 exact finalization，收窄成 `AcquisitionRunResourceSet + StartAuthorization`；不得回调 L2/L5/Runtime 另取容量、换板或减少必要 observation。prepare 不得启动 RF、采集或持久提交；SDK staging 通过显式 discard terminal 收尾。Manifest 超界、epoch 变化或无法在 envelope 内成形时必须 discard 并失败；`StartAuthorization` 只证明 exact reservation ID/digest 仍有效，不携带 L4/L5 ownership，然后才可 `begin_run`。普通 UI/query Stage/C 仍是后续独立 admission；武装生产策略的参与轮次只在 start 前额外预留 raw evaluator/sequence slot 的轻量 capacity token，不提前执行 C。Continuous 每轮也重新取得 cut/plan/admission，父 Operation 不永久占用未来轮次资源。
 
-上述 Store join owner + Runtime escrow 的聚合只适用于非 A-only variant；受策略授权的 raw/diagnostic A-only 使用 `AuthorizedAOnlyCompletionOwner`，不预留也不生成空的 Store/Runtime 后继 handoff。
+上述 Store join owner + Runtime escrow 的聚合只适用于非 A-only variant；受策略授权的 raw/diagnostic A-only 使用 `AuthorizedAOnlyCompletionOwner`，不预留也不生成空的 Store/Runtime 后继 handoff。普通 Continuous 的 UI 型 C 仍可惰性求值和 latest-wins 合并；若 `ProductionQualificationPolicy` 已武装，本轮参与资格判定所需的 evaluator bundle 与一个 sequence queue slot 必须在参与工作开始前列入 purpose-specific 必达后继容量，Live 输入最迟在 RF start 前完成这项轻量预留。对应 raw C 提交时同批追加 policy/context/ordinal/raw refs；策略只能从队首推进。队首失败可有界重试并阻止后续项越过，队列无容量则在参与工作开始前拒绝或 Hold。它不把 C 变成原生 Sweep fence，也不允许策略从缺失或被合并的 UI 帧猜测结果。
 
 所有这些 execution owner 齐备后，L2 还必须为即将可见的 SweepOperation 取得 `LifecycleTerminalReservationSet`，并与 Accepted fact 同批安装进 Store；该初始 commit 失败则释放完整 `PendingSweepAdmission`、不返回 OperationId且绝不 dispatch。reservation 在 Operation 可见期间留在 L5，保证之后 A/B publication commit 失败也能以 state-only commit 落到 Failed/AlreadyTerminal；普通资源错误不能让 Operation 永久停在 Publishing。
 
@@ -315,7 +329,7 @@ Receiver observations per required source state
 → corrected network snapshot
 → profile-validated network / time-domain / trace processing nodes
 → typed analysis projection and full-resolution trace evaluation
-→ marker / statistics / limit evaluation
+→ marker / statistics / typed single-publication evaluation（segmented limit、Ripple、明确几何类型）
 → display-only decimation
 ```
 
@@ -334,13 +348,14 @@ Preview 不能从原始 a/b 直接画到浏览器。它运行同一 Processing G
 
 ### 6.1 正式快照的最小溯源信息
 
-三层正式结果共享软件 build、数据 schema、完成时间和相关 `ProfileSetRevision`，但不能把 Trace/Marker/Limit revision 错写到共享 A/B 数据上。最小 provenance 按层分开：
+三层正式结果与派生生产事实共享软件 build、数据 schema、完成时间和相关 `ProfileSetRevision`，但不能把 Trace/Marker/evaluator revision 错写到共享 A/B 数据上。最小 provenance 按层分开：
 
 | 层 | 必须绑定的身份与 revision | 参数、质量与父引用 |
 |---|---|---|
 | A `CompletedSweepBundle` | producing `SweepOperationId`、`LogicalSweepId`、`BoardRunEvidence[] {manifest_id, board_run_id, run_generation, completion_ledger}`、instrument/channel config、Product/BoardExecution Profile、每块 board identity/capability/底软/Adapter revision | requested→actual stimulus/power/IFBW/dwell/route、每块板 expected/actual observation coverage、chunk sequence/terminal/readback ledger、source/receiver observations、点序、原始质量/诊断；父为 evidence 数组对应的 PreparedExecutionManifest 集合，单板时数组长度为 1 |
 | B `CompletedMeasurementBundle` | `measurement_snapshot_id`、producing Sweep/Average Operation、有界 `AverageContributionRef`、RF graph/algorithm revision、Product/BoardExecution/Analysis Profile、CorrectionSet revision 与 MatchReport | average policy/generation/count/complete、网络 stage/axis/port topology/Z0/unit、派生质量；父为有限 A 集合或可审计的有界 accumulator 贡献摘要 |
-| C `AnalysisPublication` | `analysis_publication_id`、producing `EvaluateTraceOperationId`、`AnalysisInputRefSet`、AnalysisTrace/TraceSourceSpec/pipeline/projection、Fixture/Gate/Math/Marker/Limit revision、Analysis Profile | Trace axis/format/unit、analysis quality、Marker/Limit result ID、上游 average generation/complete；父引用由 source 类型决定，显示 Placement 不进入判定 provenance |
+| C `AnalysisPublication` | `analysis_publication_id`、producing `EvaluateTraceOperationId`、`AnalysisInputRefSet`、AnalysisTrace/TraceSourceSpec/pipeline/projection、Fixture/Gate/Math/Marker/evaluator-set revision、Analysis Profile | Trace axis/format/unit、analysis quality、Marker 与 typed single-publication result IDs、上游 average generation/complete；父引用由 source 类型决定，显示 Placement 不进入判定 provenance |
+| 生产资格事实（非 A/B/C 新层） | `production_qualification_snapshot_id`、policy revision、sequence ID/ordinal、ordered raw result/publication IDs、sequence/DUT context/reset key、prior-state ref | 连续计数、锁存、bin/QMS 决策、Indeterminate 映射原因；只引用已提交单次结果，后续发布与策略结果都不得改写它们 |
 
 协议相关 Query/Audit 另记录接受时的 `ScpiCompatibilityProfileRevision` 或 Web API schema revision；它不反向改变 A/B/C 数据语义。
 
@@ -371,10 +386,10 @@ Derived Trace 的定义引用稳定 AnalysisTrace ID，求值时再解析并冻�
 - FFT、time-domain 和 gating 对输入有全局依赖：遇到缺点时默认整体拒绝；若 Product Profile 允许插补，算法和整个派生结果的 `imputed_input` 质量标志必须显式。
 - Average 保存每点有效 sample count；未达到规定样本数时不发布“平均完成”。
 - Marker 固定点遇到无效数据时返回 invalid；搜索是否跳过无效点、是否允许跨 gap 以及 gap 边缘峰值规则由 Analysis Projection 明确，不设静默默认。
-- Limit 采用已确认的 fail-safe 三态：存在参与点且全部参与点有效时才判 `Pass/Fail`；任一参与点过载、缺失、NaN 或质量无效，或者零参与点、空输入、没有任何有效参与数据时，总体判 `Indeterminate`，同时保留已知失败点。生产 Safety Policy 可以把 `Indeterminate` 汇总为 Fail，但不能映射为 Pass 或改写原始结果。
+- 普通 Limit 采用已确认的 fail-safe 三态：存在参与点且全部参与点有效时才判 `Pass/Fail`；任一参与点过载、缺失、NaN 或质量无效，或者零参与点、空输入、没有任何有效参与数据时，总体判 `Indeterminate`，同时保留已知失败点。Ripple、Metric threshold 和明确几何 evaluator 也必须声明参与点、空输入与无效数据规则，禁止“没有可判数据即 Pass”。`ProductionQualificationPolicy` 可以按冻结规则把 `Indeterminate` 派生为 Fail，但不能映射为 Pass 或改写原始结果。
 - 绘图抽稀只影响像素，Marker、Limit、统计、保存和导出始终使用全分辨率 Trace 数据。
 
-### 6.3 三层发布、完成栅栏与不重扫的派生分析链
+### 6.3 三层发布、生产资格事实、完成栅栏与不重扫的派生分析链
 
 “采集完成”“测量数据可读”和“某条 Trace 分析完成”是三个有父子引用、但失败隔离不同的事实：
 
@@ -382,9 +397,10 @@ Derived Trace 的定义引用稳定 AnalysisTrace ID，求值时再解析并冻�
 |---|---|---|---|
 | A：逻辑采集 | `CompletedSweepBundle(completed_sweep_snapshot_id, logical_sweep_id, board_run_evidence[])`；每项 evidence 绑定自己的 Manifest、BoardRun generation 与完成 ledger，合起来覆盖一个逻辑 Sweep 所需全部 source-state receiver observations | `sweep.acquisition_completed`；只在全部必需 sub-sweep 成功后发布 | RF/Adapter 内部与 receiver-stage 查询；任一必需方向失败则不发布 A |
 | B：正式测量 | `CompletedMeasurementBundle(measurement_snapshot_id, average_contribution_ref, average_generation/count, correction_match)` | `measurement.completed`；项目原生 `SweepOperation` completion fence | `INIT;*OPC?` 的原生 Profile、raw/corrected network 查询；RF graph/correction 失败会使本轮 SweepOperation 失败，但不改写 last-good B |
-| C：Trace 分析 | `AnalysisPublication(analysis_publication_id, analysis_input_ref_set, trace_revision, marker/limit revisions)`；Live 输入引用一个 B 或 Stage，其他输入引用 Frozen/Imported/上游 C | `analysis.published` 或该 Trace 的 `EvaluateTraceOperation` 失败 | Marker/Limit/Trace projection 查询；单条派生 Trace 失败只使该发布失败或 stale，不回滚任何已有效父快照 |
+| C：Trace 与单次分析 | `AnalysisPublication(analysis_publication_id, analysis_input_ref_set, trace_revision, marker/evaluator-set revisions)`；Live 输入引用一个 B 或 Stage，其他输入引用 Frozen/Imported/上游 C | `analysis.published` 或该 Trace 的 `EvaluateTraceOperation` 失败 | Trace/Marker/普通 Limit/Ripple/明确几何结果查询；单条派生 Trace 失败只使该发布失败或 stale，不回滚任何已有效父快照 |
+| 生产资格事实 | `ProductionQualificationSequence(sequence_id, next_ordinal, pending_raw_bundles, Active/Faulted)` + `ProductionQualificationSnapshot(policy_revision, ordinal, ordered_raw_result_refs, sequence_context, prior_state_ref)`；只消费已提交的 C/raw evaluator result | `production.qualification_published`、有界重试或 `production.sequence_faulted` | 连续 N、锁存、bin、QMS 与 Handler/报告；失败保留队首、原始 C 和上一生产 Head，后续项不得越过，绝不回滚或改写单次结果 |
 
-Average 是 B publication 的显式序列语义：每个成功 LogicalSweep 先产生独立 A；`AverageMode` 是 `FiniteBatch | SlidingWindow | Cumulative | VendorRunning` 的 typed enum，最后一种还必须由 Compatibility Profile 冻结有界 update-kernel/state schema，不能用含糊的 running 布尔值。项目原生在每个被接受贡献后都发布一个新的正式 B：FiniteBatch 在 `count < factor` 时记录 `average_complete=false`，第 factor 个 B 置 true 并只发布一次 `average.completed`；SlidingWindow 在 warm-up 记录 `window_fill`，窗口满后以固定 ring 移出最老贡献并继续发布；Cumulative/VendorRunning 的终点与 fence 只由冻结 Profile 声明。Live C 是有界的 latest-wins/coalescible 派生结果，Continuous/Average 过载时不保证每个 B 都自动得到 C；有限平均完成的 B 提高调度优先级。要求某个确切 B 或 Stage 的自动化查询必须显式 pin 输入并启动不受 Live 合并影响的 `EvaluateTraceOperation`；相同确切 key 的并发查询仍可 single-flight，并得到绑定该输入的同一 C。要求完整 factor 的调用者等待 `AverageSequenceOperation`，不能靠 UI 本地计数猜测。
+Average 是 B publication 的显式序列语义：每个成功 LogicalSweep 先产生独立 A；`AverageMode` 是 `FiniteBatch | SlidingWindow | Cumulative | VendorRunning` 的 typed enum，最后一种还必须由 Compatibility Profile 冻结有界 update-kernel/state schema，不能用含糊的 running 布尔值。项目原生在每个被接受贡献后都发布一个新的正式 B：FiniteBatch 在 `count < factor` 时记录 `average_complete=false`，第 factor 个 B 置 true 并只发布一次 `average.completed`；SlidingWindow 在 warm-up 记录 `window_fill`，窗口满后以固定 ring 移出最老贡献并继续发布；Cumulative/VendorRunning 的终点与 fence 只由冻结 Profile 声明。普通显示型 Live C 是有界的 latest-wins/coalescible 派生结果，Continuous/Average 过载时不保证每个 B 都自动得到 C；有限平均完成的 B 提高调度优先级。要求某个确切 B 或 Stage 的自动化查询必须显式 pin 输入并启动不受 Live 合并影响的 `EvaluateTraceOperation`；相同确切 key 的并发查询仍可 single-flight，并得到绑定该输入的同一 C。若某轮被已武装的 `ProductionQualificationPolicy` 跟踪，其冻结 evaluator bundle 同样不可合并；raw C commit 同批把 bundle 追加到对应 `ProductionQualificationSequence`，后续生产求值严格处理队首，成功 commit 才推进 cursor。失败队首按同一幂等 key 有界重试并阻止后续项越过，队列满前必须停止准入新的参与轮次。要求完整 factor 的调用者等待 `AverageSequenceOperation`，不能靠 UI 本地计数猜测。
 
 针对历史 B/Stage 的 exact query 默认只发布/返回它请求的 C，不提升 `TraceAnalysisHead`；这使自动化读取旧结果不会把 Diagram 的 current/last-good 指针倒退。
 
@@ -402,13 +418,21 @@ AnalysisInputRefSet
   + AnalysisTrace@revision
 → EvaluateTraceOperation
 → TraceEvaluationSnapshot
-  + Marker/Limit revision
+  + Marker/evaluator-set revision
+  + SegmentedLimitResult / RippleResult / explicit typed evaluator results
 → AnalysisPublication
+
+ProductionQualificationSequence head
+  = sequence ID + expected ordinal + ordered immutable raw result refs
+  + ProductionQualificationPolicy/retry rule
+  + prior ProductionQualificationSnapshot
+→ ProductionQualificationSnapshot
+  + atomic head consume/cursor advance（独立提交，不回写 C）
 ```
 
-在 Hold 或 last-good 数据上修改 format、Math、Memory、Smoothing、Marker 或 Limit 时，系统直接启动有界的 `EvaluateTraceOperation`，不要求硬件重扫。连续扫频的后台 Live Trace 可以 latest-wins 并合并过期分析任务；显式查询某个确切 B/Stage 的 Operation 则冻结该输入、不可与其他代次合并。Derived/Frozen/Imported Trace 按各自冻结的输入集合调度。系统只发布相互兼容的 `analysis_input_ref_set_hash + trace_revision + marker/limit_revision` 组合；删除 Diagram 不影响这条分析链。正式 Marker/Limit query 会 pin 已有 C 层发布；若目标 revision 尚未求值，则在 query deadline 内启动对应 `EvaluateTraceOperation`，不会默认等待未来 Sweep。Web 分开发送 `measurement.completed`、`analysis.published` 和 `average.completed`，不得用一个含糊的 completed 事件覆盖三层。
+在 Hold 或 last-good 数据上修改 format、Math、Memory、Smoothing、Marker 或单次 evaluator 定义时，系统直接启动有界的 `EvaluateTraceOperation`，不要求硬件重扫。连续扫频的普通后台 Live Trace 可以 latest-wins 并合并过期分析任务；显式查询某个确切 B/Stage，或被生产资格策略跟踪的本轮 evaluator bundle，则冻结该输入、不可与其他代次合并。Derived/Frozen/Imported Trace 按各自冻结的输入集合调度。系统只发布相互兼容的 `analysis_input_ref_set_hash + trace_revision + marker/evaluator-set_revision` 组合；删除 Diagram 不影响这条分析链。正式 Marker/typed evaluator query 会 pin 已有 C 层发布；若目标尚未求值，则在 query deadline 内启动对应 `EvaluateTraceOperation`，不会默认等待未来 Sweep。生产策略只读取 sequence 队首的已提交原始结果并另发 `production.qualification_published`；失败保留队首，不能改读较新的 raw。Web 分开发送 `measurement.completed`、`analysis.published`、`production.qualification_published`、`production.sequence_faulted` 和 `average.completed`，不得用一个含糊的 completed 事件覆盖这些事实。
 
-一份 C 层发布采用私有 `PublicationCandidateBatch` 原子构造：EvaluateTrace worker 使用预分配的 `analysis_publication_id`，在尚不可见的 batch 中生成 TraceEvaluationSnapshot、MarkerEvaluationSnapshot、LimitTestResultSnapshot 及其双向 ID 引用，验证 typed input、revision 与引用闭包后，只经 L3 返回 `ProcessingSucceeded(batch)`。L2 Control Executor 再校验 terminal 与 expected cut，把 batch 连同 Operation/QueryTicket patch、事件和 retention delta 组装成 `DomainCommitBundle`，通过 InstrumentStore 原子提交；worker 不能直接调用 Store。只有后台当前 Live 求值可请求 `HeadPromotionPolicy::RequireCurrent{trace_revision, source_binding_revision, input_generation}`，Control Executor 才生成 compare-and-set `TraceAnalysisHead` patch；针对历史 B/Stage 的 exact query 使用 `HeadPromotionPolicy::None`，发布 C 并使自己的 Ticket Ready，但不倒退 Head。Marker 的 `Invalid/Incomplete` 和 Limit 的 `Indeterminate` 是成功求值的有类型领域结果，可以进入该 batch；只有 evaluator 内部失败、输入闭包不一致、资源失败或 commit 失败才使整批新 C 不可见。last-good publication 保留；可提升的当前 Live 失败才更新相应 Head attempt/status 并让 UI 显示 stale/失败原因。不得让查询观察到只有 publication 没有 Limit result，或反向引用尚不存在的短暂状态。
+一份 C 层发布采用私有 `PublicationCandidateBatch` 原子构造：EvaluateTrace worker 使用预分配的 `analysis_publication_id`，在尚不可见的有向无环 candidate graph 中先生成 TraceEvaluationSnapshot，再运行 Marker/SegmentedLimit/Ripple/其他已启用 typed evaluator，并建立结果到最终 publication ID 的引用；evaluator 不读取尚未形成的 AnalysisPublication。验证 typed input、revision 与引用闭包后，只经 L3 返回 `ProcessingSucceeded(batch)`。L2 Control Executor 再校验 terminal 与 expected cut，把 batch 连同 Operation/QueryTicket patch、事件和 retention delta 组装成 `DomainCommitBundle`，通过 InstrumentStore 原子提交；worker 不能直接调用 Store。若该 publication 是武装生产序列的参与项，同一 raw commit 还必须追加预留好的 `sequence_id + ordinal + raw bundle refs`，不允许在 C 可见后再临时申请队列容量。只有后台当前 Live 求值可请求 `HeadPromotionPolicy::RequireCurrent{trace_revision, source_binding_revision, input_generation}`，Control Executor 才生成 compare-and-set `TraceAnalysisHead` patch；针对历史 B/Stage 的 exact query 使用 `HeadPromotionPolicy::None`，发布 C 并使自己的 Ticket Ready，但不倒退 Head。Marker 的 `Invalid/Incomplete` 和单次 evaluator 的 `Indeterminate` 是成功求值的有类型领域结果，可以进入该 batch；只有 evaluator 内部失败、输入闭包不一致、资源失败或 commit 失败才使整批新 C 不可见。生产资格结果由后续独立 batch 提交；它失败保留 sequence 队首、旧 production Head 和原始 C。last-good publication 保留；可提升的当前 Live 失败才更新相应 Head attempt/status 并让 UI 显示 stale/失败原因。不得让查询观察到 publication 与其声明的 typed result 只有一半，也不得让生产结果反向改写 raw result。
 
 不可变 Snapshot 与“当前/last-good 选择”分开：`ChannelMeasurementHead{last_good_b, latest_attempt, status, revision}`、`ChannelAverageHead{generation,current_accumulator_snapshot_id,count,complete,revision}` 和 `TraceAnalysisHead{last_good_c, latest_attempted_input, status, revision}` 是 Control Executor 唯一更新的小型权威记录。Head patch 必须携带 expected revision/current-input token；历史 exact query 默认没有 Head patch，若用户要查看旧结果则显式切换 `DiagramFrameRefSet` 或 Trace Source。当前 last-good/average closure 是受 ProductProfile 上限约束的 retention root；运行期 `DiagramFrameRefSet` 只含软引用，不无限 pin 历史。失败只更新 Head/status/diagnostic，不改写历史 B/C。stale 是 Head、当前配置和最新 attempt 的关系，不是给旧 Snapshot 原地打补丁。
 
@@ -459,9 +483,9 @@ BlobWriteFinishResult finish_blob_write(
     BlobWriteTerminal terminal) noexcept;
 ```
 
-它隐藏跨对象不变量、revision、Control Policy、Operation 生命周期、审计和事件发布。`submit` 对长操作只返回 Operation ID，不在网络线程中等待扫频。`admit` 在 Control Executor 上按 session/profile 解析目标并冻结 profile、对象 revision、typed data stage、父快照和 ticket deadline：已有物化结果且能原子取得覆盖完整 `ResultClosure` 的 `ResultPinLease` 时返回 `Ready(QueryTicket)`；需要从 A/B 父结果生成 `ReceiverObservation/MeasuredReceiverQuantity/MeasuredRatio/RawNetworkObservation/CorrectedNetwork/ProcessedNetwork` 等非 C 层 stage 时，提交或加入 `MaterializeMeasurementStageOperation`；只有需要 AnalysisTrace pipeline/projection/Marker/Limit revision 的 C 层结果才提交或加入 `EvaluateTraceOperation`。两类 Operation 都有独立有界 single-flight、预算和 provenance，非 Trace query 不得伪造 AnalysisTrace。Adapter 只观察 Ticket 绑定的具体 Operation，不等待未来 Sweep；完成后先用纯 `inspect` 查看 ticket，再调用一次性 `open_read` 把 Ready pin 原子转换为已物化不可变 Buffer 的 `ReaderLease`。`open_read` 只修改 QueryTicket/lease 资源状态，不改领域配置或结果；回调不在模型锁内执行。
+它隐藏跨对象不变量、revision、Control Policy、Operation 生命周期、审计和事件发布。`submit` 对长操作只返回 Operation ID，不在网络线程中等待扫频。`admit` 在 Control Executor 上按 session/profile 解析目标并冻结 profile、对象 revision、typed data stage、父快照和 ticket deadline：已有物化结果且能原子取得覆盖完整 `ResultClosure` 的 `ResultPinLease` 时返回 `Ready(QueryTicket)`；需要从 A/B 父结果生成 `ReceiverObservation/MeasuredReceiverQuantity/MeasuredRatio/RawNetworkObservation/CorrectedNetwork/ProcessedNetwork` 等非 C 层 stage 时，提交或加入 `MaterializeMeasurementStageOperation`；需要 AnalysisTrace pipeline/projection/Marker/evaluator-set 的 C 层结果时提交或加入 `EvaluateTraceOperation`；生产 query 只读取已发布 Snapshot，或加入当前 sequence 队首已经存在/获准启动的 `EvaluateProductionQualificationOperation`，不得选择任意 raw refs 绕过队列。三类 Operation 都有独立有界 single-flight、预算和 provenance，非 Trace query 不得伪造 AnalysisTrace，生产 query 也不得绕过 raw result refs 直接读取 B/Trace。Adapter 只观察 Ticket 绑定的具体 Operation，不等待未来 Sweep；完成后先用纯 `inspect` 查看 ticket，再调用一次性 `open_read` 把 Ready pin 原子转换为已物化不可变 Buffer 的 `ReaderLease`。`open_read` 只修改 QueryTicket/lease 资源状态，不改领域配置或结果；回调不在模型锁内执行。
 
-`QueryTicketCatalog` 使 HTTP 202 与资源生命周期解耦。Ticket 主路径为 `Pending → Ready → Reading → Consumed | Failed | Abandoned`，并可从 Pending/Ready 进入 `Expired/Cancelled/Failed`；它冻结 owner/actor/session、授权摘要、Profile revision、目标 typed refs、独立 waiter deadline/TTL 和可选 shared OperationId（MaterializeMeasurementStage 或 EvaluateTrace）。需要 materialize/evaluate 的每个 caller 在加入 single-flight 前，先按 `{actor, session, target, output-claim upper bound}` 独立取得并随 Pending commit 安装 `PendingResultPinReservation`；配额不足时同步拒绝且不创建 Ticket。共享 publication 完成时，同一领域 commit 只把当前 cut 上仍为 Pending 的 reservation 转换为精确 `ResultPinLease` 并释放上界余量，因此普通 pin 容量不会在 worker terminal 后重新竞争；单个 caller 的 cancel、TTL、access revocation 或 quota failure 也不能回滚共享 publication 或其他 Ticket。实际 `ResultClosure` 超出冻结 claim、candidate validation/write failure 等 publication 错误会使该 bundle 全败，Control Executor 随即用已安装的 lifecycle terminal reservation 将相关可见 Ticket state-only 提交为 `Failed(mapped error)`，或确认其已被并发终结。精确 lease 覆盖 publication、Trace/Marker/Limit children、axis/quality 及全部结构共享 Buffer 的自包含 `ResultClosure`，不是只保活一个顶层 ID；ResultPin 与 Ready Ticket 始终共同保存在 Store。`open_read` 只携带绑定 ticket/actor/profile revision 的授权，Store 再原子执行 Ready→Reading 和 ResultPin→ReaderLease，不把 pin 先交给 L2 临时保存。传输完成、断线、timeout 或 codec failure 必须显式 `finish_read`，由 Store 同批完成 Reading→Consumed/Failed/Abandoned 与 lease 释放；析构不冒充终态。Ready 的 TTL、显式 cancel、session/access 失效或 Failed 均释放 ResultPinLease，失败重试重新申请 Ticket，不能复用已 Consumed capability。HTTP 202 正常结束只 detach 当前请求，**不**等于取消 Ticket；客户端用鉴权后的 inspect、一次性 open_read 或显式 cancel 继续。全局及每 actor/session 的 Pending/Ready/Reading 数和 pin bytes 都有硬上限。每个 Ticket 的等待 deadline 只移除自身 waiter；共享 materialize/evaluate Operation 使用独立的执行 deadline/cost policy，绝不继承第一个 waiter 的短 deadline，后来加入者也不能无限延长它。已物化 child 的 closure 自包含时允许祖先 payload 按 retention 回收，但保留 tombstone/digest/provenance；需要重算而祖先 payload 已过期时明确返回 `PayloadExpired/Gone`。
+`QueryTicketCatalog` 使 HTTP 202 与资源生命周期解耦。Ticket 主路径为 `Pending → Ready → Reading → Consumed | Failed | Abandoned`，并可从 Pending/Ready 进入 `Expired/Cancelled/Failed`；它冻结 owner/actor/session、授权摘要、Profile revision、目标 typed refs、独立 waiter deadline/TTL 和可选 shared OperationId（MaterializeMeasurementStage、EvaluateTrace 或 EvaluateProductionQualification）。需要 materialize/evaluate 的每个 caller 在加入 single-flight 前，先按 `{actor, session, target, output-claim upper bound}` 独立取得并随 Pending commit 安装 `PendingResultPinReservation`；配额不足时同步拒绝且不创建 Ticket。共享 publication 完成时，同一领域 commit 只把当前 cut 上仍为 Pending 的 reservation 转换为精确 `ResultPinLease` 并释放上界余量，因此普通 pin 容量不会在 worker terminal 后重新竞争；单个 caller 的 cancel、TTL、access revocation 或 quota failure 也不能回滚共享 publication 或其他 Ticket。实际 `ResultClosure` 超出冻结 claim、candidate validation/write failure 等 publication 错误会使该 bundle 全败，Control Executor 随即用已安装的 lifecycle terminal reservation 将相关可见 Ticket state-only 提交为 `Failed(mapped error)`，或确认其已被并发终结。精确 lease 覆盖 raw publication 的 Trace/Marker/typed evaluator children，或 production snapshot 的 policy/state/source evidence closure，以及各自 axis/quality 和结构共享 Buffer；它不是只保活一个顶层 ID。ResultPin 与 Ready Ticket 始终共同保存在 Store。`open_read` 只携带绑定 ticket/actor/profile revision 的授权，Store 再原子执行 Ready→Reading 和 ResultPin→ReaderLease，不把 pin 先交给 L2 临时保存。传输完成、断线、timeout 或 codec failure 必须显式 `finish_read`，由 Store 同批完成 Reading→Consumed/Failed/Abandoned 与 lease 释放；析构不冒充终态。Ready 的 TTL、显式 cancel、session/access 失效或 Failed 均释放 ResultPinLease，失败重试重新申请 Ticket，不能复用已 Consumed capability。HTTP 202 正常结束只 detach 当前请求，**不**等于取消 Ticket；客户端用鉴权后的 inspect、一次性 open_read 或显式 cancel 继续。全局及每 actor/session 的 Pending/Ready/Reading 数和 pin bytes 都有硬上限。每个 Ticket 的等待 deadline 只移除自身 waiter；共享 materialize/evaluate Operation 使用独立的执行 deadline/cost policy，绝不继承第一个 waiter 的短 deadline，后来加入者也不能无限延长它。已物化 child 的 closure 自包含时允许祖先 payload 按 retention 回收，但保留 tombstone/digest/provenance；需要重算而祖先 payload 已过期时明确返回 `PayloadExpired/Gone`。
 
 已有物化结果的 direct Ready admission 服从同一规则：先预留 Ticket lifecycle terminal capacity，再在一个 `DomainCommitBundle` 中安装 reservation、创建 Ready Ticket并取得精确 `ResultPinLease`；任一步失败都同步 Rejected且无 Ticket，不能把快速路径放到提交边界之外。
 
@@ -547,7 +571,7 @@ public:
 };
 ```
 
-Interface 保持在逻辑扫频层，不暴露寄存器、DMA、ADC/IQ、厂商结构体、线程句柄、Eigen、JSON 或 Socket。`PrepareAuthorization` 是从 L4 仍持有的 `PreAdmissionLease` 派生、绑定 conservative claim 与 topology/capability/operational epoch 的短期 opaque proof；`StartAuthorization` 绑定 `PreparedExecutionId + manifest digest + operational epoch + reservation attestations` 且只能消费一次，但同样不拥有 L4/L5 的 processing/output reservation。Acquisition Module 在派发 `begin_prepare` 前使用首次 admission 已预留的 `PrepareCallId`、Adapter call/worker/queue slot 和 `PrepareSinkRegistration`，所以尚未产生 Prepared token 或 `BoardRunId` 时也能从独立控制路径调用 `request_prepare_abort`。prepare 成功 terminal 返回可分别持有的 `PreparedStartToken + PreparedManifestLease`；purpose-specific 必达后继、A/ingress Buffer、worker/queue、prepare/run call/sink 和多板最坏情况已在首次 dispatch 前保守预留。L4 收到 actual Manifest 后只能完成 Correction match、可选多板 actual compatibility gate，并在既有 envelope 内无新分配地收窄出 `AcquisitionRunResourceSet`；它持有 Builder/ingress/continuation owner，仅向 L6 移交一个 producer `RunDeliveryGrant`，然后才调用 `begin_run`。普通测量的 continuation 是 B，校准/验证使用各自 closure，授权 raw/diagnostic 才是 A-only；Stage/C 之后独立 admission，不由 Board start token 担保。阻塞式底软调用由 Adapter 放到专属 Board Worker，回调式底软则在内部转换为统一事件。合法 pre-admission 的 `begin_prepare/begin_run` 不得因普通队列/池容量 Rejected；同步 Rejected 只允许 stale epoch/digest/capability 或契约错误，并必须零 callback 且完整归还 move-only 输入。Accepted 后必须恰好一个 matching terminal。abort/safe/kill 的直接返回只表示请求 accepted/rejected/already-terminal，绝不表示 worker、RF 或 Board 已停止/安全。正常成功时，`AcquisitionRunResourceSet`/Buffer/resource 只有在 run terminal 且声明的 post-run RF/resource state 已确认后释放或转入 candidate/下一工作 permit；cancel/timeout/fault 时还必须确认 safe-state/readback，或把完整 owner 原子转交给显式 Drain/Quarantine lease。早到 request result 不得触发复用。Adapter 不能反向调用 Instrument Kernel。
+Interface 保持在逻辑扫频层，不暴露寄存器、DMA、ADC/IQ、厂商结构体、线程句柄、Eigen、JSON 或 Socket。`PrepareAuthorization` 是从 L4 仍持有的 `PreAdmissionLease` 派生、绑定 conservative claim 与 topology/capability/operational epoch 的短期 opaque proof；`StartAuthorization` 绑定 `PreparedExecutionId + manifest digest + operational epoch + reservation attestations` 且只能消费一次，但同样不拥有 L4/L5 的 processing/output reservation。Acquisition Module 在派发 `begin_prepare` 前使用首次 admission 已预留的 `PrepareCallId`、Adapter call/worker/queue slot 和 `PrepareSinkRegistration`，所以尚未产生 Prepared token 或 `BoardRunId` 时也能从独立控制路径调用 `request_prepare_abort`。prepare 成功 terminal 返回可分别持有的 `PreparedStartToken + PreparedManifestLease`；purpose-specific 必达后继、A/ingress Buffer、worker/queue、prepare/run call/sink 和多板最坏情况已在首次 dispatch 前保守预留。L4 收到 actual Manifest 后只能完成 Correction match、可选多板 actual compatibility gate，并在既有 envelope 内无新分配地收窄出 `AcquisitionRunResourceSet`；它持有 Builder/ingress/continuation owner，仅向 L6 移交一个 producer `RunDeliveryGrant`，然后才调用 `begin_run`。普通测量的 continuation 至少包含 B，校准/验证使用各自 closure，授权 raw/diagnostic 才是 A-only；普通 UI/query Stage/C 在父结果形成后独立 admission。武装生产策略只让 L2/L3 continuation 额外持有 raw evaluator/sequence slot 的轻量 capacity token，Board start token 不解释、不拥有也不担保 C。阻塞式底软调用由 Adapter 放到专属 Board Worker，回调式底软则在内部转换为统一事件。合法 pre-admission 的 `begin_prepare/begin_run` 不得因普通队列/池容量 Rejected；同步 Rejected 只允许 stale epoch/digest/capability 或契约错误，并必须零 callback 且完整归还 move-only 输入。Accepted 后必须恰好一个 matching terminal。abort/safe/kill 的直接返回只表示请求 accepted/rejected/already-terminal，绝不表示 worker、RF 或 Board 已停止/安全。正常成功时，`AcquisitionRunResourceSet`/Buffer/resource 只有在 run terminal 且声明的 post-run RF/resource state 已确认后释放或转入 candidate/下一工作 permit；cancel/timeout/fault 时还必须确认 safe-state/readback，或把完整 owner 原子转交给显式 Drain/Quarantine lease。早到 request result 不得触发复用。Adapter 不能反向调用 Instrument Kernel。
 
 `BoardRunSink` 接受带 `AcquisitionChunkLease` 的 move-only chunk、单调 sequence，以及 `Starting/Armed/WaitingTrigger/Acquiring/Draining` phase event 和唯一 terminal event；`Preparing` 发生在 `begin_run` 之前，不属于 BoardRunSink。phase 是否由底软直接观测或由 Adapter 推导必须标在 capability 中。该 lease 只移动到 Acquisition Ingress，Builder 是唯一长期拥有者；Preview 只能获得有界 `ChunkReadView` 或独立 `PreviewTile`。正式 chunk 不得静默丢弃：Manifest/reservation 必须覆盖声明的最大在途量；意外 ingress/pool overflow 在无法按已声明能力背压时使 run 失败并走 abort/drain，只有 Preview tile 可以丢。Adapter 在 terminal 后不得再写，同一 generation 只能完成一次；最后 chunk happens-before terminal。Sink/Adapter 契约固定回调线程、底软 buffer 是否可转移、不可转移时的一次 BufferPool copy、最大块、背压和取消后的迟到事件处理。
 
@@ -573,7 +597,19 @@ ProcessingTerminal run(FrozenProcessingJob&& job,
                        ExecutionContext& context) noexcept;
 ```
 
-`FrozenProcessingJob` 是 `BuildMeasurement | MaterializeStage | EvaluateAnalysis` 的有类型变体。Control Executor 在派发前通过 InstrumentStore 原子取得全部父数据的 `PinnedInputSet` 与 output reservation；worker 返回 `ProcessingSucceeded | ProcessingFailed | ProcessingDraining`，不能修改 Catalog、更新 Head 或发布 Event。Succeeded 中的 batch 可以一次携带相互依赖的多个 Snapshot/Publication candidate（例如 B 与 AverageAccumulatorSnapshot，或 C 与 Marker/Limit children），并从 worker return 起持有覆盖全部输出 Buffer 和输入闭包的 move-only `CandidateCommitLease`；Failed 必须证明资源已终止，Draining 则把完整 owner 交给 Runtime。candidate lease 只能在 `InstrumentStore::commit` 成功后转换为 Catalog/Head retention roots，或在显式 abort 后释放，禁止在 worker-return→commit 间出现无所有者窗口。`ExecutionContext` 携带项目 C++17 自有的 `StopToken`、`MonotonicDeadline`、`BudgetHandle` 和有界 `ProgressSink`；不依赖 C++20 `std::stop_token`。Pipeline 隐藏 Receiver Wave 提取、校准修正、Eigen3 运算、时域/门控、去嵌、Math、格式化、Marker、Statistics 和 Limit。Eigen 类型不穿出 Interface；外部使用项目自有的只读 Buffer/View、Axis、Unit 和 Quality 类型。可协作算法必须在声明的有界工作粒度检查 stop/deadline/budget，ProgressSink 只能限速发布且不得反压 worker；不可中断的第三方计算只能进入隔离 lane，并把 PinnedInputSet、output reservation 与容量一起转给 Drain/Quarantine，直到真实 terminal。
+`FrozenProcessingJob` 是 `BuildMeasurement | MaterializeStage | EvaluateAnalysis` 的有类型变体。Control Executor 在派发前通过 InstrumentStore 原子取得全部父数据的 `PinnedInputSet` 与 output reservation；worker 返回 `ProcessingSucceeded | ProcessingFailed | ProcessingDraining`，不能修改 Catalog、更新 Head 或发布 Event。Succeeded 中的 batch 可以一次携带相互依赖的多个 Snapshot/Publication candidate（例如 B 与 AverageAccumulatorSnapshot，或 C 与 Marker/SegmentedLimit/Ripple/明确几何 result children），并从 worker return 起持有覆盖全部输出 Buffer 和输入闭包的 move-only `CandidateCommitLease`；Failed 必须证明资源已终止，Draining 则把完整 owner 交给 Runtime。candidate lease 只能在 `InstrumentStore::commit` 成功后转换为 Catalog/Head retention roots，或在显式 abort 后释放，禁止在 worker-return→commit 间出现无所有者窗口。`ExecutionContext` 携带项目 C++17 自有的 `StopToken`、`MonotonicDeadline`、`BudgetHandle` 和有界 `ProgressSink`；不依赖 C++20 `std::stop_token`。Pipeline 隐藏 Receiver Wave 提取、校准修正、Eigen3 运算、时域/门控、去嵌、Math、格式化、Marker、Statistics 和各单次 evaluator。Eigen 类型不穿出 Interface；外部使用项目自有的只读 Buffer/View、Axis、Unit 和 Quality 类型。可协作算法必须在声明的有界工作粒度检查 stop/deadline/budget，ProgressSink 只能限速发布且不得反压 worker；不可中断的第三方计算只能进入隔离 lane，并把 PinnedInputSet、output reservation 与容量一起转给 Drain/Quarantine，直到真实 terminal。
+
+跨发布状态不进入 `EvaluateAnalysis`。L4 另有小而有界的 `ProductionQualificationEvaluator`：
+
+```cpp
+ProductionQualificationTerminal evaluate(
+    FrozenProductionQualificationJob&& job,
+    PinnedRawResultSet&& ordered_results,
+    OutputReservation&& output,
+    ExecutionContext& context) noexcept;
+```
+
+`job` 固定 policy revision、sequence ID、expected ordinal、queue-entry ref、source/DUT context、三态转移/reset/retry 规则和 prior-state ref；`ordered_results` 只含该 sequence 队首已经提交的单次原始结果 bundle。Evaluator 返回新 `ProductionQualificationSnapshot` candidate，不读取 current Catalog、不写 Store、不把结果塞回 C。L2 仅在 queue-entry、expected ordinal 和 prior state 仍匹配时，把 candidate、队首消费、cursor/state 推进和 production Head 放进同一个 commit；失败保留队首、原始 C 和上一 Head。重试使用相同 canonical key，后续 queue entry 不能另起 Operation 越过；预算耗尽后用预留容量把 sequence 置为 `Faulted`，Store integrity failure 则按全局 fail-stop 规则处理。
 
 ### 7.5 Calibration Module
 
@@ -726,7 +762,7 @@ Source、Receiver、Route、Trigger line、Clock/Coherence domain、共享总线
 - Sweep Mode 至少支持 Hold、Single、Continuous、Groups；`INIT` 只启动，`*OPC?` 等待绑定 Operation 的完成栅栏。
 - Trigger 至少支持 Immediate/Internal、Manual/Bus；External/Point/Segment Trigger 由能力开放。状态区分 Armed、WaitingTrigger 和 Acquiring。
 - 完整 N-port 逻辑 Sweep 由 PreparedExecutionManifest 指定所需 source state、receiver vector、route、可选 isolation/switch-term 观测和 trigger consumption policy。所有必需 sub-sweep 捕获同一 Channel revision、轴策略和资源 lease；调度器只能在完整 bundle 边界让出资源。
-- Full 2-port 的 forward/reverse 实际轴必须在 prepare 阶段统一或拒绝；不能在 correction 时按数组下标拼接不同实际轴。任一必需方向失败时，不发布以该失败 Sweep 为父的新 A/B 或 Live C，也不推进它们对应的 Average/Hold/Marker/Limit；已有 B/C，以及 Frozen/Imported/Derived 或基于旧 B 的独立重算不受回滚。
+- Full 2-port 的 forward/reverse 实际轴必须在 prepare 阶段统一或拒绝；不能在 correction 时按数组下标拼接不同实际轴。任一必需方向失败时，不发布以该失败 Sweep 为父的新 A/B 或 Live C，也不推进它们对应的 Average/Hold/Marker/单次 evaluator 或生产资格序列；已有 B/C/生产结果，以及 Frozen/Imported/Derived 或基于旧 B 的独立重算不受回滚。
 - `AveragePolicy` 把维度正交化：`input_stage = ReceiverWaves | MeasuredRatio | FactoryCorrectedRatio | CorrectedNetwork`，`sample_boundary = Point | SourceState | LogicalSweep`，`mode = FiniteBatch | SlidingWindow | Cumulative | VendorRunning`，再加 factor/window、clear generation、update-kernel revision 和 trigger consumption。项目原生推荐 `MeasuredRatio + LogicalSweep + FiniteBatch`。Keysight ENA/PNA 的公开流程支持 ratio（ENA 可含端口/工厂特性修正）后做 sweep average，再应用用户 Error Terms；CMT 内部数组资料支持 receiver-wave average 后再形成 ratio，但仍须按目标型号/固件回归。R&S 或其他 Profile 只有在目标资料/黄金回归证明时才选择 `CorrectedNetwork`；任何 VendorRunning kernel 都必须用目标资料/黄金回归冻结，不能借名字猜公式。
 - 任何 Profile 都只能在一个声明的 stage 执行复数平均，并明确区分 factory/port correction 与用户校准 Error Terms；不得平均显示格式标量，也不得同时启用底软和上层的未声明双重平均。一个 LogicalSweep sample 默认包含完整 forward/reverse bundle；每点有效计数和平均完成事件独立于单个硬件 sub-sweep。`F,R,F,R...`、`F×N,R×N` 以及一次 external trigger 覆盖整个逻辑 Sweep 还是每个 source state，由 Board/Compatibility Profile 冻结。校准标准件采集拥有独立 Average Policy，不隐式继承 DUT 连续平均状态。
 - 连续扫频中修改配置：当前执行继续使用旧 revision，下一轮原子采用新 revision；涉及 RF 安全或显式 restart 的命令可取消后重启。
@@ -768,7 +804,7 @@ stateDiagram-v2
 
 ### 9.3 Trace、Math、Memory、Hold 与 Statistics
 
-- `AnalysisTrace@revision` 绑定 TraceSourceSpec、Processing Pipeline、Analysis Projection、Marker/Limit 和 accumulator 关系；`TraceEvaluationSnapshot` 是某次完整执行或派生重算后的全分辨率结果；`TracePlacement` 只保存外观、Marker/Limit presentation 和 Diagram 关联。
+- `AnalysisTrace@revision` 绑定 TraceSourceSpec、Processing Pipeline、Analysis Projection、Marker、普通 Limit/Ripple/其他 typed evaluator 和 accumulator 关系；`TraceEvaluationSnapshot` 是某次完整执行或派生重算后的全分辨率结果；`TracePlacement` 只保存外观、Marker/evaluator presentation 和 Diagram 关联。跨 Sweep `ProductionQualificationPolicy` 位于 Analysis Catalog，不归某个 Placement 所有。
 - Memory 是显式捕获的不可变复数快照，携带轴、单位和来源；不是当前数组别名。
 - Core 支持 Data、Memory、Data±Memory、Data×/÷Memory；轴不一致默认拒绝，可由 Profile 显式允许覆盖范围内插值，禁止默认外推。
 - Frozen/Reference Trace 保存独立的静态可显示结果；它与参与复数 Math 的 Memory 不是同一生命周期。
@@ -778,7 +814,7 @@ stateDiagram-v2
 
 ### 9.4 Diagram
 
-- Diagram 管坐标系、轴、网格、标题、legend、布局和 TracePlacement z-order；Marker/Limit 的业务定义与判定属于 AnalysisTrace，逐 Placement 的 overlay 可见性、样式和标签位置属于 TracePlacement。稳定 AnalysisTrace 不由 Diagram 所有。
+- Diagram 管坐标系、轴、网格、标题、legend、布局和 TracePlacement z-order；Marker 与单次 evaluator 的业务定义/判定属于 AnalysisTrace，Production Qualification 属独立策略，逐 Placement 的 overlay 可见性、样式、标签位置或生产 badge 仅是呈现。稳定 AnalysisTrace 和任何判定事实都不由 Diagram 所有。
 - Core 坐标支持 Cartesian、Smith、Polar、Time；格式支持 Complex/Real/Imag、LinMag/LogMag、Phase/Unwrapped Phase、Group Delay、SWR、Smith impedance/admittance、Polar。
 - 兼容矩阵分别判断 X-domain/单位、coordinate system、每 Trace 的 Y-axis/scale 和 snapshot generation。LogMag 与 Phase 可以在独立 Y scale 下视觉叠加；Smith/Polar 与 Cartesian 不因单位可换算就自动兼容。不同实际 X 网格可以绘制，但 Marker coupling 或共享 Limit 使用更严格的轴一致性/显式插值规则。
 - `DiagramFrameRefSet` 为每个 Placement 固定确切 C publication。普通视觉刷新可取各 Placement 最新可用值，但必须显示 generation、时间和 stale；跨 Trace Math、Marker coupling、共享 Limit 等先按更严格 synchronization policy 形成相容结果，再原子切换 FrameRefSet。Preview 只是带 provisional 样式的独立 overlay，失败/取消时丢弃，不能成为 FrameRefSet、Marker 或 Limit 输入。
@@ -799,15 +835,23 @@ Marker Evaluation 绑定 `trace_evaluation_snapshot_id + trace/pipeline/projecti
 
 每个 Marker Evaluation 还保存 input node ID、Analysis Projection 和 `Valid / Invalid / Incomplete / Stale` 状态。Profile 必须冻结相等峰值的 deterministic tie-break、Next Left/Right 起点、搜索端点包含关系、Segment/反向/非单调轴遍历、phase wrap/unwrap、Smith/Polar 的搜索 metric，以及 reference/coupling 被删除或形成循环时的错误。Marker Definition 修改后立即基于 last-good 快照派生重算，不等待下一次 Sweep。
 
-### 9.6 Limit Line 与 Limit Test
+### 9.6 普通 Limit、Ripple、明确类型判定与生产资格策略
 
-Limit 不是 Diagram 上的一条装饰线。至少分为：
+Diagram 只呈现结果，不参与判定。单次分析至少分为以下定义和结果：
 
-- `LimitDefinition/LimitSet`：upper/lower、水平/斜线/single-point/off/分段/断开区间、X/Y 单位、端点、重叠优先级和插值规则；
-- `LimitPresentation(placement_id, limit_id)`：该 Placement 上的颜色、可见性、标签和 overlay；删除 Placement 只删除这份呈现，不删除 LimitDefinition 或判定结果；
-- `LimitTestResultSnapshot`：绑定 `analysis_publication_id + trace_evaluation_snapshot_id + trace/pipeline/limit revision` 的不可变判定；来源通过该 publication 的 typed `AnalysisInputRefSet` 追溯，不能强制所有 Trace 伪造一个 B 层 ID。
+- `SegmentedLimitDefinition/ResultSnapshot`：upper/lower、水平/斜线/single-point/off/断开区间、X/Y 单位、端点、重叠优先级和插值规则，以及 actual/limit/margin、失败区间、最坏点和失败数量；
+- `RippleTestDefinition/ResultSnapshot`：每个频带在实际参与点上计算 `max(response) - min(response)` 并与阈值比较。它是 Core 基础能力，但不是一种 `LimitSegment`；
+- `MarkerMetricSnapshot`：Bandwidth、Q、Flatness、Peak 等可查询指标。Flatness 相对端点基线的偏差语义不等同于 Ripple；若要做阈值判定，由明确 `MetricThresholdDefinition` 消费该指标；
+- `GeometricRegionDefinition/ResultSnapshot`：必须声明坐标域和几何 primitive，例如复数平面 Circle。Eye Mask 属于时域眼图应用；禁止预留同时兜底频率包络、复数区域和眼图的万能 `Mask`；
+- `LimitPresentation(placement_id, evaluator_id)`：该 Placement 上的颜色、可见性、标签和 overlay。删除 Placement 只删除呈现，不删除定义或结果。
 
-Core 输出 `Pass / Fail / Indeterminate`、无效原因、每个已知失败点的 actual/limit/margin、失败区间、最坏点、最小裕量和失败数量。测试在全分辨率、已格式化且单位明确的有序标量 Trace 数据上执行；普通 Smith/Polar/Complex Trace 默认拒绝常规上下限，专用 mask 属于独立 Pro 类型。显示开关与测试开关分离；format/unit 改变必须 convert、reject 或使定义失配。启用 Limit Segment 内任一参与点为 NaN、过载、缺失或质量无效，或者没有产生任何参与点、输入为空、没有任何有效参与数据时，核心总体状态固定为 `Indeterminate`；段外无效点不参与，已知超限点仍保留为诊断明细。`LimitAggregationSnapshot` 固定 `aggregation_policy_revision + ordered analysis_publication_ids[] + input_generation_vector`，并保存每条参与结果的 trace/limit revision；生产 Safety Policy 可把 Indeterminate 汇总为 Fail，但原始 `LimitTestResultSnapshot` 保持 Indeterminate，任何层都不得把它变成 Pass。聚合器按 source-specific synchronization policy 验证一致性。全 Live 聚合可要求相同 `measurement_snapshot_id`，但不能把这个条件错误推广到 Frozen/Imported/Derived Trace，也不能混入任一 publication 的陈旧 revision。Web overlay、SCPI 查询、报告和 Operation/Questionable 状态读取相同原始结果及原因；确切 SCPI token、状态位和锁存/清除副作用由冻结的 SCPI Profile revision 固定。
+所有启用的单次发布 evaluator 都消费同一冻结 `AnalysisInputRefSet` 上的全分辨率 `TraceEvaluationSnapshot`，或者消费同一 candidate DAG 中显式声明的 typed metric 上游，并输出 `Pass / Fail / Indeterminate`、无效原因和自身有意义的诊断字段。Trace/Marker/results 最后在一个 `AnalysisPublication` 中原子发布；结果绑定最终 publication ID，但 evaluator 不把该尚未形成的 publication 当输入。普通上下限只接受已格式化且单位明确的有序标量 Trace，Smith/Polar/Complex 默认拒绝；Circle 等必须走匹配坐标域的专用 evaluator。format/unit 改变必须 convert、reject 或使定义失配。任一参与点为 NaN、过载、缺失或质量无效，或者没有参与点、输入为空、没有任何有效参与数据时，总体固定为 `Indeterminate`；段外/区域外非参与无效点不参与，已知失败明细仍保留。任何 evaluator 都不得以“没有可判数据”返回 Pass。
+
+`SinglePublicationAggregationSnapshot` 只组合同一次发布或由 source-specific synchronization policy 证明相容的原始结果，固定 aggregation policy、ordered raw result/publication IDs 和 input generation vector。全 Live 聚合可要求相同 `measurement_snapshot_id`，但不能把该条件错误推广到 Frozen/Imported/Derived Trace，也不能混入陈旧结果。它是无状态单次汇总，不保存连续次数、锁存或批次状态。
+
+`ProductionQualificationPolicy/Sequence/Snapshot` 才负责连续 N、锁存、bin、批次和 QMS。Policy 固定允许参与的 source、sequence/DUT context、Pass/Fail/Indeterminate 转移、reset 和有界 retry 规则；Sequence 保存 next ordinal、ordered pending raw bundles 与 `Active/Faulted`。普通 Continuous 的显示 C 可合并，但策略已武装时，每个参与轮次的 evaluator bundle 不可合并，并在 raw commit 同批进入有界 Sequence。生产求值只消费队首及 prior-state；成功 commit 原子发布 Snapshot、消费队首并推进 cursor，失败保留队首并阻止后续项越过。重试预算耗尽后必须显式 reset 或新建 sequence；该 Command 同批把未消费 entry 终结为 `AbandonedByReset`、留审计并释放 pin，不能在同一 sequence 静默跳项。容量不足必须在参与轮次开始前拒绝或 Hold。策略可按冻结的 fail-safe 规则把 Indeterminate 派生为 Fail，永远不能派生 Pass 或改写原始三态。
+
+Web overlay、SCPI raw query 和单次报告读取同一原始 result ID；生产页面、生产查询、Handler 或报告则显式读取同一 `ProductionQualificationSnapshot`。两种 typed target、结果 ID 和原因必须分开，Adapter 不得用生产结论替换原始结果。确切 SCPI token、状态位以及各自锁存/清除副作用由冻结的 SCPI Profile 固定。
 
 ### 9.7 Reference Plane、Fixture、Mixed-mode 与 Time Domain
 
@@ -893,7 +937,7 @@ Core 至少实现：
 - `INIT/ABORt/CONTinuous/HOLD/Single/Groups` 与实际 Operation 状态映射；
 - 大数组从不可变 Buffer 流式发送，慢连接不能复制或 pin 住无限历史。
 
-SCPI Session 为 `*OPC/*OPC?/*WAI` 维护 pending-operation fence：fence 捕获该 Session 在同步命令之前已经提交且按协议应等待的 Operation 集合，不等待后来无关的 Continuous Sweep。数据 query 在接受时先按 Compatibility Profile 的 selection scope 解析目标：receiver/network query 固定 A/B typed stage 与 `completed_sweep_snapshot_id`/`measurement_snapshot_id`；Trace/Marker/Limit query 固定 C 层 `analysis_publication_id + AnalysisInputRefSet`。即使传输期间 selection 改变或新 Sweep/Derived publication 完成，也继续发送被 pin 的旧结果。若目标方言要求不同的“当前/最近结果”语义，由 SCPI Compatibility Profile 覆盖并加入兼容测试。
+SCPI Session 为 `*OPC/*OPC?/*WAI` 维护 pending-operation fence：fence 捕获该 Session 在同步命令之前已经提交且按协议应等待的 Operation 集合，不等待后来无关的 Continuous Sweep。数据 query 在接受时先按 Compatibility Profile 的 selection scope 解析 typed target：receiver/network query 固定 A/B stage 与 `completed_sweep_snapshot_id`/`measurement_snapshot_id`；Trace/Marker/普通 Limit/Ripple/明确几何 query 固定 C 层 `analysis_publication_id + AnalysisInputRefSet + raw_result_id`；生产资格 query 则固定独立 `production_qualification_snapshot_id` 及其 source evidence closure。即使传输期间 selection 改变或新 Sweep/Derived/production publication 完成，也继续发送被 pin 的旧结果。Adapter 不得用 production decision 覆盖 raw result。若目标方言要求不同的“当前/最近结果”语义，由 SCPI Compatibility Profile 覆盖并加入兼容测试。
 
 SCPI 对客户端保持同步协议语义，但实现不得让 session worker 阻塞等待 Pending Query 或 operation fence：Session 状态机把 waiter 注册到有界全局 WaitRegistry，同时为其在 `WaitReadyQueue` 预留一个 completion slot，暂停该连接的命令推进并立即归还 worker。Operation terminal/Query ready 的同一领域 commit 或 monotonic deadline timer 在更新 predicate 时，直接把已满足 waiter 原子、幂等地从 Registry 移入 WaitReadyQueue；固定 event-loop worker 从该队列恢复 Session 并按原响应顺序发送。EventJournal 完全不参与等待正确性，暂停 Dispatcher 也不能推迟 fence。accept 与授权 control/abort dispatch 拥有独立保留容量；大数组/慢 Socket 写位于有界 transfer lane，不占用 control worker。WaitRegistry、WaitReadyQueue、每 Session outstanding query 和 transfer lane 都有硬上限；达到预算时在注册前按 Profile 返回明确 resource/query error，不排无界等待。terminal/timeout/cancel 竞态只能完成/入队一次；断线释放 waiter、预留 completion slot 和传输 lease，共享 single-flight Operation 是否继续由其所有权/孤儿策略决定。由此即使所有普通 Session 都在等待 `*OPC?`，另一连接的 `ABORt`、health/status polling 仍能在规定上界内进入 SafetyIngress。
 
@@ -928,13 +972,13 @@ SCPI 对客户端保持同步协议语义，但实现不得让 session worker �
 - 第一次 dispatch 前先取得 acquisition/必达后继的 `ReservedWorkDispatch{WorkId, WorkDispatchPermit, RuntimeCompletionRegistration}`、purpose-specific frozen pins、`LifecycleTerminalReservationSet`、PreAdmissionLease、`PreReservedBoardCallSet`，以及按 Intent/Profile/Capability 上界保守预留的 A Builder/ingress/required-continuation capacity，并装入初始 admission owner；只有 Accepted commit 成功后 terminal reservation 进入 L5、execution owner 才可 dispatch。Board `prepare` 只给出 actual axis、精确硬件资源和采集 bounds；L4 随后只能在既有 envelope 内消费 `ExactFinalizationCapability`，无新分配地收窄成 `AcquisitionRunResourceSet`，并保留首次准入时已聚合的 `AcquisitionContinuationOwner`。`StartAuthorization` 只绑定 exact reservation 的 ID/digest，不把 ownership 移给 L6；Board 只取得 `RunDeliveryGrant` producer capability。Manifest 超界或 finalization 失败就显式 discard 并等待 terminal。Continuous 每轮也必须重新取得这套预算，不能靠父 Operation 越过 admission。
 - Receiver chunk 来自固定 Buffer Pool，禁止逐点动态分配。
 - 正式快照使用只读共享 Buffer；派生阶段按需物化并共享未改变的数据，避免“不可变”退化成每层整数组复制。
-- 每 Channel 仅保留 ProductProfile 规定数量的正式快照；被 `PinnedInputSet`、`TypedSnapshotLeaseSet`、`CandidateCommitLease`/待提交 candidate、`PendingResultPinReservation`、`ResultPinLease`、`ReaderLease`、当前 Head 或活动 CalibrationSession Observation 闭包引用的数据不回收。direct Ready 若无法取得精确 closure pin则同步 Rejected 且无 Ticket；Pending caller 在 join 前按上界独立预留，失败不加入 shared Operation，Ready 时只转换仍有效 reservation。Graph-aware retention 只在 child closure 自包含且无重算/平均/校准承诺依赖祖先 payload 时回收祖先 Buffer，并始终保留父 tombstone/digest/provenance。
+- 每 Channel 仅保留 ProductProfile 规定数量的正式快照；被 `PinnedInputSet`、`TypedSnapshotLeaseSet`、`CandidateCommitLease`/待提交 candidate、`PendingResultPinReservation`、`ResultPinLease`、`ReaderLease`、当前 Head、Active/Faulted `ProductionQualificationSequence` pending entry 或活动 CalibrationSession Observation 闭包引用的数据不回收。direct Ready 若无法取得精确 closure pin则同步 Rejected 且无 Ticket；Pending caller 在 join 前按上界独立预留，失败不加入 shared Operation，Ready 时只转换仍有效 reservation。Graph-aware retention 只在 child closure 自包含且无重算/平均/生产队首/校准承诺依赖祖先 payload 时回收祖先 Buffer，并始终保留父 tombstone/digest/provenance。
 - 每次领域提交都通过公开 `InstrumentStore::commit` 消费一个 `DomainCommitBundle`；内部 Coordinator 把 candidate、typed domain/Head/Operation/Ticket/ResultPin/Status/Wait/Event/retention 全部原子写入 Catalog + 固定容量 `EventJournal`，任一校验或资源步骤失败则整包不可见。若该 bundle 对应已有 lifecycle，Control Executor 必须立即使用已安装 terminal reservation reconcile 或 state-only commit Failed；预留终态仍失败意味着 Store integrity fault 和 Instrument fail-stop。WaitRegistry 的预留 bucket/ready slot 使 terminal commit 只做有界幂等 splice；Control Executor 不等待 Dispatcher/客户端。L2 经 EventFeed 做 ACL 投影，L1 只编码授权 mailbox；Journal gap 不影响正式事实、SCPI status/fence/wakeup，也不取得 data pin。
 - Preview 按 `channel_id + logical_sweep_id` 合并/抽稀；与正式 EventJournal 分开，可丢并显式 gap。
 - SCPI binary block 和 HTTP binary response 从快照流式输出，设置连接级字节上限、write timeout 和最大 pin 时间。
 - 记录队列高水位、Buffer Pool 使用量、preview gap、处理耗时和慢客户端滞后。
 
-惰性求值分成两个有界单航班注册表。`MeasurementStageKey` 至少包含 canonical ordered A/B root refs、requested stage、完整 RF/network graph revision、Correction/BoardExecution/Analysis Profile revision、axis/topology/Z0 schema；它不含另一个 stage parent、AnalysisTrace、Marker 或 Limit，并共享 `MaterializeMeasurementStageOperation`。`TraceEvaluationKey` 至少包含 `analysis_input_ref_set_hash + analysis_trace_revision + pipeline_revision + projection_revision + marker_revision + limit_revision + AnalysisProfileRevision + requested_stage`；Live 输入的 canonical value 包含 `measurement_snapshot_id` 或明确 `MeasurementStageInput`，Derived 输入包含有序 upstream publication 与 generation policy，Hold/ensemble 输入还包含 `accumulator_snapshot_id + clear_generation + input_generation_vector`，并共享 `EvaluateTraceOperation`。两种索引命中后都比较完整 canonical typed value，hash 只作提示。Control Executor 在提交前先预留该 key 所需处理内存和 lane capacity，并对全部父 refs 原子取得 `PinnedInputSet`；同一完整 key 的并发 Query 不重复计算和占用峰值内存。每个 Pending Ticket 独立持有 waiter 与 admission 时已计入 global/per-actor/session 配额的 `PendingResultPinReservation`；Pending→Ready 的同一 commit 只把仍有效 reservation 转换并登记为覆盖完整 `ResultClosure` 的精确 `ResultPinLease`，不在 worker terminal 后重新申请普通 pin capacity；`open_read` 再原子转换为 ReaderLease。HTTP 202 transport detach 不改变 Ticket；显式 cancel、session/access 失效、ticket waiter deadline/Ready TTL 或 Failed 只释放该 Ticket 的 waiter/reservation/ResultPinLease，Reading 的 write/pin timeout 则终结该 Ticket 并释放 ReaderLease。任何单个 Ticket 终结都不能擅自取消其他调用者共享的 Operation。最后一个 waiter 消失后，孤儿 materialize/evaluate 任务按自身冻结的执行 deadline/cost policy 继续完成或进入 Cancelling/Draining；无论哪种都在真实 terminal 前保持 PinnedInputSet 与 execution/output reservation，不能提前向 admission 报告容量已释放。
+惰性求值分成三个有界单航班注册表。`MeasurementStageKey` 至少包含 canonical ordered A/B root refs、requested stage、完整 RF/network graph revision、Correction/BoardExecution/Analysis Profile revision、axis/topology/Z0 schema；它不含另一个 stage parent、AnalysisTrace、Marker 或 evaluator，并共享 `MaterializeMeasurementStageOperation`。`TraceEvaluationKey` 至少包含 `analysis_input_ref_set_hash + analysis_trace_revision + pipeline_revision + projection_revision + marker_revision + evaluator_set_revision + AnalysisProfileRevision + requested_stage`；Live 输入的 canonical value 包含 `measurement_snapshot_id` 或明确 `MeasurementStageInput`，Derived 输入包含有序 upstream publication 与 generation policy，Hold/ensemble 输入还包含 `accumulator_snapshot_id + clear_generation + input_generation_vector`，并共享 `EvaluateTraceOperation`。`ProductionQualificationKey` 则包含 policy revision、sequence ID、expected ordinal、queue-entry ref、队首 ordered raw result refs、source/DUT context、reset key 和 prior-state ref，并共享 `EvaluateProductionQualificationOperation`；retry attempt 不是新语义 key，后续 entry 也不能在旧队首未终结时另起 key 越过。它绝不与 Trace key 混用。三种索引命中后都比较完整 canonical typed value，hash 只作提示。Control Executor 在提交前先预留该 key 所需处理内存和 lane capacity，并对全部父 refs 原子取得 `PinnedInputSet`；同一完整 key 的并发 Query 不重复计算和占用峰值内存。每个 Pending Ticket 独立持有 waiter 与 admission 时已计入 global/per-actor/session 配额的 `PendingResultPinReservation`；Pending→Ready 的同一 commit 只把仍有效 reservation 转换并登记为覆盖完整 `ResultClosure` 的精确 `ResultPinLease`，不在 worker terminal 后重新申请普通 pin capacity；`open_read` 再原子转换为 ReaderLease。HTTP 202 transport detach 不改变 Ticket；显式 cancel、session/access 失效、ticket waiter deadline/Ready TTL 或 Failed 只释放该 Ticket 的 waiter/reservation/ResultPinLease，Reading 的 write/pin timeout 则终结该 Ticket 并释放 ReaderLease。任何单个 Ticket 终结都不能擅自取消其他调用者共享的 Operation。最后一个 waiter 消失后，孤儿 materialize/evaluate 任务按自身冻结的执行 deadline/cost policy 继续完成或进入 Cancelling/Draining；无论哪种都在真实 terminal 前保持 PinnedInputSet 与 execution/output reservation，不能提前向 admission 报告容量已释放。
 
 命中已经物化 closure 的 direct Ready admission 不进入 single-flight，但仍必须在同一个 commit 中创建 Ready Ticket、检查 pin 配额并取得 `ResultPinLease`；它与 Pending→Ready 的 retention 保证完全相同。
 
@@ -949,7 +993,8 @@ SCPI 对客户端保持同步协议语义，但实现不得让 session worker �
 需要持久化：
 
 - Instrument/Channel/AnalysisTrace 配置，其中 Live source 内嵌 `MeasurementSpec` 值对象；
-- Workspace/Diagram/TracePlacement/Marker/Limit presentation；
+- Workspace/Diagram/TracePlacement/Marker/typed evaluator presentation；
+- ProductionQualificationPolicy；active Sequence 的 cursor/pending refs/Faulted 状态必须事务性持久，若目标平台不能保证恢复一致性则重启后只能进入 Faulted 并要求显式新序列，不能沿用旧计数或跳项；普通 State Recall 不复活运行中的 sequence；inclusion profile 再决定是否保存历史生产资格结果与 source evidence；
 - Cal Kit、标准件采集、Correction Set，以及按 retention policy 保存的 Verification Plan/Result；
 - Fixture、Deembedding、Time-domain、Gate、Math Profile；
 - Preset、State Save/Recall；
@@ -1015,7 +1060,7 @@ Interface 就是主要测试表面，不以“每个类都有单测”宣布完�
 2. **Web/SCPI 同源**：Web 修改后 SCPI 查询一致，SCPI 修改后 Web 通过业务事件投影或重新读取权威状态更新；两类公共 schema 都不含内部 revision，复杂数组和快照 ID 相同。
 3. **连续扫频配置切换**：运行中改变 points/power，旧执行不撕裂，下一执行原子采用新的内部配置版本；Web/SCPI 全程不见 revision。
 4. **校准失败回滚**：已有有效校准时开始新 Guided Cal，中途取消/拔板，旧 Correction Set 继续有效且新 Set 不发布。
-5. **Trace/Marker/Limit**：Data-Memory、LogMag/Phase/Smith、多 Marker search、Bandwidth 和 Limit 三态全部绑定同一正式快照；分别注入有效 Pass、有效 Fail、参与点无效、段外无效及有效 Fail+参与点无效，验证 Web/SCPI 原始结果一致，生产 Safety 聚合可以 Fail 但绝不 Pass。
+5. **Trace/Marker/单次判定**：Data-Memory、LogMag/Phase/Smith、多 Marker search、Bandwidth/Flatness、普通 Limit、Ripple 和明确 Circle 都绑定同一正式快照；分别注入有效 Pass、有效 Fail、参与点无效、非参与无效及有效 Fail+参与点无效，验证各 typed evaluator 独立、无万能 Mask，Web/SCPI 原始结果一致且 Indeterminate 绝不变 Pass。
 6. **多 Channel/多板资源**：共享源串行、独立板并行、Continuous 不饿死 Single/Cal。
 7. **多会话冲突**：Web 正在校准，多个 SCPI 会话读写；同字段以后接受且成功提交的配置为准，不同字段窄 patch 均保留，长 Operation lease、selected context 和无 revision 错误可预测。
 8. **故障与恢复**：扫频 60% 时超时/热拔，所有 waiter 得到同一终态，last-good 保留，资源不死锁，Board 自检后才恢复。
@@ -1033,7 +1078,7 @@ Interface 就是主要测试表面，不以“每个类都有单测”宣布完�
 20. **协议因果与安全抢占**：同一 Session `配置;INIT;ABORt` 保持顺序，另一 Session 的 ABORt 可越过无关 Normal queue；watchdog/interlock 不等待任何协议 predecessor。
 21. **订阅授权**：猜测其他 Channel/Operation ID、角色升级/降级、对象 ACL 改变、Session 过期、cursor gap 和敏感诊断订阅都不能越权；任一 access-set 变化关闭旧 Watch 并要求带新授权快照 resnapshot，watcher/queue 超限有界拒绝。
 22. **恢复 Operation**：Quarantined Board 的 reopen/reinitialize/safe-state/health 任一步失败都不回 ResourceGraph；卡死恢复转 Drain，FaultUnsafeRf 不能被普通远程恢复清除。
-23. **C 层批发布**：在 Trace/Marker/Limit 各构造点和 Catalog commit 注入失败，只观察旧 publication 或完整新 batch，绝不出现半套双向引用。
+23. **C 层批发布**：在 Trace/Marker/SegmentedLimit/Ripple/明确几何结果各构造点和 Catalog commit 注入失败，只观察旧 publication 或完整新 batch，绝不出现半套双向引用。
 24. **输入 identity 碰撞**：构造相同索引 hash 但不同 typed refs、不同 Derived 顺序和重复 ref；single-flight 必须 full-value 区分/拒绝，跨 actor cache hit 仍重新鉴权。
 25. **Abort 请求与终态竞态**：让 `request_abort` 先返回 accepted、BoardRunSink terminal 迟到；期间 `AcquisitionRunResourceSet`/Buffer/Board 不可复用，safe-state 失败时转 FaultUnsafeRf/Quarantine，重复 terminal 只接受一次。
 26. **Web Snapshot/Watch 原子边界**：在 initial_view cut 后、watch 注册前连续提交多次配置/Operation 终态；从 cursor+1 replay 与实时交叠只按 sequence 观察一次且不漏，boot/epoch 改变、retention gap 和 access-set 升/降权必须返回 ResnapshotRequired 并重新鉴权/取快照。
@@ -1041,13 +1086,14 @@ Interface 就是主要测试表面，不以“每个类都有单测”宣布完�
 28. **SCPI Session 状态因果**：parser syntax error 后依次验证 ESR/STB、`SYST:ERR?` pop、`*ESR?` read-clear 与 `*CLS`；填满普通队列和 session error FIFO 时仍经保留 SessionStateIngress 有序提交，并产生 Profile 规定的唯一 overflow sentinel/latch而非静默丢失。
 29. **连续平均元数据上界**：运行远大于 retention/factor 的 Cumulative、VendorRunning 与 SlidingWindow；B 的 `AverageContributionRef` 和 accumulator metadata 大小保持 ProductProfile 上界，generation/count/sequence range/digest 与每点有效 count 仍正确。强制回收窗口 A snapshots 后 SlidingWindow 仍用自有固定 ring 正确减去最老 contribution；clear 不混代。
 30. **计算取消与期限**：在 RF graph/B 发布、Trace evaluate 与 calibration solve 的各个有界轮询点触发 StopToken/deadline/budget exhaustion；可协作路径按唯一终态结束，不可中断路径转隔离 Drain，ProgressSink 饱和不反压且容量不提前释放。
-31. **A/B Stage 惰性物化**：在没有任何 AnalysisTrace 时分别查询 receiver、ratio、corrected 与 full-matrix ProcessedNetwork；只产生 MaterializeMeasurementStageOperation/MeasurementStageSnapshot，single-flight key 不含 Trace/Marker/Limit，Touchstone/SCPI 导出引用同一 stage provenance；C 求值失败不回滚 stage。
+31. **A/B Stage 惰性物化**：在没有任何 AnalysisTrace 时分别查询 receiver、ratio、corrected 与 full-matrix ProcessedNetwork；只产生 MaterializeMeasurementStageOperation/MeasurementStageSnapshot，single-flight key 不含 Trace/Marker/evaluator，Touchstone/SCPI 导出引用同一 stage provenance；C 求值失败不回滚 stage。
 32. **独立 RF Safety lane**：让 Acquisition Worker 和 SDK safe-state 调用分别卡死；BoardSafetyCallId 仍只有一个终态，SafetyLane 卡死后转 Drain/Quarantine，物理独立 emergency kill 仍可触发，未取得可信 RFOff readback 前保持 FaultUnsafeRf 且不复用 Board。
 33. **文件/诊断长操作**：最大 State/Touchstone/诊断包在 Reading/Validating/Writing/Packaging 各阶段触发 cancel/deadline/断线；ExecutionContext、临时空间预算和 TypedSnapshotLeaseSet 直到 worker terminal/Drain 才释放，Finalizing rename 不产生半文件且导出全程 hash 对应同一 typed snapshot。
 34. **Recall RF 激活安全**：构造保存了 RF-on/Continuous/WaitingTrigger 的 State，普通 Recall 与崩溃启动只能恢复 HoldSafeOff；ExplicitRestoreRunState 先安全恢复再以新 Operation 完整 admission，缺授权、safe readback 或 capability 时不得发射 RF。
 35. **Calibration Verification**：用独立 verification artifact 的 characterization 与已知 residual 注入验证 Pass/Fail/Indeterminate、invalid point、过期/缺模型和阈值；取消/失败不改变 CorrectionSet/Binding，报告绑定确切 B 输入/Plan/Set/算法 revision，Web/SCPI 一致。
 36. **跨板相干边界**：两个 Mock Board 分别测试同/异 CoherenceDomain、timebase unlock、trigger skew 和实际轴不一致；只有全部保证满足时才能组成一个逻辑 S-matrix/mixed-mode/calibration bundle，否则编译/prepare 前拒绝，独立 Channel 仍可运行。
 37. **publication commit 失败终态**：对 A/B/C、Calibration、Export、Query result bundle 注入 validation/write failure；candidate/Head/Event 全败且 last-good 保留，已有 Operation/Ticket 必须以安装的 lifecycle terminal reservation state-only 转 Failed 或确认 AlreadyTerminal，Wait/Fence 不悬挂；再破坏 Store integrity 时 Instrument fail-stop并拒绝新 admission。
+38. **生产资格顺序与隔离**：普通 Continuous 过载仍可合并 UI C；武装生产策略后，每个参与轮次的 raw evaluator bundle 都按 ordinal 不可合并地提交，并与队列追加同一 commit，再验证连续 N、Pass/Fail/Indeterminate 转移、reset、锁存、bin/QMS 和 Handler 选择。让第二项 evaluator/commit 失败并继续产生第三项，确认第二项仍是队首、第三项不能越过；同一 canonical key 重试成功后才依次推进。再覆盖重试耗尽进入 Faulted、显式 reset/new sequence、队列满时 RF 前拒绝/Hold。全程旧 raw result hash/ID 不变，上一 production Head 保留；Web/SCPI 对相同 raw target 和相同 production target 各自一致，且两者不可互相替换。
 
 ## 17. 尚待闭合的责任包
 
@@ -1057,7 +1103,7 @@ Interface 就是主要测试表面，不以“每个类都有单测”宣布完�
 
 - 首版物理端口数、source/receiver/route 拓扑；是否必须交付完整双向 `S11/S21/S12/S22`。
 - `a/b` wave definition、每端口 Z0、底软 factory correction，以及 full 2-port error model 所需 isolation/switch-term/辅助观测。
-- 最大 points/segments、Channel/AnalysisTrace/TracePlacement/Diagram/Marker/Limit 数量；MeasurementSpec 不设独立 CRUD 或容量计数。
+- 最大 points/segments、Channel/AnalysisTrace/TracePlacement/Diagram/Marker/typed evaluator/ProductionQualificationPolicy/Sequence 数量，以及每条 sequence 的 pending raw bundle/retry 上限；MeasurementSpec 不设独立 CRUD 或容量计数。
 - 最大 Web/SCPI 会话、正式快照保留数、RAM/Flash、目标扫频率和延迟。
 - 底软 prepare/cancel/timeout/health 能力及实际 quality flags。
 
@@ -1070,11 +1116,11 @@ Interface 就是主要测试表面，不以“每个类都有单测”宣布完�
 - Full 2-port forward/reverse trigger/route/average 顺序、error-term 插值算法和逐维 Correction Match Matrix。
 - Network Processing Profile：Core 正实数 per-port renormalization 与 Pro complex/balanced renormalization、port extension、fixture、mixed-mode 的默认顺序与允许重排；reference plane、Z0 和 wave convention。
 - Time-domain 算法：网格容差、重采样、DC、window、zero-padding、gate inverse transform 和无效点策略。
-- Trace Hold/Smoothing/Statistics stage、Memory/Frozen Trace 语义、Marker tie-break/search metric，以及 Limit 端点包含、插值和锁存/清除方言；无效参与点映射为 Indeterminate 的核心语义不由 Profile 改写。
+- Trace Hold/Smoothing/Statistics stage、Memory/Frozen Trace 语义、Marker tie-break/search metric，以及普通 Limit/Ripple/明确几何 evaluator 的端点、参与点、插值和状态方言；无效参与数据映射为 Indeterminate 的核心语义不由 Profile 改写。连续计数、生产锁存/bin/QMS 的转移与 reset 则只进入 `ProductionQualificationPolicy`，不得混入单次 Limit 方言。
 - Time Domain/Gating、Touchstone de-embedding、mixed-mode、TRL/Unknown-Thru 已固定为 Pro；分别通过算法/计量、完整同代矩阵和硬件 capability 门禁后才暴露，未通过时返回 capability error，不形成额外产品范围决策。
 - Marker、Limit、Math/Memory/Statistics 中需要与哪家仪器兼容到命令和边界行为。
 
-推荐默认：Core 包含本文件列出的完整 Marker/Limit/Memory、Response/SOL/SOLT 和 port extension；时域、去嵌、mixed-mode、TRL 作为已设计好的 Pro Module 分阶段交付，不以空菜单占位。
+已确认的语义基线是：Core 包含普通 Limit 与独立 Ripple；明确的专用几何 evaluator、生产资格策略、时域、去嵌、mixed-mode、TRL 都有独立 capability 和架构位置，不以万能 Mask、空菜单或改写原始结果占位。除已经单独确认的 Core 项外，具体 Core/Pro/HW/Option 组合仍由 `PLAT-12` 决定。
 
 ### C. 控制与兼容 Profile
 
@@ -1093,4 +1139,4 @@ Interface 就是主要测试表面，不以“每个类都有单测”宣布完�
 
 推荐默认：REST + WebSocket + HTTP binary；仅 WebSocket 线程/长稳门禁不合格时可切换 SSE + REST，若 MinGW 或目标 SDK 的基础 HTTP 门禁不合格则替换整个 Web HTTP Transport Adapter。版本化 manifest + binary blob 原子存储；Web 需要身份认证，SCPI 至少限制在可信管理网或 allowlist。
 
-统一术语已经写入 `CONTEXT.md`。官方证据归类完成后，下一冻结门槛是逐项关闭上述兼容、算法计量、硬件与平台证据；只有 9 项真正的产品范围/部署取舍仍需要产品责任人决定。真实单板相关功能只有在 A、B、D 的对应参数、契约测试和黄金计量数据补齐后才能宣称 supported。
+统一术语已经写入 `CONTEXT.md`。官方证据归类完成后，下一冻结门槛是逐项关闭上述兼容、算法计量、硬件与平台证据；只有 8 项真正的产品范围/部署取舍仍需要产品责任人决定。真实单板相关功能只有在 A、B、D 的对应参数、契约测试和黄金计量数据补齐后才能宣称 supported。

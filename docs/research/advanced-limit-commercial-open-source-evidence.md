@@ -22,7 +22,7 @@
 ## 2. 先给结论
 
 - 三家商用实现都把普通上下限作为“按 Trace/Measurement 配置的分段表 + 单次测量结果判定”，而不是 Diagram 像素碰撞。
-- Ripple 是独立指标：在频段内求 `max(response) - min(response)` 再与阈值比较。Keysight、R&S、CMT 都公开了独立的 Ripple 配置语义；它是成熟常用能力，但“是否放 Pro 版”属于产品分级，不能由技术证据决定。
+- Ripple 是独立指标：在频段内求 `max(response) - min(response)` 再与阈值比较。Keysight、R&S、CMT 都公开了独立的 Ripple 配置语义；技术证据本身不能决定产品分级，本项目已于 2026-07-20 确认把它作为 Core 基础单次判定，而不是普通 Segment 的条件分支。
 - Flatness 不等同于 Ripple。Keysight、CMT 和 LibreVNA 的 Flatness 都表现为 Marker/分析指标；典型定义是相对两端点连线的最大正、负偏差之和，而不是简单峰峰值。
 - 通用“任意二维 Mask”不是三家共同基础能力。R&S 明确提供复数图上的 circle limit；Keysight 的普通 Limit 明确不用于 Smith/Polar。因而应先实现具体几何 evaluator，不应先造一个含义模糊的万能 Mask。
 - 本轮没有在基础 Limit 功能中找到“连续 N 次失败才 Fail”的官方内置语义。Keysight Handler 与 CMT Manufacturing Plug-in 表明，单次 Sweep/一次 DUT 的结果先产生，跨次筛选、锁存、分 bin 和质量流程位于生产自动化层。输出电平锁存或 Sweep averaging 也不等于“连续 N 次失败”。
@@ -99,25 +99,26 @@ LibreVNA 用户手册将 Limit 明确限定为 XY Plot 的 custom limit line；�
 商用品的外部行为与开源源码共同支持以下分层，但这是**本项目的架构推论**，不是对厂商内部代码的声称：
 
 ```text
-单次 AnalysisPublication
-  -> SegmentedEnvelopeEvaluator（普通 upper/lower）
-  -> RippleEvaluator（频段 max-min）
-  -> MetricEvaluator（Flatness、Peak、Bandwidth 等）
-  -> GeometricRegionEvaluator（可选 circle；不是万能 Mask）
-  -> 每个 evaluator 产生不可变的单次结果与诊断明细
-  -> Trace/Channel/Sweep Result Aggregator
-  -> ProductionQualificationPolicy（连续 N 次、锁存、bin、QMS）
-  -> Web / SCPI / Handler 仅适配同一结果
+冻结 AnalysisInputRefSet
+  -> 全分辨率 TraceEvaluationSnapshot
+     -> SegmentedEnvelopeEvaluator（普通 upper/lower）
+     -> RippleEvaluator（频段 max-min）
+     -> MarkerMetricEvaluator（Flatness、Peak、Bandwidth 等指标）
+        -> 可选 MetricThresholdEvaluator（只有明确启用的指标才产生三态判定）
+     -> GeometricRegionEvaluator（可选 circle；不是万能 Mask）
+  -> Trace、Marker、typed results 在 AnalysisPublication 中原子发布
+  -> 可选 SinglePublicationResultAggregator
+  -> ProductionQualificationSequence / Policy（连续 N 次、锁存、bin、QMS）
+  -> Web / SCPI 分别适配同源 raw 或 production target；Handler 显式选一种
 ```
 
-据此，`LIM-10` 不应把 Ripple、Flatness、circle/mask 和连续 N 次都塞进 `LimitSegment`，但也不应直接把它们全部归为 Pro：
+据此，`LIM-10` 已于 2026-07-20 确认以下项目边界；这是产品与架构决定，不回写上面的厂商事实：
 
-- **Core 基础能力：** 普通 upper/lower segmented envelope、单次三态结果、失败点/原因、统一聚合接口；
-- **建议作为常规分析能力评估：** Ripple。三家均公开支持，技术上应是独立 evaluator；是否 Core/Pro 是产品范围问题；
-- **Marker/Metric 能力：** Flatness 先作为可查询指标；需要规格判定时由 metric-threshold evaluator 消费，不与 Ripple 共用错误定义；
-- **可选高级能力：** 复数平面 circle 等明确几何 primitive；任意 polygon 或 Eye Mask 必须由真实用例驱动，不能以“Mask”一个词预留万能对象；
-- **Manufacturing/Pro 候选：** 连续 N 次、锁存、批次、bin 和 QMS 属跨 Sweep 有状态策略，消费单次原始结果但不得改写它。
+- **Core 基础能力：** 普通 upper/lower segmented envelope 与 Ripple 是两个独立的无状态单次 evaluator；各自产生三态结果、失败点/原因，再进入同次聚合；
+- **Marker/Metric 能力：** Flatness 先作为可查询指标；需要规格判定时由明确的 metric-threshold evaluator 消费，不与 Ripple 共用定义。Peak 也不得被静默塞入普通 Segment，专用 Pass/Fail 能力须以明确类型和 capability 交付；
+- **明确的专用类型：** 复数平面 Circle 等几何 primitive 按实际能力启用；任意 polygon 或 Eye Mask 必须由真实用例驱动，Eye Mask 仍属于时域应用，不能以“Mask”一个词预留万能对象；
+- **生产资格能力：** 连续 N 次、锁存、批次、bin 和 QMS 属跨发布有状态 `ProductionQualificationPolicy/Sequence`（Live 生产场景通常跨 Sweep），按严格队首顺序消费单次原始结果并发布独立 Snapshot，绝不改写原始结果。具体授权组合仍由 `PLAT-12` 决定，不改变数据语义。
 
 最关键的成熟产品差别不是功能名称多，而是把“单次测量事实”“分析算法”“结果聚合”“生产决策”和“显示/协议”分开。商用资料支持这种责任边界；LibreVNA 则反向展示了把求值放进 Plot 后的简化与局限。
 
-实现上，各 evaluator 应是只消费一份不可变 `AnalysisPublication` 的无状态计算单元，并把单次结果交给共享 Aggregator；`ProductionQualificationPolicy` 才保存跨 Sweep 的连续计数、锁存或分 bin 状态。Core/Pro 授权与这条数据流正交：授权只决定某种 evaluator 或生产策略能否创建/启用，不应让同一算法在不同版本中改变输入、结果语义或聚合规则。
+实现上，各 evaluator 应消费同一冻结 `AnalysisInputRefSet` 上的全分辨率 `TraceEvaluationSnapshot`，或同一 candidate DAG 中显式声明的 typed metric 上游；结果与 Trace/Marker 最后在一个 `AnalysisPublication` 中原子发布并绑定其 ID，不能反向读取尚未形成的 publication。`ProductionQualificationPolicy/Sequence` 才保存跨发布的连续计数、锁存或分 bin 状态，并以严格队首顺序消费已提交 raw result。Core/Pro 授权与这条数据流正交：授权只决定某种 evaluator 或生产策略能否创建/启用，不应让同一算法在不同版本中改变输入、结果语义或聚合规则；具体组合仍由 `PLAT-12` 决定。

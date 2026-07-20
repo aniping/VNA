@@ -50,4 +50,4 @@ Web 与 SCPI 应调用同一应用命令层，以免形成两套业务规则；�
 2. **Board Profile**：多 Channel 资源图、端口/source/receiver/route、trigger/abort、独立 RF SafetyLane/physical kill、`a/b` wave definition、quality、完整 forward/reverse bundle、Clock/Coherence Domain、timebase/epoch/skew、容量与并发；未知能力默认互斥、单板执行或拒绝，不合成跨板相干结果。
 3. **算法/计量 Profile**：校准 solver、插值、独立 verification artifact/uncertainty limit、Marker/Limit 数值边界、port extension、renormalization、fixture、mixed-mode、time-domain/gate 的黄金数据、可溯源件和商用参考仪器对照。
 4. **平台 Profile**：完整快照保留、RAM/Flash/吞吐、WebSocket/SSE、文件系统原子性、依赖版本、TLS、安全与长稳测试。
-5. **少量产品范围**：专业 Limit、跨 Sweep statistics、Equation Editor、advanced TDR/AFR/eye、报告、身份/SCPI 网络策略和 Pro/HW 授权组合；完整清单及推荐默认见 [逐项对齐矩阵](../design/feature-alignment-matrix.md)。
+5. **少量产品范围**：跨 Sweep statistics、Equation Editor、advanced TDR/AFR/eye、报告、身份/SCPI 网络策略和 Pro/HW 授权组合；完整清单及推荐默认见 [逐项对齐矩阵](../design/feature-alignment-matrix.md)。普通 Limit/Ripple、明确类型的专用判定与跨 Sweep 生产资格策略的责任边界已经定案，不再作为一个含糊的“专业 Limit”产品项。

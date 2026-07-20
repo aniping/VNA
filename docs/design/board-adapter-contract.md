@@ -283,7 +283,7 @@ Manifest 必须不可变并可序列化，用于：
 
 - requested→actual 读回；
 - correction applicability；
-- exact hardware、Buffer 与 opaque `AcquisitionContinuationAttestation`；普通测量映射到 B `MeasurementPublication`，校准/验证映射到各自必达后继，授权 raw/diagnostic 才可 A-only；Stage/C 是后续按需工作；
+- exact hardware、Buffer 与 opaque `AcquisitionContinuationAttestation`；普通测量至少映射到 B `MeasurementPublication`，校准/验证映射到各自必达后继，授权 raw/diagnostic 才可 A-only；普通 UI/query Stage/C 是后续按需工作。唯一例外是已武装生产策略的参与轮次：其 raw evaluator bundle 与 sequence queue slot 作为额外 purpose-specific 必达后继，只预留有界容量令牌，不在 RF start 前执行数值计算，也不把 C 变成原生 Sweep fence；
 - Builder expected observation/coverage ledger；
 - 多板 actual axis/coherence barrier；
 - A 的 `BoardRunEvidence` provenance；
@@ -495,7 +495,7 @@ class CloseAuthorization;    // admission stopped + all calls drained + safe evi
 
 `PrepareAuthorization`/`StartAuthorization` 都只是从 L4 仍持有的 lease 派生出的不可拥有 proof。签发/移动 authorization 不消费、转移或缩短 `PreAdmissionLease`/`AcquisitionRunResourceSet` 的生命周期；前者在 prepare 期间继续由 L4 持有，并在 local exact finalization 时与其他保守 owner 一起被消费/升级。L6 永远不能凭 authorization 释放或扩容上层资源。
 
-`StartAuthorization` 使 prepare/start 间的以下变化不能静默穿透：capability/topology/operational epoch、Manifest、精确硬件资源、Buffer ingress、opaque `AcquisitionContinuationAttestation` 和多板 start barrier。该 attestation 只是绑定 continuation reservation 的 ID/digest/expiry proof，不拥有 `AcquisitionContinuationOwner`，也不是另一套 work claim。L6 不解释 B、Calibration 或 A-only 领域 kind，也不拥有或释放 L4/L5 reservation；这些所有权始终留在 `AcquisitionRunResourceSet`，不能随 token 移入 L6。普通测量中 Stage/C materialize/analysis 是 B 发布后的独立按需 Operation，不能因其容量饱和阻止 RF start。`BoardOperationalEpoch` 专门表示可能改变 Prepared staging 或 RF/route 状态、但未必改变 Capability schema 的动作；safe-state、kill、recovery、close、hot-unplug/reopen 在接受时必须先推进该 epoch 或关闭 admission，因此并发的旧 `begin_run` 稳定拒绝。
+`StartAuthorization` 使 prepare/start 间的以下变化不能静默穿透：capability/topology/operational epoch、Manifest、精确硬件资源、Buffer ingress、opaque `AcquisitionContinuationAttestation` 和多板 start barrier。该 attestation 只是绑定 continuation reservation 的 ID/digest/expiry proof，不拥有 `AcquisitionContinuationOwner`，也不是另一套 work claim。L6 不解释 B、Calibration、production qualification 或 A-only 领域 kind，也不拥有或释放 L4/L5 reservation；这些所有权始终留在 `AcquisitionRunResourceSet`，不能随 token 移入 L6。普通 UI/query Stage/C materialize/analysis 是 B 发布后的独立按需 Operation，不能因其容量饱和阻止 RF start；但若本轮已被武装生产策略声明为参与项，L2/L3 必须在 start 前同时预留该 raw evaluator bundle 与 sequence queue slot 的轻量 capacity token。该例外不提前 pin 尚未存在的 B、不运行 evaluator、不改变 B 的原生完成语义。`BoardOperationalEpoch` 专门表示可能改变 Prepared staging 或 RF/route 状态、但未必改变 Capability schema 的动作；safe-state、kill、recovery、close、hot-unplug/reopen 在接受时必须先推进该 epoch 或关闭 admission，因此并发的旧 `begin_run` 稳定拒绝。
 
 ### 9.1 token 失效与清理矩阵
 
@@ -961,7 +961,7 @@ Replay 保存和重放**契约级**记录，不序列化 SDK 指针或私有结�
 19. recovery success 未 rejoin 时仍拒绝 RF work；RejoinResult 携带同代 capability/health/safe/recovery evidence；
 20. capability/topology 改变使旧 token 不可 start 但仍可 discard；session epoch 替换前旧义务必须 terminal/Drain；
 21. `AcquisitionContinuationAttestation` 缺失、过期或 digest 不匹配时，`begin_run` Rejected、零 SDK/RF/副作用，并归还 token/authorization/grant/sink 后显式 discard；Adapter 不解释其领域 kind，也不接触对应 `AcquisitionContinuationOwner`；
-22. 普通测量映射到 B continuation，校准/验证映射到自己的必达后继，只有授权 raw/diagnostic 可 A-only；Stage/C queue 饱和不阻止已具备 required continuation 的 start，也不能侵占普通测量 B 保留容量；
+22. 普通测量至少映射到 B continuation，校准/验证映射到自己的必达后继，只有授权 raw/diagnostic 可 A-only；普通 UI/query Stage/C queue 饱和不阻止已具备 required continuation 的 start，也不能侵占普通测量 B 保留容量。武装生产策略的参与轮次则必须额外取得 raw evaluator bundle 与 sequence queue slot 的 capacity token；缺少任一 token 时 start 前拒绝/Hold，且该预留不执行 C 计算、不改变 B fence；
 23. fixed slot/queue/pool 用尽时稳定 ResourceExhausted，不动态扩容；
 24. Continuous 每轮都有有限 run、Manifest、terminal；
 25. 多板组合只出现在 L4 coordinator；双板 fan-out 出现一个 Accepted、一个 Rejected 时，已启动板 abort/safe、未启动 token discard，等待全部 terminal 且不发布部分 A；
@@ -1038,7 +1038,7 @@ Board 契约从“候选”进入首板冻结版本前，必须同时满足：
 3. Mock/Replay 全部合同测试通过；
 4. Real Adapter 在 HIL 上通过可执行合同测试，缺失项形成明确 capability gate；
 5. callback buffer poison、abort race、late callback、slot exhaustion 和 SafetyLane 故障注入通过；
-6. 最大 Profile 的 Manifest、A Builder/Buffer、ingress 与 purpose-specific frozen dependency/required-post-acquisition processing/publishing/output/continuation reservation 在 start 前可证明；普通测量的 B 必达，Stage/C 容量不作为 RF start 门禁；
+6. 最大 Profile 的 Manifest、A Builder/Buffer、ingress 与 purpose-specific frozen dependency/required-post-acquisition processing/publishing/output/continuation reservation 在 start 前可证明；普通测量的 B 必达，普通 UI/query Stage/C 容量不作为 RF start 门禁；已武装生产策略的参与轮次额外预留 raw evaluator bundle 与 sequence queue slot，但不提前执行分析，B 仍是原生 Sweep fence；
 7. RF-off/readback/kill 的安全评审与人工处置流程签字；
 8. 至少一条 Single Sweep 从 Real Adapter 的 `a/b` 形成完整 A provenance，失败时不发布部分 A；
 9. Mock 与 Real 的 Capability/Manifest/Terminal trace 可以字段级对照；

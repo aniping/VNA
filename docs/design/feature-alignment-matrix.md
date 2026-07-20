@@ -73,15 +73,14 @@
 | [02 分析与显示](alignment/02-analysis-display.md) | Trace、Diagram、格式、Marker、Limit、Math/Memory/Hold/Statistics、参考面、夹具、混模、时域 | 66 项，已完成证据归类 |
 | [03 控制、文件、诊断与平台](alignment/03-control-files-platform.md) | Web、SCPI、Session、状态寄存器、文件、State、诊断、安全、构建、依赖和容量 | 64 项，已完成证据归类 |
 
-当前共盘点 176 项：8 项“已明确”、66 项“已由证据定案”、20 项“待算法/计量验证”、27 项“待兼容目标”、24 项“待底软/硬件确认”、22 项“待平台验证”，仅 9 项仍是真正的“待产品确认”。这个数量表示评审粒度，不表示功能数量或开发任务数量；同一行可能仍在说明中附带次级门禁，状态列记录其首要未闭合条件。
+当前共盘点 176 项：9 项“已明确”、66 项“已由证据定案”、20 项“待算法/计量验证”、27 项“待兼容目标”、24 项“待底软/硬件确认”、22 项“待平台验证”，仅 8 项仍是真正的“待产品确认”。这个数量表示评审粒度，不表示功能数量或开发任务数量；同一行可能仍在说明中附带次级门禁，状态列记录其首要未闭合条件。
 
 这次重分类的目的不是把风险标成“完成”，而是把责任放到正确位置：通用对象和行为由架构承担，厂商差异由 Compatibility Profile 承担，数值正确性由黄金/计量验证承担，单板事实由 Real Adapter 契约承担，SDK/容量由目标机验证承担；只有功能是否交付和部署政策才留给产品决定。
 
-### 3.1 仅剩的 9 项产品决策与推荐默认
+### 3.1 仅剩的 8 项产品决策与推荐默认
 
 | ID | 真正需要决定的范围 | 推荐默认 |
 |---|---|---|
-| LIM-10 | Ripple、mask、连续 N 次等专业 Limit 模板 | 独立 Pro evaluator；普通 Segment Limit 保持 Core |
 | MATH-08 | 同一点跨 Sweep 的 ensemble statistics | Pro；与沿 X 的单 Sweep statistics 分型 |
 | MATH-10 | 跨 Trace/Channel Equation Editor | Pro；只允许有类型、有界表达式图，不引入任意脚本 |
 | NET-03 | Renormalization 的 Core/Pro 深度 | Core 支持逐端口正实数 Z0；complex/balanced Z0 与可选 wave theory 归 Pro |
@@ -91,7 +90,7 @@
 | SEC-03 | SCPI 的网络/认证边界 | 默认仅可信管理网或 allowlist；是否增加认证由部署威胁模型决定 |
 | PLAT-12 | Pro/HW 组合与授权 | 静态注册 + ProductProfile gating；不得依赖跨工具链动态 C++ 插件 ABI |
 
-这 9 项不是在问“技术架构是否正确”，而是产品线和部署取舍。其余 167 项已经有明确责任路径；其中 27 项厂商差异可在一次选定首个 SCPI/行为兼容 Profile 后成组冻结。
+这 8 项不是在问“技术架构是否正确”，而是产品线和部署取舍。其余 168 项已经有明确责任路径；其中 27 项厂商差异可在一次选定首个 SCPI/行为兼容 Profile 后成组冻结。`LIM-10` 已明确：普通 upper/lower 与 Ripple 分别产生不可变单次结果；明确的几何类型与生产资格能力按 capability 启用；连续 N、锁存、分档和 QMS 只在跨 Sweep 生产策略中推进，不改写原始结果。
 
 ## 4. 已明确的项目约束
 
@@ -134,4 +133,4 @@
 9. **SCPI 与 IEEE 488.2**：主方言、parser、会话、队列、状态寄存器、完成同步和数据阶段。
 10. **State、文件、诊断、安全与平台**：保存恢复、Touchstone/CSV、自检、日志、权限、TLS、依赖和容量。
 
-上述十组的官方证据审查已经完成。后续不再按概念逐个提问，而是按四个闭合包推进：Compatibility Profile、算法/计量黄金集、[Board Adapter 契约](board-adapter-contract.md)、AArch64 平台准入；通用跨层规则已经进入[Interface 契约基线](interface-contracts.md)。Board 文档目前仍是候选契约，只有底软签字、Real HIL 和双工具链门禁通过后才关闭真实单板状态。用户只需对本节 9 项产品取舍和首个兼容目标作批量决定，未明确回复时保留推荐默认但不冒充已批准。
+上述十组的官方证据审查已经完成。后续不再按概念逐个提问，而是按四个闭合包推进：Compatibility Profile、算法/计量黄金集、[Board Adapter 契约](board-adapter-contract.md)、AArch64 平台准入；通用跨层规则已经进入[Interface 契约基线](interface-contracts.md)。Board 文档目前仍是候选契约，只有底软签字、Real HIL 和双工具链门禁通过后才关闭真实单板状态。用户只需对本节 8 项产品取舍和首个兼容目标作批量决定，未明确回复时保留推荐默认但不冒充已批准。

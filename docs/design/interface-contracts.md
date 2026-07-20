@@ -238,6 +238,7 @@ public:
 - 长操作返回 `Accepted{OperationId}`；这不是完成，Operation 内部保存接受切面与来源版本。
 - admission 失败不创建幽灵 Operation；若创建 Operation 与派发之间失败，Operation 必须有可查询的失败终态。
 - 同一 SCPI Session 的 `session_sequence + causal_predecessor` 保持 Profile 规定的因果顺序；不同 Web/SCPI 客户端的 mutation 由唯一 Control Executor 线性化。协议不返回 revision conflict；字段/稳定行 ID patch 只在声明范围内作用于各自接受时的最新状态，不同字段的合法修改各自保留，同一字段以后接受且成功提交的命令为准。普通配置编辑不取得 edit lease；只有校准、Recall 等需要持续 owner 的长 Operation 发生所有权竞争时才返回不含版本值的 Locked/Busy。
+- 普通 Segment Limit、Ripple、明确的 Metric/Circle evaluator 和 `ProductionQualificationPolicy` 使用不同 typed Command。禁止用 generic Mask payload，或给 `LimitSegment` 增加连续 N、锁存、bin/QMS 分支；不支持的类型在 admission 时返回 capability error。
 
 ### 5.2 admit/inspect/open_read/finish_read
 
@@ -247,7 +248,7 @@ public:
 - `inspect` 只读权威 Ticket Snapshot，不分配大 Buffer，也不改变 read-clear 状态。
 - `open_read` 原子执行 Ready→Reading 和 ResultPin→ReaderLease；返回的 handle 是一次性授权能力。
 - L1 只能通过 handle 的 bounded metadata 和只读 chunks 编码；不能取得内部 lease、文件路径或可写 Buffer。
-- Limit Query 必须读取同一个不可变 `LimitTestResultSnapshot`。`Indeterminate` 是带无效原因的成功领域结果，不是 Transport/Operation 错误；Web 必须显示三态和原因，SCPI Compatibility Profile 必须提供可观察的非 Pass 映射及原因/质量查询，Adapter 不得把它折叠为 Pass。生产 Safety 聚合可以另行输出 Fail，但不能改写被查询的原始三态结果。
+- Raw analysis Query 必须固定同一个不可变 `analysis_publication_id + typed raw_result_id`；Production Query 则固定独立 `ProductionQualificationSnapshot` 及其 source evidence closure。`Indeterminate` 是带无效原因的成功领域结果，不是 Transport/Operation 错误；Web 必须显示三态和原因，SCPI Compatibility Profile 必须提供可观察的非 Pass 映射及原因/质量查询。Web/SCPI 对同一 typed target 等价，Adapter 不得把 raw 折叠为 Pass，也不得用 production Fail 覆盖 raw Indeterminate/Pass/Fail。
 - 编码完成、断线或 timeout 后必须调用 `finish_read`，它消费 handle，并同批完成 Reading→Consumed/Failed/Abandoned 与 ReaderLease 释放。兜底 TTL 只处理异常遗留，不代替正常 terminal。
 
 ### 5.3 initial_view/watch
@@ -543,7 +544,7 @@ Implementation 隐藏 actual Manifest validation/finalization、Composite Coordi
 
 实际 Manifest 出现后的资源交接必须闭合，不能把 L4/L5 的 reservation 塞进一个随后移给 L6 的授权 token：
 
-1. 第一次 Runtime dispatch 前，L2/L3 已按 `FrozenSweepJob::purpose` 原子取得保守 envelope 与必达后继：普通测量 pin 旧 accumulator、CorrectionSet 和 B graph/Profile 闭包并预留 B queue/worker/output；校准 Observation pin CalibrationSession/Method/Standard 与独立 average closure，明确排除当前用户 Correction/DUT B；校准 Verification pin 目标 Correction 与比较预算；显式 raw/diagnostic 才能使用受策略授权的 A-only。Manifest 出现后 L4 只在 envelope 内收窄成 move-only `AcquisitionRunResourceSet`；按需 Stage/C 各自在正式父结果发布后重新 admission，不属于普通 RF start 门禁；
+1. 第一次 Runtime dispatch 前，L2/L3 已按 `FrozenSweepJob::purpose` 原子取得保守 envelope 与必达后继：普通测量 pin 旧 accumulator、CorrectionSet 和 B graph/Profile 闭包并预留 B queue/worker/output；校准 Observation pin CalibrationSession/Method/Standard 与独立 average closure，明确排除当前用户 Correction/DUT B；校准 Verification pin 目标 Correction 与比较预算；显式 raw/diagnostic 才能使用受策略授权的 A-only。Manifest 出现后 L4 只在 envelope 内收窄成 move-only `AcquisitionRunResourceSet`。普通 UI/query Stage/C 各自在正式父结果发布后重新 admission，不属于 RF start 门禁；若本轮已被武装生产策略声明为参与项，则 start 前仅额外预留该 raw evaluator bundle 与 sequence queue slot 的有界 capacity token，不提前 pin 尚未形成的 B 或执行 evaluator，B 仍是原生 fence；
 2. Resource Arbiter 在 pre-admission 时签发 `ExactFinalizationCapability`；L4 收到 Manifest 后在本地消费它派生 `StartAuthorization`。该 authorization 只携带绑定 reservation ID/digest 的不可伪造证明和板侧执行权，不拥有 processing/output reservation；
 3. ingress owner 派生一个 `RunDeliveryGrant` 给 L6。该 grant 只授予一个 producer 向已预留 ingress 移动 chunk 的能力，不能释放、扩容或取得 backing storage；L4 仍持有 owner；
 4. `begin_run` Rejected 时归还 start token、authorization、delivery grant 和 sink registration；Accepted 时 L6 只持有 producer grant 到 run terminal，L4 持有 resource set、Manifest 和 ledger 到 Builder terminal；
@@ -562,7 +563,22 @@ public:
 };
 ```
 
-`FrozenProcessingJob` 是 `BuildMeasurement | MaterializeStage | EvaluateAnalysis` 的封闭 variant。成功批可以包含相互依赖的 B + accumulator，或 C + TraceEvaluation + MarkerEvaluation + LimitResult。Pipeline 不读取 current Channel/Trace，不更新 Head，不发布 Event；Eigen 和所有私有缓存留在 Implementation。
+`FrozenProcessingJob` 是 `BuildMeasurement | MaterializeStage | EvaluateAnalysis` 的封闭 variant。成功批可以包含相互依赖的 B + accumulator，或 C + TraceEvaluation + MarkerEvaluation + SegmentedLimitResult + RippleResult + 其他已启用明确 typed evaluator result。`EvaluateAnalysis` 只做无状态单次求值。Pipeline 不读取 current Channel/Trace，不更新 Head，不发布 Event；Eigen 和所有私有缓存留在 Implementation。
+
+跨 Sweep 状态使用独立 Interface：
+
+```cpp
+class ProductionQualificationEvaluator {
+public:
+    virtual ProductionQualificationTerminal evaluate(
+        FrozenProductionQualificationJob&& job,
+        PinnedRawResultSet&& head_bundle,
+        OutputReservation&& output,
+        ExecutionContext& context) noexcept = 0;
+};
+```
+
+`job` 冻结 policy revision、sequence ID、expected ordinal、queue-entry ref、允许的 source/DUT context、三态转移/reset/retry 规则和 prior-state ref；`head_bundle` 只包含该 sequence 当前队首已经提交的不可变 raw refs。成功只返回新的 production candidate，不读 current、不写 Store、不改 C；L2 仅在队首、ordinal 和 prior state 仍匹配时，把 candidate、队首消费、cursor/state 推进和 production Head 组装进同一个 commit。Failed/Draining 服从与 MeasurementPipeline 相同的 owner/terminal 规则，后续 entry 不能绕过失败队首另起求值。
 
 ### 7.3 CalibrationModule
 
@@ -716,7 +732,8 @@ commit 规则：
 5. 失败时所有 Catalog/Head/Ticket/Event 保持旧状态，并沿唯一 abort 路径消费/释放 candidate；调用者不能在失败后继续访问已移动 batch；
 6. 若失败 bundle 之前已有可见 Operation/Ticket，L5 中原有 terminal reservation 因事务全败而仍有效。L2 必须在同一有界 Control turn 内 reconcile 已由 cancel/timeout 提交的终态，或用该 reservation 提交不带 candidate 的 state-only failure bundle，使 Operation/Ticket、Status、Wait/Fence 与失败 Event 原子进入 Failed；普通 quota、revision 或队列容量不得让这次 terminalization 失败，只有 Store 完整性故障允许 Instrument 进入 fail-stop；
 7. callback/wakeup 只在锁外根据 receipt 投递；EventJournal 不 pin 大数据；
-8. 已发布 Snapshot 永不原地修改，Head 只选择 last-good/current relation。
+8. 已发布 Snapshot 永不原地修改，Head 只选择 last-good/current relation；
+9. raw C commit 与 `ProductionQualificationSnapshot` commit 是两个原子边界。策略已武装时，前者还要用预留 slot 原子追加 `sequence_id + ordinal + raw bundle refs`；后者只读取队首已提交 refs，并在成功时同批发布 Snapshot、消费队首、推进 cursor/state 和 Head。生产 candidate/evaluator/commit 失败保留队首、raw C 和上一 production Head，并以相同 canonical key 有界重试；后续 entry 不得越过，预算耗尽后 sequence 原子进入 Faulted，绝不反向撤销或改写原始三态。Active/Faulted sequence 的 pending refs 是 retention root；同一序列不得静默跳项。显式 reset/new-sequence Command 必须在一个 commit 中把全部未消费 entry 标成带 policy/context/ordinal 的 `AbandonedByReset`、写入审计并释放其 pin，失败则原 sequence 完整保留。
 
 `AcquisitionContinuationOwner` 从 RF start 前一直保活对应 purpose 的冻结依赖和必达下游容量；A candidate 的 Buffer 则由 `CandidateCommitLease` 保活。A commit 前，L2 将它拆成 `ContinuationStoreJoinOwner` 与 `ContinuationRuntimeEscrow`：只有前者随 bundle 进 Store，后者在同步有界 commit 期间仍由 Control Executor 持有。`ContinuationJoinReservation` 在 RF start 前就按保守 A closure 上界预留新 A 的 pin count/bytes/closure node/quota bookkeeping，因此 Store 事务原子安装 A 并形成完整 input closure 时不再发生普通容量申请。这样不存在“先发布 A、再尝试 pin A/旧依赖”的 retention 窗口。A commit 失败时 Store 消费/释放 candidate 与 Store join owner，L2 恰好一次释放 Runtime escrow并终结 Preview，然后使用 SweepOperation 已安装的 terminal reservation 提交 Failed；不发布 A，也不留 Pending/Publishing Operation。
 
@@ -846,8 +863,9 @@ sequenceDiagram
 - planning、Runtime/Store/ResourceGraph admission 全部发生在 Accepted/首次 dispatch 前，失败不留下 Operation；
 - Board terminal 只使 A candidate 有资格返回，不直接完成 Sweep；
 - 项目原生 Sweep 在 B 与相关 Head/Operation/Event 同批提交后完成；
-- C/Marker/Limit 可以独立随后求值；
-- Query 再通过 Ticket/Reader 读取具体 A/B/Stage/C，不读取 worker 私有对象。
+- 普通 C/Marker/typed single-publication evaluator 可以独立随后求值；策略已武装时，本轮 raw evaluator bundle 与 sequence queue slot 是不可合并的必达后继，raw commit 同批追加 ordinal；
+- Production Qualification 只在 raw commit 后独立求值/提交，失败不改写 C；
+- Query 再通过 Ticket/Reader 读取具体 A/B/Stage/C raw 或 ProductionQualification target，不读取 worker 私有对象，也不偷换两类结果。
 
 ## 11. 错误与终态分类
 
@@ -900,16 +918,16 @@ sequenceDiagram
 
 | Suite | 从哪个 Interface 测试 | 必须证明 |
 |---|---|---|
-| Protocol equivalence | `InstrumentKernel` | 等价 Web/SCPI 输入得到相同可观察业务状态、Operation、Snapshot 和错误语义；公共 schema 均无内部 revision |
+| Protocol equivalence | `InstrumentKernel` | 等价 Web/SCPI 输入得到相同可观察业务状态、Operation、Snapshot 和错误语义；raw analysis 与 production qualification typed target 分开且各自同源；公共 schema 均无内部 revision |
 | Kernel behavior | `InstrumentKernel` + Mock Board/File | revision、权限、Command/Query、Operation、Event、last-good |
 | Transfer/preview | Kernel upload/read/preview Interface | 跨 actor 拒绝、quota/credit、断线/TTL/Drain 清理、blob reader 统一 finish、Preview gap/terminal 且不影响正式结果 |
 | Runtime model/pressure | `OperationRuntime` | admission 上限、公平、cancel、deadline、Drain、唯一 completion |
 | Acquisition contract | `AcquisitionEngine` | 完整 ledger、失败不发部分 A、多板 all-terminal、Preview 隔离 |
 | Board contract | 同一 Board suite 跑 Real/Mock/Replay | prepare/start/chunk/terminal/abort/safety/health/recovery 行为一致 |
-| Algorithm golden | Measurement/Calibration Interface | 数值、质量传播和 provenance；不经 Diagram/协议绕测 |
+| Algorithm golden | Measurement/Production Qualification/Calibration Interface | 普通 Limit、Ripple、明确 Circle、Flatness Metric 的数值/质量/provenance；连续 N、三态转移/reset/锁存/bin 状态机；不经 Diagram/协议绕测，不存在万能 Mask |
 | Sweep planning/admission | `SweepAdmissionPlanner` + Runtime/Store/ResourceArbiter | 同一 plan digest、硬上界、无副作用；所有 permit/lease 齐备后才 commit/dispatch，失败无幽灵 Operation |
-| Store race/fault | `InstrumentStore` | 初始 commit 失败无 lifecycle/dispatch；publication commit 失败 abort candidate 后必以预留 capacity terminalize 或 fail-stop；Store spy 永不见 Runtime/Preview capability；普通 pin pool 已满时 `ContinuationJoinReservation` 仍完成 A join；多 waiter 各自 PendingResultPin reservation，单 caller quota/cancel 不回滚共享 publication；Runtime escrow 恰释放一次；Event feed replay-cut→live/stop/唯一 terminal；故障无半可见状态 |
-| End-to-end tracer | L1 → L6 → L5 → L1 | Single Sweep、Marker、Limit、Diagram、Query/Event 使用同一正式事实 |
+| Store race/fault | `InstrumentStore` | 初始 commit 失败无 lifecycle/dispatch；publication commit 失败 abort candidate 后必以预留 capacity terminalize 或 fail-stop；武装 raw C 与 sequence append 同批，production commit 失败保留队首且不回滚 raw，后来 entry 不得越过；Store spy 永不见 Runtime/Preview capability；普通 pin pool已满时 `ContinuationJoinReservation` 仍完成 A join；多 waiter 各自 PendingResultPin reservation，单 caller quota/cancel 不回滚共享 publication；Runtime escrow 恰释放一次；Event feed replay-cut→live/stop/唯一 terminal；故障无半可见状态 |
+| End-to-end tracer | L1 → L6 → L5 → L1 | Single Sweep、Marker、普通 Limit/Ripple、Diagram 与 raw Query 使用同一 C；被生产策略跟踪的每轮 raw bundle 不合并且按 ordinal 入队，只从队首产生独立 production Snapshot/Query；故障重试、Faulted/reset 和满队列准入可观察 |
 
 合同测试断言 Interface 可观察行为，不读取 Implementation 私有队列、线程或缓存。Mock 的测试控制使用独立 test-only seam，不能污染生产 `BoardExecutionPort`/Safety/Maintenance Interface。
 
