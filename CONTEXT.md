@@ -19,7 +19,7 @@ _避免使用_：a/b 原始波形、ADC 波形
 _避免使用_：实时结果、当前结果
 
 **完整扫频快照（Completed Sweep Snapshot）**：
-在同一采集配置下成功完成一次逻辑扫频后得到的完整接收机观测点集，对应实现类型 `CompletedSweepBundle`。它绑定 `LogicalSweepId + BoardRunEvidence[]`；每项 evidence 保存一块板的 Manifest、BoardRun generation 与完成账本，默认单板时数组长度为 1。它是测量处理与校准标准件采集的正式 A 层输入，但不等于某条 Trace 已完成 Marker/Limit 求值。
+在同一采集配置下成功完成一次逻辑扫频后得到的完整接收机观测点集，对应实现类型 `CompletedSweepBundle`。它绑定 `LogicalSweepId + BoardRunEvidence[]`；每项 evidence 保存一次实际 Board Run 的 Board identity/session、Manifest、generation 与完成账本，同一块板可以因执行分组产生多项 evidence，最简单的单板单 Run 场景数组长度为 1。它是测量处理与校准标准件采集的正式 A 层输入，但不等于某条 Trace 已完成 Marker/Limit 求值。
 _避免使用_：当前数组、活动数据
 
 **采集块租约（Acquisition Chunk Lease）**：
@@ -33,6 +33,9 @@ L2 的纯 `SweepAdmissionPlanner` 先从同一授权 Catalog cut 生成 `SweepIn
 
 **逻辑扫频（Logical Sweep）**：
 为产生一个完整测量结果而必须原子完成的全部采集动作。完整双端口 S 参数测量通常包含正向、反向及板卡误差模型要求的辅助观测；任何必要动作失败都不发布部分网络结果。
+
+**板级执行分组（Board Run Partition）**：
+Sweep Compiler 根据冻结测量需求和 Board Capabilities，把一个 Logical Sweep 的 source states 与 receiver observations 划分成一个或多个 Board Run 的版本化计划；每个 Run 可以覆盖一个或多个 source state。分组只决定硬件执行粒度，不改变 Logical Sweep 的原子边界；全部必需 Run 成功后才能发布 A，并且每个实际 Run 都产生独立 BoardRunEvidence。
 
 **平均域（Averaging Domain）**：
 明确一次复数平均读取哪个数据阶段。`AveragePolicy` 另用 `sample_boundary` 表达 Point/SourceState/LogicalSweep，二者不能混成一个枚举。项目原生推荐 `MeasuredRatio + LogicalSweep`；Keysight ENA 可在平均前包含明确标识的端口/工厂特性修正，但用户校准 Error Terms 在平均后应用。CMT 内部数组型 Profile 可用 `ReceiverWaves + LogicalSweep/Point`（随后形成 ratio），但必须按目标型号/固件回归。不得把显示格式标量平均当作复数平均，也不得隐式叠加底软与上层平均。
