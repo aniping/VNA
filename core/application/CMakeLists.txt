@@ -8,6 +8,7 @@ add_library(
     src/completion_fence.cpp
     src/completion_fence_handles.cpp
     src/operation_manager.cpp
+    src/single_sweep_command_handler.cpp
     src/single_sweep_executor.cpp
     src/single_sweep_pipeline.cpp
     src/trace_display_frame_query.cpp
