@@ -1,4 +1,4 @@
-add_library(vna_web_api src/web_api.cpp)
+add_library(vna_web_api src/json_codec.cpp src/web_api.cpp)
 add_library(vna::web_api ALIAS vna_web_api)
 
 target_compile_features(vna_web_api PUBLIC cxx_std_20)
