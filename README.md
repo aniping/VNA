@@ -93,6 +93,8 @@ pnpm run dev
 当前单窗口界面默认使用 2×2 测量图区，右侧依次为 Measurement Softtool 和
 两列虚拟 Hard Key。点击 `Meas` 可关闭或重新打开 Softtool；已有 Channel 时可在
 S 参数区创建 Trace。采样后端接通前只显示坐标网格，不绘制静态测量曲线。
+顶部 Toolbar 仅启用 `Maximize Diagram`；点击或使用 `Enter` / `Space` 可在活动
+Diagram 最大化与 2×2 布局间切换，其余尚未实现的 Toolbar 项保持禁用。
 
 `Start`、`Stop`、`Center` 和 `Span` Hard Key 已连接到真实 Channel 状态。修改
 Center 时保持当前 Span，修改 Span 时保持当前 Center，并通过 revision 冲突检查

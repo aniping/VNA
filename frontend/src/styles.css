@@ -34,7 +34,7 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
   background: #101719;
 }
 
-.toolbar, .menu-bar {
+.menu-bar {
   display: flex;
   align-items: stretch;
   gap: 1px;
@@ -43,7 +43,7 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
   border-bottom: 1px solid #0c1114;
 }
 
-.toolbar button, .menu-bar button {
+.menu-bar button {
   min-width: 66px;
   border: 1px solid #182127;
   border-radius: 2px;
@@ -51,10 +51,9 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
   font-size: 14px;
 }
 
-.toolbar button:active, .menu-bar button:active,
+.menu-bar button:active,
 .hardkey-panel button:active { background: #168db7; }
-.toolbar-spacer, .menu-spacer { flex: 1; }
-.instrument-title { align-self: center; padding: 0 10px; font-size: 13px; color: #c8d1d4; }
+.menu-spacer { flex: 1; }
 
 .application-workspace { display: grid; grid-template-columns: 1fr 160px; min-height: 0; }
 .application-workspace.softtool-visible { grid-template-columns: 848px 272px 160px; }

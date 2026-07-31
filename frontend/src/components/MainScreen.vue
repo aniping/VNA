@@ -10,6 +10,7 @@ import ChannelSofttool from './ChannelSofttool.vue'
 import DiagramGrid from './DiagramGrid.vue'
 import FormatSofttool from './FormatSofttool.vue'
 import HardkeyPanel from './HardkeyPanel.vue'
+import InstrumentToolbar from './InstrumentToolbar.vue'
 import MeasurementSofttool from './MeasurementSofttool.vue'
 import StimulusSofttool from './StimulusSofttool.vue'
 import {
@@ -34,7 +35,6 @@ const emit = defineEmits<{
   updateTraceFormat: [traceId: number, format: TraceFormat]
 }>()
 
-const toolbar = ['↶', '↷', 'Zoom', 'Max', '+ Trace', '+ Marker', 'Delete', 'Print', 'Save', 'Recall']
 const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
 const channel = computed(() => props.state?.instrument.channels[0])
 const activeTraceId = ref<number>()
@@ -42,6 +42,8 @@ const activeTrace = computed(() => {
   const traces = props.state?.instrument.traces ?? []
   return traces.find((trace) => trace.id === activeTraceId.value) ?? traces[0]
 })
+const isDiagramMaximized = ref(false)
+const canMaximizeDiagram = computed(() => Boolean(activeTrace.value))
 const activeSofttool = ref<'measurement' | 'format' | 'stimulus' | 'channel' | null>('measurement')
 const stimulusKey = ref<StimulusKey>('Start')
 const channelKey = ref<ChannelKey>('Power / Bw / Avg')
@@ -61,7 +63,13 @@ const entityCounts = computed(() => {
 
 watch(activeTrace, (trace) => {
   activeTraceId.value = trace?.id
+  if (!trace) isDiagramMaximized.value = false
 }, { immediate: true })
+
+function toggleDiagramMaximized(): void {
+  if (!canMaximizeDiagram.value) return
+  isDiagramMaximized.value = !isDiagramMaximized.value
+}
 
 function selectHardkey(key: HardkeyName): void {
   if (key === 'Meas') {
@@ -95,14 +103,15 @@ function forwardTraceFormatUpdate(traceId: number, format: TraceFormat): void {
   <section class="main-screen" aria-label="Main measurement screen">
     <div class="application-workspace" :class="{ 'softtool-visible': activeSofttool }">
       <div class="measurement-stage">
-        <header class="toolbar">
-          <button v-for="item in toolbar" :key="item" type="button">{{ item }}</button>
-          <span class="toolbar-spacer" />
-          <span class="instrument-title">Vector Network Analyzer</span>
-        </header>
+        <InstrumentToolbar
+          :maximized="isDiagramMaximized"
+          :can-maximize="canMaximizeDiagram"
+          @toggle-maximize="toggleDiagramMaximized"
+        />
         <DiagramGrid
           :state="state"
           :active-trace-id="activeTrace?.id"
+          :maximized="isDiagramMaximized"
           @select-trace="activeTraceId = $event"
         />
       </div>

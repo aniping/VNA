@@ -6,6 +6,7 @@ import DiagramPane from './DiagramPane.vue'
 const props = defineProps<{
   state: StateSnapshot | null
   activeTraceId?: number
+  maximized: boolean
 }>()
 const emit = defineEmits<{ selectTrace: [traceId: number] }>()
 const kinds = ['smith', 'cartesian', 'cartesian', 'smith'] as const
@@ -28,16 +29,19 @@ function kindForPane(index: number): 'cartesian' | 'smith' {
 </script>
 
 <template>
-  <section class="diagram-grid" aria-label="Measurement diagrams">
+  <section class="diagram-grid" :class="{ maximized }" aria-label="Measurement diagrams">
     <DiagramPane
       v-for="paneNumber in 4"
       :key="paneNumber"
+      :class="{
+        'pane-hidden': maximized && traceForPane(paneNumber - 1)?.id !== activeTraceId,
+      }"
       :pane-number="paneNumber"
       :kind="kindForPane(paneNumber - 1)"
       :channel="channel"
       :trace="traceForPane(paneNumber - 1)"
       :measurement="measurementForPane(paneNumber - 1)"
-      :active="traceForPane(paneNumber - 1)?.id === activeTraceId"
+      :active="activeTraceId !== undefined && traceForPane(paneNumber - 1)?.id === activeTraceId"
       @select="emit('selectTrace', $event)"
     />
   </section>
@@ -45,4 +49,6 @@ function kindForPane(index: number): 'cartesian' | 'smith' {
 
 <style scoped>
 .diagram-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); min-width: 0; min-height: 0; background: #050707; }
+.diagram-grid.maximized { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.pane-hidden { display: none; }
 </style>
