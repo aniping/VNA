@@ -44,6 +44,7 @@ function selectHardkey(key: string): void {
     return
   }
   if (!['Start', 'Stop', 'Center', 'Span'].includes(key)) return
+  if (!channel.value) return
   stimulusKey.value = key as StimulusKey
   activeSofttool.value = 'stimulus'
 }
@@ -84,6 +85,7 @@ function forwardSweepUpdate(channelId: number, sweep: SweepSettings): void {
 
       <HardkeyPanel
         :active-key="activeKey"
+        :has-channel="Boolean(channel)"
         @select="selectHardkey"
       />
     </div>

@@ -1,10 +1,15 @@
 <script setup lang="ts">
-defineProps<{ activeKey: string | null }>()
+defineProps<{ activeKey: string | null; hasChannel: boolean }>()
 const emit = defineEmits<{ select: [key: string] }>()
 
 interface HardkeyGroup {
   title: string
-  keys: Array<{ label: string; enabled?: boolean; accent?: 'help' | 'preset' }>
+  keys: Array<{
+    label: string
+    enabled?: boolean
+    requiresChannel?: boolean
+    accent?: 'help' | 'preset'
+  }>
 }
 
 const groups: HardkeyGroup[] = [
@@ -22,10 +27,10 @@ const groups: HardkeyGroup[] = [
   {
     title: 'Stimulus',
     keys: [
-      { label: 'Start', enabled: true },
-      { label: 'Stop', enabled: true },
-      { label: 'Center', enabled: true },
-      { label: 'Span', enabled: true },
+      { label: 'Start', enabled: true, requiresChannel: true },
+      { label: 'Stop', enabled: true, requiresChannel: true },
+      { label: 'Center', enabled: true, requiresChannel: true },
+      { label: 'Span', enabled: true, requiresChannel: true },
     ],
   },
   {
@@ -63,7 +68,7 @@ const groups: HardkeyGroup[] = [
           :key="key.label"
           type="button"
           :class="[key.accent, { active: activeKey === key.label }]"
-          :disabled="!key.enabled"
+          :disabled="!key.enabled || (key.requiresChannel && !hasChannel)"
           @click="emit('select', key.label)"
         >
           {{ key.label }}
