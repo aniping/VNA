@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -19,29 +20,40 @@ namespace vna::application {
 template <typename Tag>
 class TextId {
 public:
-    explicit TextId(std::string value) : value_(std::move(value)) {
-        if (value_.empty() || value_.size() > 128) {
+    explicit TextId(std::string value) {
+        if (value.empty() || value.size() > 128) {
             throw std::invalid_argument{"TextId must be 1..128 bytes"};
         }
-        for (const unsigned char byte : value_) {
+        for (const unsigned char byte : value) {
             if (byte <= 0x1F || byte == 0x7F) {
                 throw std::invalid_argument{
                     "TextId must not contain ASCII control bytes"};
             }
         }
+        value_ = std::make_shared<const std::string>(std::move(value));
     }
 
-    TextId(const TextId&) = default;
-    TextId& operator=(const TextId&) = default;
+    // IDs cross admission and idempotency commit boundaries. Sharing immutable
+    // text makes every established ID cheap and non-throwing to copy, while a
+    // move deliberately shares ownership so the source remains a valid ID.
+    TextId(const TextId&) noexcept = default;
+    TextId& operator=(const TextId&) noexcept = default;
+    TextId(TextId&& other) noexcept : value_(other.value_) {}
+    TextId& operator=(TextId&& other) noexcept {
+        value_ = other.value_;
+        return *this;
+    }
 
     [[nodiscard]] const std::string& value() const noexcept {
-        return value_;
+        return *value_;
     }
 
-    friend bool operator==(const TextId&, const TextId&) = default;
+    friend bool operator==(const TextId& left, const TextId& right) noexcept {
+        return left.value_ == right.value_ || *left.value_ == *right.value_;
+    }
 
 private:
-    std::string value_;
+    std::shared_ptr<const std::string> value_;
 };
 
 using CommandId = TextId<struct CommandIdTag>;
