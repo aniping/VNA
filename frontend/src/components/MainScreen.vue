@@ -1,12 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { StateSnapshot } from '../api/vnaApi'
+import type { SweepSettings } from '../api/vnaApi'
+import ChannelSetup from './ChannelSetup.vue'
 
 const props = defineProps<{
   state: StateSnapshot | null
   connection: 'connecting' | 'online' | 'offline'
   serviceError: string
+  disabled: boolean
+  busy: boolean
 }>()
+const emit = defineEmits<{ createChannel: [sweep: SweepSettings] }>()
 
 const toolbar = ['↶', '↷', 'Zoom', 'Max', '+ Trace', '+ Marker', 'Delete', 'Print', 'Save', 'Recall']
 const softkeys = ['S-Parameters', 'Wave Quantities', 'Ratios', 'Receivers', 'More…']
@@ -55,9 +60,17 @@ function frequency(value: number | undefined): string {
           <button type="button">Favorites</button>
         </div>
         <h2>Measurement</h2>
-        <button v-for="item in softkeys" :key="item" type="button" class="softkey">
-          <span>{{ item }}</span><span aria-hidden="true">›</span>
-        </button>
+        <template v-if="channel">
+          <button v-for="item in softkeys" :key="item" type="button" class="softkey">
+            <span>{{ item }}</span><span aria-hidden="true">›</span>
+          </button>
+        </template>
+        <ChannelSetup
+          v-else
+          :disabled="disabled"
+          :busy="busy"
+          @create-channel="emit('createChannel', $event)"
+        />
         <div class="softtool-fill" />
         <button type="button" class="softkey close-key">Close</button>
       </aside>

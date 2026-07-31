@@ -19,7 +19,7 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
 
 .instrument-canvas {
   display: flex;
-  width: 1760px;
+  width: 1280px;
   height: 800px;
   transform-origin: top left;
   background: #263239;
@@ -84,6 +84,12 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
 .softkey span:last-child { font-size: 25px; }
 .softtool-fill { flex: 1; }
 .close-key { justify-content: center; min-height: 40px; }
+.channel-setup h3 { margin: 5px 0 3px; padding: 6px 7px; background: #1d282d; font-size: 15px; }
+.channel-setup label { display: flex; justify-content: space-between; align-items: center; min-height: 39px; padding: 0 8px; border-bottom: 1px solid #1b252a; font-size: 13px; }
+.channel-setup label span { color: #c5d0d4; }
+.channel-setup input { width: 88px; height: 28px; padding: 0 5px; color: #fff; background: #11191d; border: 1px solid #738087; text-align: right; }
+.channel-setup > button { width: 100%; height: 40px; margin-top: 6px; border: 1px solid #0a3b4d; background: #168eb8; font-weight: 700; }
+.channel-setup > button:disabled { color: #829096; background: #35434a; }
 
 .menu-bar { border-top: 1px solid #0c1114; border-bottom: 0; }
 .menu-bar button { min-width: 74px; }
