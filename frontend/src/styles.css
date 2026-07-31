@@ -90,6 +90,8 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
 .menu-bar > span, .menu-bar time { align-self: center; margin: 0 7px; font-size: 12px; }
 .status-pill { padding: 3px 7px; border-radius: 2px; font-weight: 700; }
 .status-pill.offline { color: #ffd9d9; background: #8b2424; }
+.status-pill.connecting { color: #16130a; background: #dfa81f; }
+.status-pill.online { color: #07170f; background: #31b86d; }
 
 .control-screen { display: grid; grid-template-rows: 470px 330px; width: 480px; height: 800px; background: #253239; }
 .hardkey-area { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; padding: 5px; border-bottom: 3px solid #0d1316; }

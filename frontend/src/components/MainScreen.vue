@@ -1,7 +1,24 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import type { StateSnapshot } from '../api/vnaApi'
+
+const props = defineProps<{
+  state: StateSnapshot | null
+  connection: 'connecting' | 'online' | 'offline'
+  serviceError: string
+}>()
+
 const toolbar = ['↶', '↷', 'Zoom', 'Max', '+ Trace', '+ Marker', 'Delete', 'Print', 'Save', 'Recall']
 const softkeys = ['S-Parameters', 'Wave Quantities', 'Ratios', 'Receivers', 'More…']
 const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
+const channel = computed(() => props.state?.instrument.channels[0])
+
+function frequency(value: number | undefined): string {
+  if (value === undefined) return '—'
+  if (value >= 1e9) return `${(value / 1e9).toFixed(3)} GHz`
+  if (value >= 1e6) return `${(value / 1e6).toFixed(3)} MHz`
+  return `${value} Hz`
+}
 </script>
 
 <template>
@@ -23,12 +40,12 @@ const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
           <span class="plot-empty">No measurement data</span>
         </div>
         <footer class="channel-row">
-          <span>Ch1</span>
-          <span>Start —</span>
-          <span>Stop —</span>
-          <span>Points —</span>
-          <span>IFBW —</span>
-          <span>Power —</span>
+          <span>{{ channel ? `Ch${channel.id}` : 'No Ch' }}</span>
+          <span>Start {{ frequency(channel?.sweep.startFrequencyHz) }}</span>
+          <span>Stop {{ frequency(channel?.sweep.stopFrequencyHz) }}</span>
+          <span>Points {{ channel?.sweep.points ?? '—' }}</span>
+          <span>IFBW {{ frequency(channel?.sweep.ifBandwidthHz) }}</span>
+          <span>Power {{ channel ? `${channel.sweep.powerDbm} dBm` : '—' }}</span>
         </footer>
       </section>
 
@@ -49,9 +66,11 @@ const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
     <nav class="menu-bar" aria-label="Application menu">
       <button v-for="item in menus" :key="item" type="button">{{ item }}</button>
       <span class="menu-spacer" />
-      <span class="status-pill offline">OFFLINE</span>
-      <span>Revision —</span>
-      <time>--:--</time>
+      <span class="status-pill" :class="connection" :title="serviceError">
+        {{ connection.toUpperCase() }}
+      </span>
+      <span>Revision {{ state?.stateRevision ?? '—' }}</span>
+      <time>{{ serviceError || 'Local session' }}</time>
     </nav>
   </section>
 </template>
