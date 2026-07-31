@@ -51,6 +51,7 @@ gtest_discover_tests(
 
 add_executable(
     vna_web_api_tests
+    integration/web_api_error_test.cpp
     integration/web_api_test.cpp
 )
 target_link_libraries(

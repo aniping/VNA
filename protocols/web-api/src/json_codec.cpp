@@ -87,29 +87,35 @@ Json instrumentToJson(const domain::InstrumentSnapshot& instrument) {
     };
 }
 
-struct CommandStatusInfo {
-    const char* name;
+struct CommandOutcomeInfo {
+    const char* status;
     int httpStatus;
+    const char* errorCode;
 };
 
-CommandStatusInfo commandStatusInfo(const application::CommandOutcome& outcome) {
+CommandOutcomeInfo commandOutcomeInfo(
+    const application::CommandOutcome& outcome) {
     if (std::holds_alternative<application::CommandSuccess>(outcome)) {
-        return {"succeeded", 200};
+        return {"succeeded", 200, nullptr};
     }
     const auto& error = std::get<application::CommandError>(outcome);
     switch (application::commandErrorCode(error)) {
         case application::CommandErrorCode::InvalidSweepSettings:
+            return {"validationError", 422, "invalid-sweep-settings"};
         case application::CommandErrorCode::ChannelNotFound:
+            return {"validationError", 422, "channel-not-found"};
         case application::CommandErrorCode::MeasurementNotFound:
+            return {"validationError", 422, "measurement-not-found"};
         case application::CommandErrorCode::WindowNotFound:
+            return {"validationError", 422, "window-not-found"};
         case application::CommandErrorCode::TraceNotFound:
-            return {"validationError", 422};
+            return {"validationError", 422, "trace-not-found"};
         case application::CommandErrorCode::StateRevisionConflict:
-            return {"conflict", 409};
+            return {"conflict", 409, "state-revision-conflict"};
         case application::CommandErrorCode::WrongInstrument:
-            return {"wrongInstrument", 404};
+            return {"wrongInstrument", 404, "wrong-instrument"};
     }
-    return {"unknown", 500};
+    return {"unknown", 500, "unknown"};
 }
 
 void encodeCommandValue(Json& body, const application::CommandValue& value) {
@@ -139,14 +145,17 @@ std::string encodeState(const application::StateSnapshot& state) {
 
 CommandResponse encodeCommandResult(
     const application::CommandResult& result) {
-    const auto info = commandStatusInfo(result.outcome);
+    const auto info = commandOutcomeInfo(result.outcome);
     Json body{
-        {"status", info.name},
+        {"status", info.status},
         {"stateRevision", result.stateRevision},
     };
     if (const auto* success =
             std::get_if<application::CommandSuccess>(&result.outcome)) {
         encodeCommandValue(body, success->value);
+    }
+    if (info.errorCode != nullptr) {
+        body["errorCode"] = info.errorCode;
     }
     return {info.httpStatus, body.dump()};
 }

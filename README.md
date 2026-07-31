@@ -73,6 +73,8 @@ Linux/GCC：
 
 服务仅监听 `127.0.0.1:8080`。可通过 `/api/v1/health`、`/api/v1/state`
 和 `/api/v1/commands` 验证当前 HTTP 切片。
+`/api/v1/commands` 的失败响应保留 `status` 与 `stateRevision`，并提供稳定的
+`errorCode` 供客户端区分具体错误。
 
 ## 前端开发
 
