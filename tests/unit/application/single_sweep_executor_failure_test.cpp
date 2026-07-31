@@ -60,7 +60,7 @@ TEST(SingleSweepExecutorFailureTest, RawSourceFailureIsAtomic) {
         std::move(source), validWorkItem(),
         SingleSweepFailureCode::RawSweepFailed,
         [](const OperationFailure& failure) {
-            const auto* cause = std::get_if<frames::FrameError>(&failure.cause);
+            const auto* cause = failure.cause.getIf<frames::FrameError>();
             ASSERT_NE(cause, nullptr);
             EXPECT_EQ(cause->code, frames::FrameErrorCode::InvalidFrequencyAxis);
         });
@@ -77,7 +77,7 @@ TEST(SingleSweepExecutorFailureTest, RawSourceExceptionIsPreserved) {
         std::move(source), validWorkItem(),
         SingleSweepFailureCode::RawSweepFailed,
         [](const OperationFailure& failure) {
-            const auto* cause = std::get_if<std::exception_ptr>(&failure.cause);
+            const auto* cause = failure.cause.getIf<std::exception_ptr>();
             ASSERT_NE(cause, nullptr);
             EXPECT_THROW(std::rethrow_exception(*cause), std::runtime_error);
         });
@@ -130,7 +130,7 @@ TEST(SingleSweepExecutorFailureTest, FrequencyRoundingFailureIsAtomic) {
         simulationSource(), std::move(work),
         SingleSweepFailureCode::FrequencyMaterializationFailed,
         [](const OperationFailure& failure) {
-            EXPECT_TRUE(std::holds_alternative<std::monostate>(failure.cause));
+            EXPECT_TRUE(failure.cause.holds<std::monostate>());
         });
 }
 
@@ -161,11 +161,48 @@ TEST(SingleSweepExecutorFailureTest, PublishFailureKeepsExistingFrame) {
         failed->error.code,
         SingleSweepFailureCode::TraceDisplayPublishFailed);
     const auto* cause =
-        std::get_if<TraceDisplayFrameError>(&failed->error.cause);
+        failed->error.cause.getIf<TraceDisplayFrameError>();
     ASSERT_NE(cause, nullptr);
     EXPECT_EQ(cause->code, TraceDisplayFrameErrorCode::CapacityExceeded);
     EXPECT_EQ(repository.latest(display_model::TraceId{3}), nullptr);
     EXPECT_EQ(repository.latest(display_model::TraceId{9}), existing.value());
+}
+
+TEST(SingleSweepExecutorFailureTest, PublisherExceptionDoesNotStopWorker) {
+    OperationManager manager;
+    TraceDisplayFrameRepository repository{1};
+    int attempts = 0;
+    TraceDisplayPublisher publisher = [&](TraceDisplayFrame frame) {
+        if (++attempts == 1) {
+            throw std::runtime_error{"repository allocation failed"};
+        }
+        return repository.publish(std::move(frame));
+    };
+    SingleSweepExecutor executor{
+        1, simulationSource(), manager, std::move(publisher)};
+
+    const auto first =
+        acceptedOperation(manager, executor.submit(validWorkItem()));
+    const auto failedTerminal = awaitTerminal(manager, first);
+    const auto* failed =
+        std::get_if<OperationFailed>(&failedTerminal.state);
+    ASSERT_NE(failed, nullptr);
+    EXPECT_EQ(
+        failed->error.code,
+        SingleSweepFailureCode::TraceDisplayPublishFailed);
+    EXPECT_NE(failed->error.cause.getIf<std::exception_ptr>(), nullptr);
+    EXPECT_EQ(repository.latest(display_model::TraceId{3}), nullptr);
+
+    auto secondWork = validWorkItem(CommandId{"sweep-2"});
+    secondWork.frameContext.frameId = frames::FrameId{12};
+    secondWork.frameContext.sequenceNumber = 2;
+    const auto second = acceptedOperation(
+        manager, executor.submit(std::move(secondWork)));
+    const auto succeededTerminal = awaitTerminal(manager, second);
+
+    EXPECT_TRUE(std::holds_alternative<OperationSucceeded>(
+        succeededTerminal.state));
+    EXPECT_NE(repository.latest(display_model::TraceId{3}), nullptr);
 }
 
 }  // namespace

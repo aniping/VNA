@@ -4,7 +4,9 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <type_traits>
 #include <unordered_map>
+#include <utility>
 #include <variant>
 
 #include <vna/application/command_contract.hpp>
@@ -94,7 +96,49 @@ struct OperationSnapshot {
     SessionId sessionId;
     std::uint64_t submittedAtStateRevision;
     OperationState state;
+
+    OperationSnapshot(
+        OperationId operationId,
+        CommandId command,
+        SessionId session,
+        std::uint64_t stateRevision,
+        OperationState operationState) noexcept
+        : id(operationId),
+          commandId(std::move(command)),
+          sessionId(std::move(session)),
+          submittedAtStateRevision(stateRevision),
+          state(std::move(operationState)) {}
+
+    OperationSnapshot(const OperationSnapshot& other) noexcept
+        : id(other.id),
+          commandId(other.commandId),
+          sessionId(other.sessionId),
+          submittedAtStateRevision(other.submittedAtStateRevision),
+          state(copyState(other.state)) {}
+    OperationSnapshot& operator=(const OperationSnapshot& other) noexcept {
+        if (this != &other) {
+            id = other.id;
+            commandId = other.commandId;
+            sessionId = other.sessionId;
+            submittedAtStateRevision = other.submittedAtStateRevision;
+            state = copyState(other.state);
+        }
+        return *this;
+    }
+    OperationSnapshot(OperationSnapshot&&) noexcept = default;
+    OperationSnapshot& operator=(OperationSnapshot&&) noexcept = default;
+
+private:
+    static OperationState copyState(const OperationState& source) noexcept {
+        return std::visit(
+            [](const auto& current) -> OperationState {
+                return OperationState{current};
+            },
+            source);
+    }
 };
+
+static_assert(std::is_nothrow_move_assignable_v<OperationState>);
 
 struct OperationSubmission {
     CommandId commandId;

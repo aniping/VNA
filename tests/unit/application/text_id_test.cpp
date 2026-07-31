@@ -18,8 +18,12 @@ static_assert(std::is_nothrow_move_assignable_v<CommandId>);
 static_assert(std::is_nothrow_copy_constructible_v<CommandEnvelope>);
 static_assert(std::is_nothrow_copy_constructible_v<CommandResult>);
 static_assert(std::is_nothrow_move_constructible_v<CommandResult>);
+static_assert(std::is_nothrow_copy_constructible_v<OperationSnapshot>);
 static_assert(std::is_nothrow_move_constructible_v<OperationSnapshot>);
 static_assert(std::is_nothrow_move_constructible_v<OperationResult>);
+static_assert(std::is_nothrow_copy_constructible_v<OperationFailure>);
+static_assert(std::is_nothrow_copy_constructible_v<OperationFailed>);
+static_assert(std::is_nothrow_move_constructible_v<OperationTerminalOutcome>);
 static_assert(std::is_same_v<
               std::variant_alternative_t<0, SingleSweepSubmitResult>,
               OperationId>);

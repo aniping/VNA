@@ -84,6 +84,11 @@ TEST(SingleSweepExecutorTest, RejectsInvalidConstruction) {
                                std::stop_token) {
         return simulation::simulateSweep(axis);
     };
+    TraceDisplayPublisher emptyPublisher;
+    EXPECT_THROW(
+        SingleSweepExecutor(
+            1, source, manager, std::move(emptyPublisher)),
+        std::invalid_argument);
     EXPECT_THROW(
         SingleSweepExecutor(0, std::move(source), manager, repository),
         std::invalid_argument);

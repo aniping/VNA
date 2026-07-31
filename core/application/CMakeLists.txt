@@ -11,6 +11,7 @@ add_library(
     src/single_sweep_command_handler.cpp
     src/single_sweep_executor.cpp
     src/single_sweep_pipeline.cpp
+    src/single_sweep_publisher.cpp
     src/start_single_sweep_command.cpp
     src/trace_display_frame_query.cpp
     src/trace_display_frame_repository.cpp

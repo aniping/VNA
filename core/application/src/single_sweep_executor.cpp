@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "single_sweep_pipeline_internal.hpp"
+#include "single_sweep_publisher_internal.hpp"
 
 namespace vna::application {
 
@@ -17,11 +18,11 @@ public:
         std::size_t capacity,
         RawSweepSource source,
         OperationManager& operations,
-        TraceDisplayFrameRepository& frames)
+        TraceDisplayPublisher publish)
         : capacity_(capacity),
           source_(std::move(source)),
           operations_(operations),
-          frames_(frames),
+          publish_(std::move(publish)),
           worker_([this](std::stop_token token) { workerLoop(token); }) {}
 
     SingleSweepSubmitResult submit(SingleSweepWorkItem work) {
@@ -99,9 +100,24 @@ private:
                 queue_.pop_front();
                 running_ = pending->operationId;
             }
-            run(std::move(*pending), token);
+            runGuarded(std::move(*pending), token);
             std::lock_guard lock{mutex_};
             running_.reset();
+        }
+    }
+
+    void runGuarded(Pending pending, std::stop_token token) {
+        const auto operationId = pending.operationId;
+        try {
+            run(std::move(pending), token);
+        } catch (...) {
+            // Allocation and third-party exceptions outside the explicitly
+            // typed stages must not terminate the sole worker or strand the
+            // accepted Operation in Running.
+            (void)operations_.markRunning(operationId);
+            fail(operationId, OperationFailure{
+                                  .code = SingleSweepFailureCode::UnexpectedFailure,
+                                  .cause = std::current_exception()});
         }
     }
 
@@ -128,16 +144,16 @@ private:
         }
         // Publish is the commit point. Completion comes afterward so every
         // terminal observer can retrieve the immutable frame.
-        const auto published =
-            frames_.publish(std::move(std::get<TraceDisplayFrame>(result)));
-        if (!published.hasValue()) {
-            fail(pending.operationId,
-                 OperationFailure{
-                     .code =
-                         SingleSweepFailureCode::TraceDisplayPublishFailed,
-                     .cause = published.error()});
+        const auto failure = internal::publishTraceDisplayFrame(
+            publish_,
+            std::move(std::get<TraceDisplayFrame>(result)));
+        if (failure) {
+            fail(pending.operationId, *failure);
             return;
         }
+        // Operation snapshots and terminal outcomes have statically enforced
+        // no-throw value semantics, so no allocation window remains after the
+        // frame has become visible.
         (void)operations_.complete(
             pending.operationId,
             OperationSucceeded{pending.work.frameContext.frameId});
@@ -180,7 +196,7 @@ private:
     const std::size_t capacity_;
     RawSweepSource source_;
     OperationManager& operations_;
-    TraceDisplayFrameRepository& frames_;
+    TraceDisplayPublisher publish_;
     std::mutex mutex_;
     std::condition_variable condition_;
     std::deque<Pending> queue_;
@@ -193,13 +209,26 @@ SingleSweepExecutor::SingleSweepExecutor(
     std::size_t queueCapacity,
     RawSweepSource source,
     OperationManager& operations,
-    TraceDisplayFrameRepository& frames) {
-    if (queueCapacity == 0 || !source) {
+    TraceDisplayFrameRepository& frames)
+    : SingleSweepExecutor(
+          queueCapacity,
+          std::move(source),
+          operations,
+          [&frames](TraceDisplayFrame frame) {
+              return frames.publish(std::move(frame));
+          }) {}
+
+SingleSweepExecutor::SingleSweepExecutor(
+    std::size_t queueCapacity,
+    RawSweepSource source,
+    OperationManager& operations,
+    TraceDisplayPublisher publish) {
+    if (queueCapacity == 0 || !source || !publish) {
         throw std::invalid_argument{
-            "single sweep executor requires capacity and source"};
+            "single sweep executor requires capacity, source, and publisher"};
     }
     impl_ = std::make_unique<Impl>(
-        queueCapacity, std::move(source), operations, frames);
+        queueCapacity, std::move(source), operations, std::move(publish));
 }
 
 SingleSweepExecutor::~SingleSweepExecutor() {

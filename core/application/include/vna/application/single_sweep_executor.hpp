@@ -19,6 +19,9 @@ using RawSweepSource = std::function<frames::Result<frames::RawReceiverPayload>(
     const frames::FrequencyAxis&,
     std::stop_token)>;
 
+using TraceDisplayPublisher =
+    std::function<TraceDisplayFrameResult(TraceDisplayFrame)>;
+
 struct SingleSweepWorkItem {
     CommandId commandId;
     SessionId sessionId;
@@ -47,6 +50,13 @@ public:
         RawSweepSource source,
         OperationManager& operations,
         TraceDisplayFrameRepository& frames);
+    // The narrow publisher seam lets adapters and tests expose allocation
+    // failure at the repository boundary without weakening repository types.
+    SingleSweepExecutor(
+        std::size_t queueCapacity,
+        RawSweepSource source,
+        OperationManager& operations,
+        TraceDisplayPublisher publish);
     ~SingleSweepExecutor();
 
     SingleSweepExecutor(const SingleSweepExecutor&) = delete;
