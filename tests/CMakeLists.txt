@@ -42,6 +42,8 @@ target_link_libraries(
     vna_web_api_tests
     PRIVATE
         vna::web_api
+        httplib::httplib
+        nlohmann_json::nlohmann_json
         GTest::gtest_main
 )
 gtest_discover_tests(vna_web_api_tests PROPERTIES TIMEOUT 10)

@@ -11,6 +11,7 @@ target_link_libraries(
     vna_web_api
     PUBLIC
         vna::application
+    PRIVATE
         httplib::httplib
         nlohmann_json::nlohmann_json
 )

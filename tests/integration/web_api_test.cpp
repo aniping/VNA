@@ -50,15 +50,16 @@ nlohmann::json createChannelRequest() {
 class WebApiTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        webApi_.install(server_);
-        port_ = server_.bind_to_any_port("127.0.0.1");
+        port_ = webApi_.bindToAnyPort("127.0.0.1");
         ASSERT_GT(port_, 0);
-        serverThread_ = std::thread([this] { server_.listen_after_bind(); });
-        server_.wait_until_ready();
+        serverThread_ = std::thread([this] {
+            static_cast<void>(webApi_.listenAfterBind());
+        });
+        webApi_.waitUntilReady();
     }
 
     void TearDown() override {
-        server_.stop();
+        webApi_.stop();
         if (serverThread_.joinable()) {
             serverThread_.join();
         }
@@ -67,7 +68,6 @@ protected:
     application::CommandBus commandBus_{
         application::InstrumentId{"instrument-1"}};
     WebApi webApi_{commandBus_};
-    httplib::Server server_;
     int port_{-1};
     std::thread serverThread_;
 };
