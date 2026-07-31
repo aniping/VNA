@@ -83,7 +83,7 @@ const categories = [
 .setup-column h2 { margin: 2px 0; padding: 4px 3px; font-size: 11px; font-weight: 600; }
 .measurement-selector { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 35px; padding: 0 7px; border: 1px solid #172126; background: #53656e; font-size: 11px; }
 .category-column { display: flex; flex-direction: column; gap: 2px; padding: 3px 2px; background: #11191d; }
-.category-column button { flex: 1; min-height: 43px; padding: 3px 5px; border: 1px solid #0b1114; background: #172126; font-size: 11px; line-height: 1.05; text-align: left; }
+.category-column button { height: 50px; padding: 3px 5px; border: 1px solid #0b1114; background: #172126; font-size: 11px; line-height: 1.05; text-align: left; }
 .category-column button.active { border-right: 3px solid #248fd5; background: #384a53; }
 .category-column button:disabled { color: #f0f3f4; opacity: 1; }
 .topology { margin-top: 8px; }

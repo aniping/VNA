@@ -27,7 +27,7 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
 
 .main-screen {
   display: grid;
-  grid-template-rows: 42px 1fr 42px;
+  grid-template-rows: 1fr 34px;
   width: 1280px;
   height: 800px;
   border-right: 4px solid #0c1114;
@@ -56,8 +56,9 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
 .toolbar-spacer, .menu-spacer { flex: 1; }
 .instrument-title { align-self: center; padding: 0 10px; font-size: 13px; color: #c8d1d4; }
 
-.measurement-workspace { display: grid; grid-template-columns: 1fr 160px; min-height: 0; }
-.measurement-workspace.softtool-visible { grid-template-columns: 848px 272px 160px; }
+.application-workspace { display: grid; grid-template-columns: 1fr 160px; min-height: 0; }
+.application-workspace.softtool-visible { grid-template-columns: 848px 272px 160px; }
+.measurement-stage { display: grid; grid-template-rows: 42px 1fr; min-width: 0; min-height: 0; }
 
 .channel-setup h3 { margin: 5px 0 3px; padding: 6px 7px; background: #1d282d; font-size: 15px; }
 .channel-setup label { display: flex; justify-content: space-between; align-items: center; min-height: 39px; padding: 0 8px; border-bottom: 1px solid #1b252a; font-size: 13px; }
@@ -66,7 +67,7 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
 .channel-setup > button { width: 100%; height: 40px; margin-top: 6px; border: 1px solid #0a3b4d; background: #168eb8; font-weight: 700; }
 .channel-setup > button:disabled { color: #829096; background: #35434a; }
 .menu-bar { border-top: 1px solid #0c1114; border-bottom: 0; }
-.menu-bar button { min-width: 74px; }
+.menu-bar button { min-width: 74px; font-size: 12px; }
 .menu-bar > span, .menu-bar time { align-self: center; margin: 0 7px; font-size: 12px; }
 .menu-bar .entity-counts { color: #c5d0d4; }
 .status-pill { padding: 3px 7px; border-radius: 2px; font-weight: 700; }

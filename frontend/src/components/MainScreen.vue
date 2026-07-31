@@ -36,14 +36,15 @@ function selectHardkey(key: string): void {
 
 <template>
   <section class="main-screen" aria-label="Main measurement screen">
-    <header class="toolbar">
-      <button v-for="item in toolbar" :key="item" type="button">{{ item }}</button>
-      <span class="toolbar-spacer" />
-      <span class="instrument-title">Vector Network Analyzer</span>
-    </header>
-
-    <div class="measurement-workspace" :class="{ 'softtool-visible': activeSofttool }">
-      <DiagramGrid :state="state" />
+    <div class="application-workspace" :class="{ 'softtool-visible': activeSofttool }">
+      <div class="measurement-stage">
+        <header class="toolbar">
+          <button v-for="item in toolbar" :key="item" type="button">{{ item }}</button>
+          <span class="toolbar-spacer" />
+          <span class="instrument-title">Vector Network Analyzer</span>
+        </header>
+        <DiagramGrid :state="state" />
+      </div>
 
       <MeasurementSofttool
         v-if="activeSofttool"

@@ -15,18 +15,24 @@ function measurementForPane(index: number) {
   const trace = traceForPane(index)
   return props.state?.instrument.measurements.find((item) => item.id === trace?.measurementId)
 }
+
+function kindForPane(index: number): 'cartesian' | 'smith' {
+  const trace = traceForPane(index)
+  if (trace) return trace.format === 'smith' ? 'smith' : 'cartesian'
+  return kinds[index]
+}
 </script>
 
 <template>
   <section class="diagram-grid" aria-label="Measurement diagrams">
     <DiagramPane
-      v-for="(kind, index) in kinds"
-      :key="index"
-      :pane-number="index + 1"
-      :kind="kind"
+      v-for="paneNumber in 4"
+      :key="paneNumber"
+      :pane-number="paneNumber"
+      :kind="kindForPane(paneNumber - 1)"
       :channel="channel"
-      :trace="traceForPane(index)"
-      :measurement="measurementForPane(index)"
+      :trace="traceForPane(paneNumber - 1)"
+      :measurement="measurementForPane(paneNumber - 1)"
     />
   </section>
 </template>
