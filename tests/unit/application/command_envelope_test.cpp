@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <vna/application/command_bus.hpp>
+#include <vna/application/command_contract.hpp>
 
 namespace vna::application {
 namespace {

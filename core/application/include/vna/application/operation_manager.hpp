@@ -8,6 +8,7 @@
 #include <variant>
 
 #include <vna/application/command_bus.hpp>
+#include <vna/application/operation_id.hpp>
 
 namespace vna::application {
 
@@ -56,21 +57,6 @@ private:
 
     std::shared_ptr<detail::FenceSubscriptionState> state_;
     friend class OperationManager;
-};
-
-class OperationId {
-public:
-    explicit constexpr OperationId(std::uint64_t value) noexcept
-        : value_(value) {}
-
-    [[nodiscard]] constexpr std::uint64_t value() const noexcept {
-        return value_;
-    }
-
-    friend constexpr bool operator==(OperationId, OperationId) = default;
-
-private:
-    std::uint64_t value_;
 };
 
 struct OperationQueued {};
