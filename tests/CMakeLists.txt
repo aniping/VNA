@@ -56,6 +56,7 @@ add_executable(
     vna_logging_tests
     integration/logging/json_lines_logger_test.cpp
     integration/logging/json_lines_logger_overload_test.cpp
+    integration/logging/json_lines_logger_rotation_test.cpp
 )
 target_link_libraries(
     vna_logging_tests

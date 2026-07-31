@@ -1,10 +1,11 @@
 #pragma once
 
+#include "rolling_file.hpp"
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <fstream>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -18,6 +19,11 @@
 namespace vna::logging {
 
 inline constexpr std::size_t kMaxEncodedLineBytes = 64 * 1024;
+
+inline bool isLowSeverity(observability::LogLevel level) noexcept {
+    return level == observability::LogLevel::Debug ||
+           level == observability::LogLevel::Info;
+}
 
 struct BarrierCompletion {
     BarrierCompletion(
@@ -44,26 +50,23 @@ struct WorkItem {
 
 class LogSinks {
 public:
-    LogSinks(const std::filesystem::path& directory, std::ostream* console)
+    LogSinks(const std::filesystem::path& directory, std::ostream* console,
+             std::size_t maxFileBytes, std::size_t maxFiles)
         : console_(console) {
         if (directory.empty() || console_ == nullptr) {
             throw std::invalid_argument("invalid JSON Lines logger options");
         }
         std::filesystem::create_directories(directory);
-        file_.open(
-            directory / "vna.log.jsonl",
-            std::ios::binary | std::ios::app);
-        if (!file_) {
-            throw std::runtime_error("failed to open JSON Lines log file");
-        }
+        file_ = std::make_unique<RollingFile>(
+            directory / "vna.log.jsonl", maxFileBytes, maxFiles);
     }
 
     bool writeBoth(const std::string& line) noexcept {
-        return writeConsole(line) && write(file_, line);
+        return writeConsole(line) && file_->write(line);
     }
 
     bool flushBoth() noexcept {
-        return flushConsole() && flush(file_);
+        return flushConsole() && file_->flush();
     }
 
     bool writeEmergency(const std::string& line) noexcept {
@@ -101,7 +104,7 @@ private:
     }
 
     std::ostream* console_;
-    std::ofstream file_;
+    std::unique_ptr<RollingFile> file_;
     std::recursive_mutex consoleMutex_;
 };
 

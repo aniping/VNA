@@ -15,6 +15,9 @@ struct JsonLinesLoggerOptions {
     std::ostream* console{&std::cout};
     // Must be > 0; internal flush barriers are coalesced separately.
     std::size_t queueCapacity{1024};
+    // Both must be > 0; maxFiles includes the active log file.
+    std::size_t maxFileBytes{10U * 1024U * 1024U};
+    std::size_t maxFiles{10};
 };
 
 // For reliable delivery, the owner must flush after its final submit and get true;

@@ -22,8 +22,11 @@ namespace {
 class JsonLinesLogger final : public observability::Logger {
 public:
     explicit JsonLinesLogger(const JsonLinesLoggerOptions& options)
-        : sinks_(options.logDirectory, options.console),
-          queueCapacity_(options.queueCapacity) {
+        : sinks_(options.logDirectory, options.console,
+                 options.maxFileBytes, options.maxFiles),
+          queueCapacity_(options.queueCapacity),
+          maxEncodedLineBytes_(std::min(kMaxEncodedLineBytes,
+                                        options.maxFileBytes)) {
         writer_ = std::thread{[this] { writeLoop(); }};
     }
 
@@ -46,7 +49,7 @@ public:
             if (terminal_ || stopping_) {
                 return observability::SubmitResult::Stopped;
             }
-            if (line.size() > kMaxEncodedLineBytes) {
+            if (line.size() > maxEncodedLineBytes_) {
                 counters_.rejectOversized();
                 return observability::SubmitResult::RejectedOversized;
             }
@@ -122,11 +125,6 @@ public:
     }
 
 private:
-    static bool isLowSeverity(observability::LogLevel level) noexcept {
-        return level == observability::LogLevel::Debug ||
-               level == observability::LogLevel::Info;
-    }
-
     observability::SubmitResult acceptLocked(std::string line, bool lowSeverity) {
         const auto sequence = ++lastAcceptedSequence_;
         work_.push_back({sequence, std::move(line), {}, {}, lowSeverity});
@@ -224,6 +222,7 @@ private:
     std::thread writer_;
     LoggerCounters counters_;
     const std::size_t queueCapacity_;
+    const std::size_t maxEncodedLineBytes_;
     std::size_t queuedEvents_{0};
     std::shared_ptr<BarrierCompletion> pendingBarrier_;
     std::atomic<std::uint64_t> acknowledgedLossGeneration_{0};
@@ -238,7 +237,8 @@ private:
 
 std::unique_ptr<observability::Logger> makeJsonLinesLogger(
     JsonLinesLoggerOptions options) {
-    if (options.queueCapacity == 0) {
+    if (options.queueCapacity == 0 || options.maxFileBytes == 0 ||
+        options.maxFiles == 0) {
         throw std::invalid_argument("invalid JSON Lines logger options");
     }
     return std::make_unique<JsonLinesLogger>(options);
