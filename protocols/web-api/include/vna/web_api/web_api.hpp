@@ -1,6 +1,8 @@
 #pragma once
 
+#include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include <vna/application/command_bus.hpp>
@@ -9,7 +11,12 @@ namespace vna::web_api {
 
 class WebApi {
 public:
-    explicit WebApi(application::CommandBus& commandBus);
+    // A configured web root must contain regular index.html and assets entries.
+    // Only the two index routes and /assets/ are served; there is no root mount.
+    // Its trusted directory tree must remain immutable for this object's life.
+    explicit WebApi(
+        application::CommandBus& commandBus,
+        std::optional<std::filesystem::path> webRoot = std::nullopt);
     ~WebApi();
 
     WebApi(const WebApi&) = delete;

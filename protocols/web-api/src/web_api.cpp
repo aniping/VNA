@@ -1,11 +1,15 @@
 #include <vna/web_api/web_api.hpp>
 
 #include "json_codec.hpp"
+#include "web_asset_path.hpp"
 
 #include <httplib.h>
 
+#include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 
 namespace vna::web_api {
 namespace {
@@ -30,23 +34,63 @@ void handleCommand(
     response.set_content(result.body, "application/json");
 }
 
+void serveIndex(
+    const std::filesystem::path& webRoot,
+    httplib::Response& response) {
+    const auto index = detail::resolveWebAsset(webRoot, "index.html");
+    if (!index) {
+        response.status = httplib::StatusCode::NotFound_404;
+        return;
+    }
+    response.set_header("Cache-Control", "no-cache");
+    response.set_file_content(*index, "text/html; charset=utf-8");
+}
+
+void serveAsset(
+    const std::filesystem::path& assetsRoot,
+    const httplib::Request& request,
+    httplib::Response& response) {
+    const auto asset = detail::resolveWebAsset(
+        assetsRoot, request.matches[1].str());
+    if (!asset) {
+        response.status = httplib::StatusCode::NotFound_404;
+        return;
+    }
+    response.set_header(
+        "Cache-Control", "public, max-age=31536000, immutable");
+    response.set_file_content(*asset);
+}
+
 }  // namespace
 
 class WebApi::Impl {
 public:
-    explicit Impl(application::CommandBus& commandBus)
+    Impl(
+        application::CommandBus& commandBus,
+        const std::optional<std::filesystem::path>& webRoot)
         : commandBus_(commandBus) {
         installRoutes();
+        if (webRoot) {
+            installIndexRoutes(*webRoot);
+            installAssets(*webRoot / "assets");
+        }
     }
 
     void installRoutes();
+    void installIndexRoutes(std::filesystem::path indexPath);
+    void installAssets(const std::filesystem::path& assetsPath);
 
     application::CommandBus& commandBus_;
     httplib::Server server_;
 };
 
-WebApi::WebApi(application::CommandBus& commandBus)
-    : impl_(std::make_unique<Impl>(commandBus)) {}
+WebApi::WebApi(
+    application::CommandBus& commandBus,
+    std::optional<std::filesystem::path> webRoot)
+    : impl_([&] {
+          const auto validated = detail::validateWebRoot(webRoot);
+          return std::make_unique<Impl>(commandBus, validated);
+      }()) {}
 
 WebApi::~WebApi() = default;
 
@@ -67,6 +111,31 @@ void WebApi::Impl::installRoutes() {
         "/api/v1/commands",
         [this](const httplib::Request& request, httplib::Response& response) {
             handleCommand(commandBus_, request, response);
+        });
+}
+
+void WebApi::Impl::installIndexRoutes(std::filesystem::path indexPath) {
+    const auto handler = [indexPath = std::move(indexPath)](
+                             const httplib::Request&,
+                             httplib::Response& response) {
+        serveIndex(indexPath, response);
+    };
+    // Keep entry points explicit: mounting the entire root would make release
+    // files participate in every route lookup and weaken the /api separation.
+    server_.Get("/", handler);
+    server_.Get("/index.html", handler);
+}
+
+void WebApi::Impl::installAssets(const std::filesystem::path& assetsPath) {
+    auto canonicalRoot = std::filesystem::canonical(assetsPath);
+    // Only this namespace reaches the filesystem. Avoiding a root mount keeps
+    // /api outside static lookup and prevents an accidental SPA fallback.
+    server_.Get(
+        R"(/assets/(.+))",
+        [canonicalRoot = std::move(canonicalRoot)](
+            const httplib::Request& request,
+            httplib::Response& response) {
+            serveAsset(canonicalRoot, request, response);
         });
 }
 

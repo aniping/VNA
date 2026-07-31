@@ -144,6 +144,7 @@ add_executable(
     integration/web_api_error_test.cpp
     integration/web_api_idempotency_test.cpp
     integration/web_api_scale_test.cpp
+    integration/web_api_static_files_test.cpp
     integration/web_api_text_id_test.cpp
     integration/web_api_test.cpp
 )

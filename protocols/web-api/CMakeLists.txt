@@ -2,9 +2,18 @@ add_library(
     vna_web_api
     src/command_json_decoder.cpp
     src/json_codec.cpp
+    src/web_asset_path.cpp
     src/web_api.cpp
 )
 add_library(vna::web_api ALIAS vna_web_api)
+
+if(WIN32)
+    target_sources(vna_web_api PRIVATE src/web_asset_path_windows.cpp)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(vna_web_api PRIVATE src/web_asset_path_linux.cpp)
+else()
+    message(FATAL_ERROR "Unsupported web asset platform")
+endif()
 
 target_compile_features(vna_web_api PUBLIC cxx_std_20)
 target_include_directories(
