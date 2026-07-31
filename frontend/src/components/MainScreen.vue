@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { StateSnapshot, SweepSettings, TraceSetup as TraceSetupModel } from '../api/vnaApi'
+import ChannelSofttool from './ChannelSofttool.vue'
 import DiagramGrid from './DiagramGrid.vue'
 import HardkeyPanel from './HardkeyPanel.vue'
 import MeasurementSofttool from './MeasurementSofttool.vue'
 import StimulusSofttool from './StimulusSofttool.vue'
-import { isStimulusKey, type HardkeyName, type StimulusKey } from './hardkeyModel'
+import {
+  isChannelKey,
+  isStimulusKey,
+  type ChannelKey,
+  type HardkeyName,
+  type StimulusKey,
+} from './hardkeyModel'
 
 const props = defineProps<{
   state: StateSnapshot | null
@@ -23,11 +30,13 @@ const emit = defineEmits<{
 const toolbar = ['↶', '↷', 'Zoom', 'Max', '+ Trace', '+ Marker', 'Delete', 'Print', 'Save', 'Recall']
 const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
 const channel = computed(() => props.state?.instrument.channels[0])
-const activeSofttool = ref<'measurement' | 'stimulus' | null>('measurement')
+const activeSofttool = ref<'measurement' | 'stimulus' | 'channel' | null>('measurement')
 const stimulusKey = ref<StimulusKey>('Start')
+const channelKey = ref<ChannelKey>('Power / Bw / Avg')
 const activeKey = computed(() => {
   if (activeSofttool.value === 'measurement') return 'Meas'
   if (activeSofttool.value === 'stimulus') return stimulusKey.value
+  if (activeSofttool.value === 'channel') return channelKey.value
   return null
 })
 const entityCounts = computed(() => {
@@ -42,10 +51,14 @@ function selectHardkey(key: HardkeyName): void {
     activeSofttool.value = activeSofttool.value === 'measurement' ? null : 'measurement'
     return
   }
-  if (!isStimulusKey(key)) return
-  if (!channel.value) return
-  stimulusKey.value = key
-  activeSofttool.value = 'stimulus'
+  if (isStimulusKey(key) && channel.value) {
+    stimulusKey.value = key
+    activeSofttool.value = 'stimulus'
+  }
+  if (isChannelKey(key) && channel.value) {
+    channelKey.value = key
+    activeSofttool.value = 'channel'
+  }
 }
 
 function forwardSweepUpdate(channelId: number, sweep: SweepSettings): void {
@@ -77,6 +90,14 @@ function forwardSweepUpdate(channelId: number, sweep: SweepSettings): void {
         v-else-if="activeSofttool === 'stimulus' && channel"
         :channel="channel"
         :focus="stimulusKey"
+        :disabled="disabled"
+        :busy="busy"
+        @update-sweep="forwardSweepUpdate"
+      />
+      <ChannelSofttool
+        v-else-if="activeSofttool === 'channel' && channel"
+        :channel="channel"
+        :mode="channelKey"
         :disabled="disabled"
         :busy="busy"
         @update-sweep="forwardSweepUpdate"

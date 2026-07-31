@@ -55,8 +55,7 @@ export const hardkeyGroups: HardkeyGroup[] = [
   {
     title: 'Channel',
     keys: [
-      { label: 'Power / Bw / Avg' },
-      { label: 'Sweep' },
+      ...channelKeys.map((label) => ({ label, enabled: true, requiresChannel: true })),
       { label: 'Cal' },
       { label: 'Channel Config' },
       { label: 'Mode' },
@@ -78,4 +77,8 @@ export const hardkeyGroups: HardkeyGroup[] = [
 
 export function isStimulusKey(key: HardkeyName): key is StimulusKey {
   return stimulusKeys.some((candidate) => candidate === key)
+}
+
+export function isChannelKey(key: HardkeyName): key is ChannelKey {
+  return channelKeys.some((candidate) => candidate === key)
 }
