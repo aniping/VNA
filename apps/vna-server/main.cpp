@@ -27,7 +27,7 @@ using namespace std::chrono_literals;
 
 constexpr auto instrumentId = "instrument-1";
 constexpr auto lifecycleEventName = "server.lifecycle";
-constexpr auto finalFlushTimeout = 2s;
+constexpr auto logFlushTimeout = 2s;
 
 enum class LifecycleStatus {
     Starting,
@@ -81,15 +81,17 @@ bool submitLifecycle(
     return false;
 }
 
-bool flushBeforeExit(std::unique_ptr<vna::observability::Logger>& logger) {
-    if (logger->flush(finalFlushTimeout)) {
+bool flushLogs(
+    std::unique_ptr<vna::observability::Logger>& logger,
+    std::string_view failureMessage) {
+    if (logger->flush(logFlushTimeout)) {
         return true;
     }
     // A blocked ostream cannot be cancelled portably. Relinquishing ownership
     // prevents an unbounded best-effort destructor while process exit remains
     // the first-version bounded fallback described by ADR-0005.
     static_cast<void>(logger.release());
-    reportEmergency("vna-server final log flush failed");
+    reportEmergency(failureMessage);
     return false;
 }
 
@@ -97,7 +99,12 @@ int serveUntilStopped(
     vna::web_api::WebApi& webApi,
     std::unique_ptr<vna::observability::Logger>& logger) {
     if (!submitLifecycle(*logger, LifecycleStatus::Starting)) {
-        static_cast<void>(flushBeforeExit(logger));
+        static_cast<void>(flushLogs(logger, "vna-server startup log flush failed"));
+        return EXIT_FAILURE;
+    }
+    // Publish the starting event before listen blocks, so operators can
+    // distinguish a live server from an empty log without relying on exit.
+    if (!flushLogs(logger, "vna-server startup log flush failed")) {
         return EXIT_FAILURE;
     }
     constexpr auto address = "127.0.0.1";
@@ -105,12 +112,12 @@ int serveUntilStopped(
     if (!webApi.listen(address, port)) {
         static_cast<void>(
             submitLifecycle(*logger, LifecycleStatus::ListenFailed));
-        static_cast<void>(flushBeforeExit(logger));
+        static_cast<void>(flushLogs(logger, "vna-server final log flush failed"));
         return EXIT_FAILURE;
     }
     const auto stoppedRecorded =
         submitLifecycle(*logger, LifecycleStatus::Stopped);
-    const auto flushed = flushBeforeExit(logger);
+    const auto flushed = flushLogs(logger, "vna-server final log flush failed");
     return stoppedRecorded && flushed ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 

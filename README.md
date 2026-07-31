@@ -59,19 +59,37 @@ ctest --test-dir build --output-on-failure
 
 在 Windows 上执行前，请确认 `g++` 和 `ninja` 来自同一套 MinGW 工具链。
 
-启动本地服务。Windows/MinGW：
+`build/` 和 `frontend/dist/` 只是构建中间产物。组装包含服务端、前端静态文件、
+日志目录和运行库的便携发布目录前，还需要 Node.js 20.19 或更高版本、pnpm
+11.9.0，并在首次打包或锁文件变化后安装前端依赖：
 
 ```powershell
-.\build\apps\vna-server\vna-server.exe
+pnpm --dir frontend install --frozen-lockfile
 ```
 
-Linux/GCC：
+随后执行显式发布目标：
+
+```powershell
+cmake --build build --target package-release
+```
+
+该显式目标成功后生成 `release/VectorNetworkAnalyzer/`；普通 CMake 构建和
+`pnpm run build` 都不会创建或替换发布目录。Windows/MinGW 从仓库根运行：
+
+```powershell
+.\release\VectorNetworkAnalyzer\start.cmd
+```
+
+Linux/GCC 使用相同目录结构，以下命令同样从仓库根运行：
 
 ```bash
-./build/apps/vna-server/vna-server
+./release/VectorNetworkAnalyzer/start.sh
 ```
 
-服务仅监听 `127.0.0.1:8080`。可通过 `/api/v1/health`、`/api/v1/state`
+也可以在任意工作目录使用 `start.cmd` 或 `start.sh` 的绝对路径。服务从自身
+可执行文件位置定位相邻的 `web/` 与 `logs/`，不依赖当前工作目录；
+浏览器打开 `http://127.0.0.1:8080/`。服务仅监听 `127.0.0.1:8080`，可通过
+`/api/v1/health`、`/api/v1/state`
 和 `/api/v1/commands` 验证当前 HTTP 切片。
 `/api/v1/commands` 的失败响应保留 `status` 与 `stateRevision`，并提供稳定的
 `errorCode` 供客户端区分具体错误。
