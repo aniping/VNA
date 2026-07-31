@@ -88,8 +88,8 @@ function selectTrace(): void {
 
 <style scoped>
 .diagram-pane { display: grid; grid-template-rows: 25px 1fr 23px; min-width: 0; min-height: 0; border: 1px solid #60717a; background: #050707; }
-.diagram-pane.active { border: 2px solid #168fda; }
-.diagram-pane.active .trace-strip { box-shadow: inset 0 -3px #168fda; }
+.diagram-pane.active { border: 2px solid #f2db24; }
+.diagram-pane.active .trace-strip { box-shadow: inset 0 -3px #f2db24; }
 .trace-strip { display: flex; align-items: center; gap: 5px; padding: 0 5px; overflow: hidden; color: #dce5e8; background: #243138; font-size: 12px; white-space: nowrap; }
 .trace-index { padding: 3px 5px; color: #dce5e8; background: #3577ad; }
 .measurement-chip { padding: 2px 5px; color: #1b1b11; background: #f2db24; font-weight: 700; }
