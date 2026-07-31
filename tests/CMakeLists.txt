@@ -18,3 +18,18 @@ target_link_libraries(
         GTest::gtest_main
 )
 gtest_discover_tests(vna_application_tests)
+
+add_executable(
+    vna_httplib_compatibility_tests
+    integration/httplib_compatibility_test.cpp
+)
+target_link_libraries(
+    vna_httplib_compatibility_tests
+    PRIVATE
+        httplib::httplib
+        GTest::gtest_main
+)
+gtest_discover_tests(
+    vna_httplib_compatibility_tests
+    PROPERTIES TIMEOUT 10
+)
