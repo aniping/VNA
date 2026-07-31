@@ -3,7 +3,11 @@ import { computed } from 'vue'
 import type { StateSnapshot } from '../api/vnaApi'
 import DiagramPane from './DiagramPane.vue'
 
-const props = defineProps<{ state: StateSnapshot | null }>()
+const props = defineProps<{
+  state: StateSnapshot | null
+  activeTraceId?: number
+}>()
+const emit = defineEmits<{ selectTrace: [traceId: number] }>()
 const kinds = ['smith', 'cartesian', 'cartesian', 'smith'] as const
 const channel = computed(() => props.state?.instrument.channels[0])
 
@@ -33,6 +37,8 @@ function kindForPane(index: number): 'cartesian' | 'smith' {
       :channel="channel"
       :trace="traceForPane(paneNumber - 1)"
       :measurement="measurementForPane(paneNumber - 1)"
+      :active="traceForPane(paneNumber - 1)?.id === activeTraceId"
+      @select="emit('selectTrace', $event)"
     />
   </section>
 </template>

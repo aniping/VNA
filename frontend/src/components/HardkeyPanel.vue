@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { hardkeyGroups, type HardkeyName } from './hardkeyModel'
 
-defineProps<{ activeKey: HardkeyName | null; hasChannel: boolean }>()
+defineProps<{ activeKey: HardkeyName | null; hasChannel: boolean; hasTrace: boolean }>()
 const emit = defineEmits<{ select: [key: HardkeyName] }>()
 </script>
 
@@ -15,7 +15,9 @@ const emit = defineEmits<{ select: [key: HardkeyName] }>()
           :key="key.label"
           type="button"
           :class="[key.accent, { active: activeKey === key.label }]"
-          :disabled="!key.enabled || (key.requiresChannel && !hasChannel)"
+          :disabled="!key.enabled
+            || (key.requiresChannel && !hasChannel)
+            || (key.requiresTrace && !hasTrace)"
           @click="emit('select', key.label)"
         >
           {{ key.label }}

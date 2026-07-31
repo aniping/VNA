@@ -1,8 +1,14 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import type { StateSnapshot, SweepSettings, TraceSetup as TraceSetupModel } from '../api/vnaApi'
+import { computed, ref, watch } from 'vue'
+import type {
+  StateSnapshot,
+  SweepSettings,
+  TraceFormat,
+  TraceSetup as TraceSetupModel,
+} from '../api/vnaApi'
 import ChannelSofttool from './ChannelSofttool.vue'
 import DiagramGrid from './DiagramGrid.vue'
+import FormatSofttool from './FormatSofttool.vue'
 import HardkeyPanel from './HardkeyPanel.vue'
 import MeasurementSofttool from './MeasurementSofttool.vue'
 import StimulusSofttool from './StimulusSofttool.vue'
@@ -25,16 +31,23 @@ const emit = defineEmits<{
   createChannel: [sweep: SweepSettings]
   createTrace: [setup: TraceSetupModel]
   updateSweep: [channelId: number, sweep: SweepSettings]
+  updateTraceFormat: [traceId: number, format: TraceFormat]
 }>()
 
 const toolbar = ['↶', '↷', 'Zoom', 'Max', '+ Trace', '+ Marker', 'Delete', 'Print', 'Save', 'Recall']
 const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
 const channel = computed(() => props.state?.instrument.channels[0])
-const activeSofttool = ref<'measurement' | 'stimulus' | 'channel' | null>('measurement')
+const activeTraceId = ref<number>()
+const activeTrace = computed(() => {
+  const traces = props.state?.instrument.traces ?? []
+  return traces.find((trace) => trace.id === activeTraceId.value) ?? traces[0]
+})
+const activeSofttool = ref<'measurement' | 'format' | 'stimulus' | 'channel' | null>('measurement')
 const stimulusKey = ref<StimulusKey>('Start')
 const channelKey = ref<ChannelKey>('Power / Bw / Avg')
 const activeKey = computed(() => {
   if (activeSofttool.value === 'measurement') return 'Meas'
+  if (activeSofttool.value === 'format') return 'Format'
   if (activeSofttool.value === 'stimulus') return stimulusKey.value
   if (activeSofttool.value === 'channel') return channelKey.value
   return null
@@ -46,9 +59,17 @@ const entityCounts = computed(() => {
     + ` · Trc ${instrument.traces.length} · Win ${instrument.windows.length}`
 })
 
+watch(activeTrace, (trace) => {
+  activeTraceId.value = trace?.id
+}, { immediate: true })
+
 function selectHardkey(key: HardkeyName): void {
   if (key === 'Meas') {
     activeSofttool.value = activeSofttool.value === 'measurement' ? null : 'measurement'
+    return
+  }
+  if (key === 'Format' && activeTrace.value) {
+    activeSofttool.value = activeSofttool.value === 'format' ? null : 'format'
     return
   }
   if (isStimulusKey(key) && channel.value) {
@@ -64,6 +85,10 @@ function selectHardkey(key: HardkeyName): void {
 function forwardSweepUpdate(channelId: number, sweep: SweepSettings): void {
   emit('updateSweep', channelId, sweep)
 }
+
+function forwardTraceFormatUpdate(traceId: number, format: TraceFormat): void {
+  emit('updateTraceFormat', traceId, format)
+}
 </script>
 
 <template>
@@ -75,7 +100,11 @@ function forwardSweepUpdate(channelId: number, sweep: SweepSettings): void {
           <span class="toolbar-spacer" />
           <span class="instrument-title">Vector Network Analyzer</span>
         </header>
-        <DiagramGrid :state="state" />
+        <DiagramGrid
+          :state="state"
+          :active-trace-id="activeTrace?.id"
+          @select-trace="activeTraceId = $event"
+        />
       </div>
 
       <MeasurementSofttool
@@ -85,6 +114,13 @@ function forwardSweepUpdate(channelId: number, sweep: SweepSettings): void {
         :busy="busy"
         @create-channel="emit('createChannel', $event)"
         @create-trace="emit('createTrace', $event)"
+      />
+      <FormatSofttool
+        v-else-if="activeSofttool === 'format' && activeTrace"
+        :trace="activeTrace"
+        :disabled="disabled"
+        :busy="busy"
+        @update-format="forwardTraceFormatUpdate"
       />
       <StimulusSofttool
         v-else-if="activeSofttool === 'stimulus' && channel"
@@ -106,6 +142,7 @@ function forwardSweepUpdate(channelId: number, sweep: SweepSettings): void {
       <HardkeyPanel
         :active-key="activeKey"
         :has-channel="Boolean(channel)"
+        :has-trace="Boolean(activeTrace)"
         @select="selectHardkey"
       />
     </div>
