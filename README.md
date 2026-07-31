@@ -76,6 +76,11 @@ Linux/GCC：
 `/api/v1/commands` 的失败响应保留 `status` 与 `stateRevision`，并提供稳定的
 `errorCode` 供客户端区分具体错误。
 
+当前可用 `updateTraceScalePerDivision` 命令更新 Log Magnitude Trace 的
+Scale/Div，payload 为 `{"traceId": <id>, "scalePerDivision": <number>}`。
+`/api/v1/state` 会在每条 Trace 上返回 `scale`；Log Magnitude 包含完整 dB
+显示比例快照，尚未开放该能力的 Phase 与 Smith 返回 `null`。
+
 ## 前端开发
 
 需要 Node.js 20.19 或更高版本和 pnpm 11.9.0。保持 `vna-server` 运行，另开

@@ -94,6 +94,12 @@ application::CommandPayload commandPayloadFromJson(
                 payload.at("traceId").get<std::uint64_t>()},
             traceFormatFromJson(payload)};
     }
+    if (type == "updateTraceScalePerDivision") {
+        return application::UpdateTraceScalePerDivisionCommand{
+            display_model::TraceId{
+                payload.at("traceId").get<std::uint64_t>()},
+            payload.at("scalePerDivision").get<double>()};
+    }
     throw std::invalid_argument{"unsupported command type"};
 }
 

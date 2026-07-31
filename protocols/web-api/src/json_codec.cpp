@@ -53,12 +53,36 @@ const char* traceFormatName(display_model::TraceFormat format) {
     return "unknown";
 }
 
+const char* scaleUnitName(display_model::ScaleUnit unit) {
+    switch (unit) {
+        case display_model::ScaleUnit::Decibel:
+            return "dB";
+    }
+    return "unknown";
+}
+
+Json scaleToJson(const display_model::CartesianScaleSnapshot& scale) {
+    return {
+        {"scalePerDivision", scale.scalePerDivision},
+        {"referenceValue", scale.referenceValue},
+        {"referencePosition", scale.referencePosition},
+        {"minimum", scale.minimum},
+        {"maximum", scale.maximum},
+        {"unit", scaleUnitName(scale.unit)},
+    };
+}
+
 Json traceToJson(const display_model::TraceSnapshot& trace) {
+    Json scale = nullptr;
+    if (trace.scale.has_value()) {
+        scale = scaleToJson(*trace.scale);
+    }
     return {
         {"id", trace.id.value()},
         {"windowId", trace.windowId.value()},
         {"measurementId", trace.measurementId.value()},
         {"format", traceFormatName(trace.format)},
+        {"scale", std::move(scale)},
     };
 }
 
