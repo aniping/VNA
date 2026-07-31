@@ -45,10 +45,9 @@ void deliver(const std::shared_ptr<FenceSubscriptionState>& subscription) {
     removeSubscription(subscription);
 }
 
-std::vector<std::shared_ptr<FenceSubscriptionState>> claimTerminal(
+std::shared_ptr<FenceSubscriptionState> claimNextTerminal(
     const std::shared_ptr<FenceCoordinator>& coordinator,
     std::uint64_t operationId) {
-    std::vector<std::shared_ptr<FenceSubscriptionState>> ready;
     const std::scoped_lock lock{coordinator->mutex};
     auto candidate = coordinator->subscriptions.begin();
     while (candidate != coordinator->subscriptions.end()) {
@@ -62,13 +61,26 @@ std::vector<std::shared_ptr<FenceSubscriptionState>> claimTerminal(
             if (subscription->phase == DeliveryPhase::Pending &&
                 subscription->outstandingIds.empty()) {
                 subscription->phase = DeliveryPhase::Claimed;
-                ready.push_back(subscription);
+                coordinator->subscriptions.erase(candidate);
+                return subscription;
             }
         }
         candidate = remove ? coordinator->subscriptions.erase(candidate)
                            : std::next(candidate);
     }
-    return ready;
+    return {};
+}
+
+void deliverTerminal(
+    const std::shared_ptr<FenceCoordinator>& coordinator,
+    std::uint64_t operationId) {
+    // Claim and deliver one subscription at a time. A shared_ptr move and the
+    // vector erasures above do not allocate, so once an Operation is terminal
+    // no ready-list allocation can strand a claimed fence without delivery.
+    while (const auto subscription =
+               claimNextTerminal(coordinator, operationId)) {
+        deliver(subscription);
+    }
 }
 
 }  // namespace
@@ -151,7 +163,6 @@ FenceSubscription OperationManager::subscribe(
 OperationResult OperationManager::complete(
     OperationId operationId,
     OperationTerminalOutcome outcome) {
-    std::vector<std::shared_ptr<FenceSubscriptionState>> ready;
     std::optional<OperationSnapshot> completed;
     {
         const std::scoped_lock lock{mutex_};
@@ -176,16 +187,12 @@ OperationResult OperationManager::complete(
             operation->second.state =
                 std::forward<decltype(terminal)>(terminal);
         }, std::move(outcome));
-        ready = claimTerminal(fenceCoordinator_, operationId.value());
     }
-    for (const auto& subscription : ready) {
-        deliver(subscription);
-    }
+    deliverTerminal(fenceCoordinator_, operationId.value());
     return *completed;
 }
 
 void OperationManager::abandonQueued(OperationId operationId) {
-    std::vector<std::shared_ptr<FenceSubscriptionState>> ready;
     {
         const std::scoped_lock lock{mutex_};
         const auto operation = operations_.find(operationId.value());
@@ -195,11 +202,8 @@ void OperationManager::abandonQueued(OperationId operationId) {
             return;
         }
         operation->second.state = OperationCanceled{};
-        ready = claimTerminal(fenceCoordinator_, operationId.value());
     }
-    for (const auto& subscription : ready) {
-        deliver(subscription);
-    }
+    deliverTerminal(fenceCoordinator_, operationId.value());
 }
 
 }  // namespace vna::application
