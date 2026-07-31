@@ -32,6 +32,18 @@ target_link_libraries(
 gtest_discover_tests(vna_simulation_tests NO_PRETTY_VALUES)
 
 add_executable(
+    vna_measurement_tests
+    unit/measurement/s11_synthesizer_test.cpp
+)
+target_link_libraries(
+    vna_measurement_tests
+    PRIVATE
+        vna::measurement
+        GTest::gtest_main
+)
+gtest_discover_tests(vna_measurement_tests)
+
+add_executable(
     vna_display_model_tests
     unit/display_model/display_scale_test.cpp
     unit/display_model/display_workspace_test.cpp

@@ -88,6 +88,8 @@ enum class FrameErrorCode {
     SampleCountMismatch,
     NonFiniteSample,
     InvalidMeasurementId,
+    MeasurementChannelMismatch,
+    ZeroReference,
     UnsupportedMeasurementType,
 };
 
