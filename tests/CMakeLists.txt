@@ -8,6 +8,18 @@ target_link_libraries(vna_domain_tests PRIVATE vna::domain GTest::gtest_main)
 gtest_discover_tests(vna_domain_tests)
 
 add_executable(
+    vna_frame_contract_tests
+    unit/frames/frame_contract_test.cpp
+)
+target_link_libraries(
+    vna_frame_contract_tests
+    PRIVATE
+        vna::frame_contracts
+        GTest::gtest_main
+)
+gtest_discover_tests(vna_frame_contract_tests NO_PRETTY_VALUES)
+
+add_executable(
     vna_display_model_tests
     unit/display_model/display_scale_test.cpp
     unit/display_model/display_workspace_test.cpp
