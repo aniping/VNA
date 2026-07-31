@@ -94,6 +94,7 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
 .menu-bar { border-top: 1px solid #0c1114; border-bottom: 0; }
 .menu-bar button { min-width: 74px; }
 .menu-bar > span, .menu-bar time { align-self: center; margin: 0 7px; font-size: 12px; }
+.menu-bar .entity-counts { color: #c5d0d4; }
 .status-pill { padding: 3px 7px; border-radius: 2px; font-weight: 700; }
 .status-pill.offline { color: #ffd9d9; background: #8b2424; }
 .status-pill.connecting { color: #16130a; background: #dfa81f; }

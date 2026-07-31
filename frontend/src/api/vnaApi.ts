@@ -11,13 +11,30 @@ export interface ChannelSnapshot {
   sweep: SweepSettings
 }
 
+export interface MeasurementSnapshot {
+  id: number
+  channelId: number
+  type: string
+}
+
+export interface WindowSnapshot {
+  id: number
+}
+
+export interface TraceSnapshot {
+  id: number
+  windowId: number
+  measurementId: number
+  format: string
+}
+
 export interface StateSnapshot {
   stateRevision: number
   instrument: {
     channels: ChannelSnapshot[]
-    measurements: unknown[]
-    windows: unknown[]
-    traces: unknown[]
+    measurements: MeasurementSnapshot[]
+    windows: WindowSnapshot[]
+    traces: TraceSnapshot[]
   }
 }
 

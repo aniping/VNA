@@ -17,6 +17,23 @@ const toolbar = ['↶', '↷', 'Zoom', 'Max', '+ Trace', '+ Marker', 'Delete', '
 const softkeys = ['S-Parameters', 'Wave Quantities', 'Ratios', 'Receivers', 'More…']
 const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
 const channel = computed(() => props.state?.instrument.channels[0])
+const trace = computed(() => props.state?.instrument.traces[0])
+const windowState = computed(() => props.state?.instrument.windows[0])
+const measurement = computed(() => props.state?.instrument.measurements.find(
+  (item) => item.id === trace.value?.measurementId,
+))
+
+const traceName = computed(() => {
+  if (!trace.value) return 'No active trace'
+  return `${measurement.value?.type ?? 'Unknown'} · ${trace.value.format}`
+})
+
+const entityCounts = computed(() => {
+  const instrument = props.state?.instrument
+  if (!instrument) return 'Ch — · Meas — · Trc — · Win —'
+  return `Ch ${instrument.channels.length} · Meas ${instrument.measurements.length}`
+    + ` · Trc ${instrument.traces.length} · Win ${instrument.windows.length}`
+})
 
 function frequency(value: number | undefined): string {
   if (value === undefined) return '—'
@@ -37,11 +54,11 @@ function frequency(value: number | undefined): string {
     <div class="measurement-workspace">
       <section class="diagram" aria-label="Cartesian measurement diagram">
         <header class="trace-strip">
-          <span class="trace-index">Trc1</span>
-          <span class="trace-name">No active trace</span>
+          <span class="trace-index">{{ trace ? `Trc${trace.id}` : 'Trc —' }}</span>
+          <span class="trace-name">{{ traceName }}</span>
         </header>
         <div class="plot-area">
-          <span class="plot-reference">1</span>
+          <span class="plot-reference">{{ windowState?.id ?? '—' }}</span>
           <span class="plot-empty">No measurement data</span>
         </div>
         <footer class="channel-row">
@@ -83,6 +100,7 @@ function frequency(value: number | undefined): string {
         {{ connection.toUpperCase() }}
       </span>
       <span>Revision {{ state?.stateRevision ?? '—' }}</span>
+      <span class="entity-counts">{{ entityCounts }}</span>
       <time>{{ serviceError || 'Local session' }}</time>
     </nav>
   </section>
