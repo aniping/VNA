@@ -66,7 +66,8 @@
 - 基于 CMake 的 Windows/Linux 统一构建入口。
 - Windows/MinGW GCC 与 Linux/GCC 的持续集成构建矩阵。
 - `cpp-httplib` 在两个平台上的协议适配器集成测试。
-- `cpp-httplib` 的 HTTP、WebSocket 和 TLS 兼容性冒烟测试。
+- `cpp-httplib` 的 HTTP、WebSocket 兼容性冒烟测试。
+- 启用 HTTPS、WSS 或非回环地址监听前完成双平台 TLS 冒烟测试。
 - 结构化日志和统一关联标识。
 - 核心领域单元测试。
 - Backend 契约测试。
@@ -104,6 +105,22 @@
 - 非法频率范围、点数和悬空引用被领域规则拒绝。
 - 每次成功状态事务只递增一次 `stateRevision`。
 
+### M1.5：可测试的本地网页壳
+
+交付：仅监听回环地址的最小 `vna-server`、StateSnapshot REST 接口和
+Vue 工作台骨架。前端必须读取真实服务端状态，不维护静态业务 Mock。
+
+验证：
+
+- `GET /api/v1/health` 返回服务可用状态。
+- `GET /api/v1/state` 返回当前完整 StateSnapshot。
+- 页面显示连接状态、`stateRevision` 和核心实体数量。
+- 页面发出的最小配置命令经 `POST /api/v1/commands` 进入 CommandBus。
+- Windows/MinGW GCC 与 Linux/GCC 均能启动服务并构建前端。
+
+该切片只用于尽早验证交互和进度，使用本地 HTTP。HTTPS、WSS 和远程监听
+仍由后续 TLS 兼容性与访问安全切片控制。
+
 ### M2：模拟采集
 
 交付：CapabilitySet、Measurement Planner、SweepPlan 和最小 Simulation Backend。
@@ -136,6 +153,7 @@
 - 慢客户端在连续扫频中只丢弃过时显示帧，不影响服务端完整帧。
 - HTTP/WebSocket Handler 不执行扫频或数据处理，长操作只负责入队并返回 `operationId`。
 - 断线重连恢复一致状态，无需页面重建业务真值。
+- 启用 HTTPS、WSS 或远程监听前，双平台 TLS 冒烟测试通过。
 
 ### M5：操作语义与最小 SCPI
 

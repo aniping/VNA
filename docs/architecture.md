@@ -160,7 +160,7 @@ drivers/platform/
 
 第一阶段采用 [`yhirose/cpp-httplib`](https://github.com/yhirose/cpp-httplib) 实现 HTTP/HTTPS、REST、文件流和 WebSocket/WSS。依赖版本必须由工程清单固定，且只允许出现在 `protocols/web-api`、`protocols/websocket` 等交互层适配器中，内部 Command、Query、Event 和 Frame 契约不得暴露 `httplib` 类型。
 
-`cpp-httplib` 官方当前未支持或测试 MinGW，因此该组合必须先通过 Windows/MinGW 与 Linux/GCC 的 HTTP、WebSocket 和 TLS 兼容性测试。验证通过的版本必须固定；若无法满足要求，则只替换协议适配器，不改变内部契约。
+`cpp-httplib` 官方当前未支持或测试 MinGW，因此该组合必须通过 Windows/MinGW 与 Linux/GCC 的兼容性测试。早期本地 UI 先验证 HTTP 与 WebSocket；启用 HTTPS、WSS 或非回环地址监听前，TLS 必须在两个平台通过冒烟测试。验证通过的版本必须固定；若无法满足要求，则只替换协议适配器，不改变内部契约。
 
 `cpp-httplib` 使用阻塞式套接字 I/O，WebSocket 连接会长期占用线程。因此：
 
