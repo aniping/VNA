@@ -90,6 +90,7 @@ enum class FrameErrorCode {
     InvalidMeasurementId,
     MeasurementChannelMismatch,
     ZeroReference,
+    NonFiniteTraceValue,
     UnsupportedMeasurementType,
 };
 
