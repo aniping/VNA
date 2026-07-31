@@ -92,6 +92,10 @@ pnpm run dev
 两列虚拟 Hard Key。点击 `Meas` 可关闭或重新打开 Softtool；已有 Channel 时可在
 S 参数区创建 Trace。采样后端接通前只显示坐标网格，不绘制静态测量曲线。
 
+`Start`、`Stop`、`Center` 和 `Span` Hard Key 已连接到真实 Channel 状态。修改
+Center 时保持当前 Span，修改 Span 时保持当前 Center，并通过 revision 冲突检查
+提交完整扫频设置。
+
 执行前端类型检查和生产构建：
 
 ```powershell
