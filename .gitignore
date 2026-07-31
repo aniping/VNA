@@ -36,6 +36,11 @@ compile_commands.json
 .DS_Store
 Thumbs.db
 /archive.zip
+/tmp/
+
+# Local vendor manuals used only as design/protocol references
+/ZNA_UserManual_en_41.pdf
+/Remote_Control_SCPI_GettingStarted_en_04.pdf
 
 # Frontend dependencies and build output
 /frontend/node_modules/
