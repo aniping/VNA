@@ -33,3 +33,15 @@ gtest_discover_tests(
     vna_httplib_compatibility_tests
     PROPERTIES TIMEOUT 10
 )
+
+add_executable(
+    vna_web_api_tests
+    integration/web_api_test.cpp
+)
+target_link_libraries(
+    vna_web_api_tests
+    PRIVATE
+        vna::web_api
+        GTest::gtest_main
+)
+gtest_discover_tests(vna_web_api_tests PROPERTIES TIMEOUT 10)
