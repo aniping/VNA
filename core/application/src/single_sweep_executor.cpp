@@ -175,15 +175,10 @@ private:
     }
 
     void abandon(OperationId operationId) noexcept {
-        // Snapshot copying may throw after either state mutation. Always try
-        // both transitions; complete leaves a terminal record and wakes any
-        // fence that captured the Operation before submit reported failure.
+        // The Pending never reached the worker, so no backend resource needs
+        // release. The manager owns the no-snapshot terminal/fence transition.
         try {
-            (void)operations_.requestCancel(operationId);
-        } catch (...) {
-        }
-        try {
-            (void)operations_.complete(operationId, OperationCanceled{});
+            operations_.abandonQueued(operationId);
         } catch (...) {
         }
     }

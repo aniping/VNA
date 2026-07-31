@@ -167,17 +167,39 @@ OperationResult OperationManager::complete(
         if ((!running && !cancelRequested) || (running && canceled)) {
             return OperationError{.code = OperationErrorCode::InvalidTransition};
         }
-        std::visit([&operation](auto&& terminal) {
+        // Copy every potentially allocating correlation field before changing
+        // state. After mutation, fence claim/delivery no longer depends on
+        // constructing the caller's return snapshot.
+        completed.emplace(operation->second);
+        std::visit([&operation, &completed](auto&& terminal) {
+            completed->state = terminal;
             operation->second.state =
                 std::forward<decltype(terminal)>(terminal);
         }, std::move(outcome));
-        completed = operation->second;
         ready = claimTerminal(fenceCoordinator_, operationId.value());
     }
     for (const auto& subscription : ready) {
         deliver(subscription);
     }
     return *completed;
+}
+
+void OperationManager::abandonQueued(OperationId operationId) {
+    std::vector<std::shared_ptr<FenceSubscriptionState>> ready;
+    {
+        const std::scoped_lock lock{mutex_};
+        const auto operation = operations_.find(operationId.value());
+        if (operation == operations_.end() ||
+            !std::holds_alternative<OperationQueued>(
+                operation->second.state)) {
+            return;
+        }
+        operation->second.state = OperationCanceled{};
+        ready = claimTerminal(fenceCoordinator_, operationId.value());
+    }
+    for (const auto& subscription : ready) {
+        deliver(subscription);
+    }
 }
 
 }  // namespace vna::application
