@@ -2,6 +2,12 @@ cmake_minimum_required(VERSION 3.25)
 
 project(VectorNetworkAnalyzer VERSION 0.1.0 LANGUAGES CXX)
 
+option(
+    VNA_ENABLE_RELEASE_INSTALL
+    "Enable the frozen portable release install rules"
+    OFF
+)
+
 if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     message(FATAL_ERROR "VectorNetworkAnalyzer currently requires GCC on Windows and Linux")
 endif()
@@ -21,6 +27,20 @@ add_subdirectory(infrastructure/platform)
 add_subdirectory(infrastructure/logging)
 add_subdirectory(protocols/web-api)
 add_subdirectory(apps/vna-server)
+
+if(VNA_ENABLE_RELEASE_INSTALL)
+    include(cmake/release-install.cmake)
+endif()
+
+# This target is intentionally outside ALL. Ordinary builds stay intermediate;
+# only an explicit request may replace release/VectorNetworkAnalyzer.
+add_custom_target(
+    package-release
+    COMMAND ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/cmake/package-release.cmake
+    USES_TERMINAL
+    COMMENT "Build and validate the portable release directory"
+    VERBATIM
+)
 
 include(CTest)
 if(BUILD_TESTING)
