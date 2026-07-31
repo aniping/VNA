@@ -12,6 +12,7 @@ add_subdirectory(third-part)
 add_subdirectory(core/domain)
 add_subdirectory(core/application)
 add_subdirectory(protocols/web-api)
+add_subdirectory(apps/vna-server)
 
 include(CTest)
 if(BUILD_TESTING)

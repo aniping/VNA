@@ -54,3 +54,12 @@ ctest --test-dir build --output-on-failure
 ```
 
 在 Windows 上执行前，请确认 `g++` 和 `ninja` 来自同一套 MinGW 工具链。
+
+启动本地服务：
+
+```powershell
+.\build\apps\vna-server\vna-server.exe
+```
+
+服务仅监听 `127.0.0.1:8080`。可通过 `/api/v1/health`、`/api/v1/state`
+和 `/api/v1/commands` 验证当前 HTTP 切片。
