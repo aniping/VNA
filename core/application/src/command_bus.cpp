@@ -1,8 +1,26 @@
 #include <vna/application/command_bus.hpp>
 
+#include "command_idempotency_internal.hpp"
+
 #include <exception>
 
 namespace vna::application {
+namespace {
+
+bool isCacheable(const CommandResult& result) noexcept {
+    if (std::holds_alternative<CommandSuccess>(result.outcome)) {
+        return true;
+    }
+    const auto& error = std::get<CommandError>(result.outcome);
+    if (std::holds_alternative<domain::DomainError>(error) ||
+        std::holds_alternative<display_model::DisplayError>(error)) {
+        return true;
+    }
+    return std::get<ApplicationError>(error).code ==
+        ApplicationErrorCode::StateRevisionConflict;
+}
+
+}  // namespace
 
 CommandErrorCode commandErrorCode(const CommandError& error) noexcept {
     const auto* domainError = std::get_if<domain::DomainError>(&error);
@@ -31,6 +49,8 @@ CommandErrorCode commandErrorCode(const CommandError& error) noexcept {
         }
     }
     switch (std::get<ApplicationError>(error).code) {
+        case ApplicationErrorCode::CommandIdReuse:
+            return CommandErrorCode::CommandIdReuse;
         case ApplicationErrorCode::StateRevisionConflict:
             return CommandErrorCode::StateRevisionConflict;
         case ApplicationErrorCode::WrongInstrument:
@@ -39,8 +59,14 @@ CommandErrorCode commandErrorCode(const CommandError& error) noexcept {
     std::terminate();
 }
 
-CommandBus::CommandBus(InstrumentId instrumentId)
-    : instrumentId_(std::move(instrumentId)) {}
+CommandBus::CommandBus(
+    InstrumentId instrumentId,
+    std::size_t idempotencyCapacity)
+    : instrumentId_(std::move(instrumentId)),
+      idempotency_(
+          std::make_unique<IdempotencyStore>(idempotencyCapacity)) {}
+
+CommandBus::~CommandBus() = default;
 
 CommandResult CommandBus::dispatch(const CommandEnvelope& command) {
     const std::scoped_lock lock{mutex_};
@@ -48,14 +74,29 @@ CommandResult CommandBus::dispatch(const CommandEnvelope& command) {
         return applicationError(ApplicationErrorCode::WrongInstrument);
     }
 
-    if (command.expectedStateRevision.has_value() &&
-        command.expectedStateRevision.value() != stateRevision_) {
-        return applicationError(ApplicationErrorCode::StateRevisionConflict);
+    const auto lookup = idempotency_->lookup(command);
+    if (lookup.replay != nullptr) {
+        return *lookup.replay;
+    }
+    if (lookup.keyFound) {
+        return applicationError(ApplicationErrorCode::CommandIdReuse);
     }
 
-    return std::visit(
+    if (command.expectedStateRevision.has_value() &&
+        command.expectedStateRevision.value() != stateRevision_) {
+        const auto result =
+            applicationError(ApplicationErrorCode::StateRevisionConflict);
+        idempotency_->remember(command, result);
+        return result;
+    }
+
+    const auto result = std::visit(
         [this](const auto& payload) { return execute(payload); },
         command.payload);
+    if (isCacheable(result)) {
+        idempotency_->remember(command, result);
+    }
+    return result;
 }
 
 CommandResult CommandBus::execute(const CreateChannelCommand& command) {
@@ -168,6 +209,11 @@ StateSnapshot CommandBus::snapshot() const {
         .instrument = instrument_.snapshot(),
         .display = displayWorkspace_.snapshot(),
     };
+}
+
+CommandBusStats CommandBus::stats() const {
+    const std::scoped_lock lock{mutex_};
+    return idempotency_->stats();
 }
 
 }  // namespace vna::application

@@ -24,6 +24,7 @@ add_executable(
     vna_application_tests
     unit/application/channel_command_test.cpp
     unit/application/command_bus_test.cpp
+    unit/application/command_idempotency_test.cpp
     unit/application/command_envelope_test.cpp
     unit/application/command_error_test.cpp
     unit/application/completion_fence_test.cpp

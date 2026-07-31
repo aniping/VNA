@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <limits>
+#include <string>
 #include <utility>
 
 #include <vna/application/command_bus.hpp>
@@ -31,11 +32,11 @@ constexpr domain::SweepSettings validSweep() {
 }
 
 CommandEnvelope command(
-    const char* id,
+    std::string id,
     std::uint64_t revision,
     CommandPayload payload) {
     return {
-        .commandId = CommandId{id},
+        .commandId = CommandId{std::move(id)},
         .sessionId = SessionId{"session-1"},
         .instrumentId = InstrumentId{"instrument-1"},
         .expectedStateRevision = revision,
@@ -63,8 +64,9 @@ protected:
     }
 
     display_model::TraceId createTrace(display_model::TraceFormat format) {
+        const auto commandId = "create-trace-" + std::to_string(revision_);
         const auto result = commandBus_.dispatch(command(
-            "create-trace",
+            commandId,
             revision_,
             CreateTraceCommand{
                 display_model::WindowId{1},

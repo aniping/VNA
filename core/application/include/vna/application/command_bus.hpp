@@ -1,6 +1,8 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
@@ -107,6 +109,7 @@ struct CommandEnvelope {
 };
 
 enum class ApplicationErrorCode {
+    CommandIdReuse,
     StateRevisionConflict,
     WrongInstrument,
 };
@@ -119,6 +122,7 @@ enum class CommandErrorCode {
     TraceNotFound,
     InvalidScalePerDivision,
     ScaleNotSupportedForFormat,
+    CommandIdReuse,
     StateRevisionConflict,
     WrongInstrument,
 };
@@ -151,14 +155,25 @@ struct StateSnapshot {
     display_model::DisplayWorkspaceSnapshot display;
 };
 
+struct CommandBusStats {
+    std::size_t idempotencyEntries{};
+    std::uint64_t idempotencyEvictions{};
+};
+
 class CommandBus {
 public:
-    explicit CommandBus(InstrumentId instrumentId);
+    explicit CommandBus(
+        InstrumentId instrumentId,
+        std::size_t idempotencyCapacity = 1024);
+    ~CommandBus();
 
     [[nodiscard]] CommandResult dispatch(const CommandEnvelope& command);
     [[nodiscard]] StateSnapshot snapshot() const;
+    [[nodiscard]] CommandBusStats stats() const;
 
 private:
+    class IdempotencyStore;
+
     [[nodiscard]] CommandResult execute(const CreateChannelCommand& command);
     [[nodiscard]] CommandResult execute(
         const UpdateChannelSweepCommand& command);
@@ -183,6 +198,7 @@ private:
     domain::Instrument instrument_;
     display_model::DisplayWorkspace displayWorkspace_;
     std::uint64_t stateRevision_{0};
+    std::unique_ptr<IdempotencyStore> idempotency_;
 };
 
 }  // namespace vna::application

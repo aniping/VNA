@@ -142,6 +142,8 @@ CommandOutcomeInfo commandOutcomeInfo(
         case application::CommandErrorCode::ScaleNotSupportedForFormat:
             return {
                 "validationError", 422, "scale-not-supported-for-format"};
+        case application::CommandErrorCode::CommandIdReuse:
+            return {"conflict", 409, "command-id-reuse"};
         case application::CommandErrorCode::StateRevisionConflict:
             return {"conflict", 409, "state-revision-conflict"};
         case application::CommandErrorCode::WrongInstrument:
