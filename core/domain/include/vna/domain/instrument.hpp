@@ -111,6 +111,9 @@ struct InstrumentSnapshot {
 class Instrument {
 public:
     [[nodiscard]] Result<ChannelId> createChannel(SweepSettings settings);
+    [[nodiscard]] Result<ChannelId> updateChannelSweep(
+        ChannelId channelId,
+        SweepSettings settings);
     [[nodiscard]] Result<MeasurementId> createMeasurement(
         ChannelId channelId,
         MeasurementType type);

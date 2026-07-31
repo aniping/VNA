@@ -39,6 +39,11 @@ struct CreateChannelCommand {
     domain::SweepSettings sweep;
 };
 
+struct UpdateChannelSweepCommand {
+    domain::ChannelId channelId;
+    domain::SweepSettings sweep;
+};
+
 struct CreateMeasurementCommand {
     domain::ChannelId channelId;
     domain::MeasurementType type;
@@ -58,6 +63,7 @@ struct RemoveTraceCommand {
 
 using CommandPayload = std::variant<
     CreateChannelCommand,
+    UpdateChannelSweepCommand,
     CreateMeasurementCommand,
     CreateWindowCommand,
     CreateTraceCommand,
@@ -107,6 +113,8 @@ public:
 
 private:
     [[nodiscard]] CommandResult execute(const CreateChannelCommand& command);
+    [[nodiscard]] CommandResult execute(
+        const UpdateChannelSweepCommand& command);
     [[nodiscard]] CommandResult execute(
         const CreateMeasurementCommand& command);
     [[nodiscard]] CommandResult execute(const CreateWindowCommand& command);

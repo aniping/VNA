@@ -35,6 +35,15 @@ CommandResult CommandBus::execute(const CreateChannelCommand& command) {
     return succeeded(CommandValue{channel.value()});
 }
 
+CommandResult CommandBus::execute(const UpdateChannelSweepCommand& command) {
+    const auto channel =
+        instrument_.updateChannelSweep(command.channelId, command.sweep);
+    if (!channel.hasValue()) {
+        return validationError();
+    }
+    return succeeded(CommandValue{channel.value()});
+}
+
 CommandResult CommandBus::execute(const CreateMeasurementCommand& command) {
     const auto measurement =
         instrument_.createMeasurement(command.channelId, command.type);

@@ -9,6 +9,7 @@ gtest_discover_tests(vna_domain_tests)
 
 add_executable(
     vna_application_tests
+    unit/application/channel_command_test.cpp
     unit/application/command_bus_test.cpp
 )
 target_link_libraries(

@@ -3,10 +3,17 @@
 #include <algorithm>
 
 namespace vna::domain {
+namespace {
+
+bool isValidSweep(const SweepSettings& settings) {
+    return settings.startFrequencyHz < settings.stopFrequencyHz &&
+           settings.points >= 2;
+}
+
+}  // namespace
 
 Result<ChannelId> Instrument::createChannel(SweepSettings settings) {
-    if (settings.startFrequencyHz >= settings.stopFrequencyHz ||
-        settings.points < 2) {
+    if (!isValidSweep(settings)) {
         return Result<ChannelId>{
             DomainError{.code = DomainErrorCode::InvalidSweepSettings}};
     }
@@ -17,6 +24,27 @@ Result<ChannelId> Instrument::createChannel(SweepSettings settings) {
         .sweep = settings,
     });
     return Result<ChannelId>{id};
+}
+
+Result<ChannelId> Instrument::updateChannelSweep(
+    ChannelId channelId,
+    SweepSettings settings) {
+    if (!isValidSweep(settings)) {
+        return Result<ChannelId>{
+            DomainError{.code = DomainErrorCode::InvalidSweepSettings}};
+    }
+    const auto channel = std::find_if(
+        state_.channels.begin(),
+        state_.channels.end(),
+        [channelId](const ChannelSnapshot& candidate) {
+            return candidate.id == channelId;
+        });
+    if (channel == state_.channels.end()) {
+        return Result<ChannelId>{
+            DomainError{.code = DomainErrorCode::ChannelNotFound}};
+    }
+    channel->sweep = settings;
+    return Result<ChannelId>{channelId};
 }
 
 Result<MeasurementId> Instrument::createMeasurement(
