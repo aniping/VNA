@@ -29,6 +29,7 @@ add_executable(
     unit/application/completion_fence_test.cpp
     unit/application/completion_fence_hardening_test.cpp
     unit/application/operation_manager_test.cpp
+    unit/application/text_id_test.cpp
     unit/application/trace_command_test.cpp
     unit/application/trace_scale_command_test.cpp
 )
@@ -87,6 +88,7 @@ add_executable(
     vna_web_api_tests
     integration/web_api_error_test.cpp
     integration/web_api_scale_test.cpp
+    integration/web_api_text_id_test.cpp
     integration/web_api_test.cpp
 )
 target_link_libraries(

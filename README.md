@@ -75,6 +75,8 @@ Linux/GCC：
 和 `/api/v1/commands` 验证当前 HTTP 切片。
 `/api/v1/commands` 的失败响应保留 `status` 与 `stateRevision`，并提供稳定的
 `errorCode` 供客户端区分具体错误。
+`commandId`、`sessionId` 和 `instrumentId` 必须为 1..128 bytes，且不得包含
+ASCII 控制字节 `00..1F` 或 `7F`；非法 ID 返回 `400 invalidCommand`。
 
 当前可用 `updateTraceScalePerDivision` 命令更新 Log Magnitude Trace 的
 Scale/Div，payload 为 `{"traceId": <id>, "scalePerDivision": <number>}`。

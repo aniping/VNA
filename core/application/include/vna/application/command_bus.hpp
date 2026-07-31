@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <variant>
@@ -15,7 +16,20 @@ namespace vna::application {
 template <typename Tag>
 class TextId {
 public:
-    explicit TextId(std::string value) : value_(std::move(value)) {}
+    explicit TextId(std::string value) : value_(std::move(value)) {
+        if (value_.empty() || value_.size() > 128) {
+            throw std::invalid_argument{"TextId must be 1..128 bytes"};
+        }
+        for (const unsigned char byte : value_) {
+            if (byte <= 0x1F || byte == 0x7F) {
+                throw std::invalid_argument{
+                    "TextId must not contain ASCII control bytes"};
+            }
+        }
+    }
+
+    TextId(const TextId&) = default;
+    TextId& operator=(const TextId&) = default;
 
     [[nodiscard]] const std::string& value() const noexcept {
         return value_;
