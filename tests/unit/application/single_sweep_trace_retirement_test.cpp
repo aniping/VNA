@@ -32,6 +32,12 @@ TraceDisplayFrame replacementFrame() {
     };
 }
 
+RawSweepSource simulationSource() {
+    return [](const frames::FrequencyAxis& axis, std::stop_token) {
+        return simulation::simulateSweep(axis);
+    };
+}
+
 TEST(SingleSweepTraceRetirementTest, RunningSweepCannotPublishAfterRetirement) {
     OperationManager manager;
     TraceDisplayFrameRepository repository{1};
@@ -75,12 +81,8 @@ TEST(SingleSweepTraceRetirementTest, PublishingFinishesBeforeRetirementReturns) 
         releaseFuture.wait();
         return repository.publish(std::move(frame));
     };
-    RawSweepSource source = [](const frames::FrequencyAxis& axis,
-                               std::stop_token) {
-        return simulation::simulateSweep(axis);
-    };
     SingleSweepExecutor executor{
-        1, std::move(source), manager, repository, std::move(publisher)};
+        1, simulationSource(), manager, repository, std::move(publisher)};
     const auto submitted =
         acceptedOperation(manager, executor.submit(validWorkItem()));
     if (enteredFuture.wait_for(2s) != std::future_status::ready) {

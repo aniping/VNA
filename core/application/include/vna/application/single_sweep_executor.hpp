@@ -53,14 +53,16 @@ public:
 
 class SingleSweepExecutor final : public SingleSweepExecution {
 public:
+    // The custom publisher seam exposes repository-boundary failures to tests
+    // and adapters. It runs while the Trace lifecycle gate is held so publish
+    // and retirement are linearized; it must return promptly and must not
+    // re-enter this executor, including through discardTrace().
     SingleSweepExecutor(
         std::size_t queueCapacity,
         RawSweepSource source,
         OperationManager& operations,
         TraceDisplayFrameRepository& frames,
         TraceDisplayPublisher publish);
-    // The narrow publisher seam lets adapters and tests expose allocation
-    // failure at the repository boundary without weakening repository types.
     SingleSweepExecutor(
         std::size_t queueCapacity,
         RawSweepSource source,
