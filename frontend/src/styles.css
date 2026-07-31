@@ -39,19 +39,19 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
   align-items: stretch;
   gap: 1px;
   padding: 3px;
-  background: linear-gradient(#53626a, #303c42);
+  background: #323f48;
   border-bottom: 1px solid #0c1114;
 }
 
 .menu-bar button {
-  min-width: 66px;
-  border: 1px solid #182127;
-  border-radius: 2px;
-  background: linear-gradient(#65757d, #3b484e);
+  padding: 0 7px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   font-size: 14px;
 }
 
-.menu-bar button:active,
+.menu-bar button:not(:disabled):active,
 .hardkey-panel button:active { background: #168db7; }
 .menu-spacer { flex: 1; }
 
@@ -66,7 +66,8 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
 .channel-setup > button { width: 100%; height: 40px; margin-top: 6px; border: 1px solid #0a3b4d; background: #168eb8; font-weight: 700; }
 .channel-setup > button:disabled { color: #829096; background: #35434a; }
 .menu-bar { border-top: 1px solid #0c1114; border-bottom: 0; }
-.menu-bar button { min-width: 74px; font-size: 12px; }
+.menu-bar button { min-width: 0; font-size: 12px; }
+.menu-bar button:disabled { color: #c5d0d4; cursor: default; }
 .menu-bar > span, .menu-bar time { align-self: center; margin: 0 7px; font-size: 12px; }
 .menu-bar .entity-counts { color: #c5d0d4; }
 .status-pill { padding: 3px 7px; border-radius: 2px; font-weight: 700; }

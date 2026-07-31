@@ -157,7 +157,16 @@ function forwardTraceFormatUpdate(traceId: number, format: TraceFormat): void {
     </div>
 
     <nav class="menu-bar" aria-label="Application menu">
-      <button v-for="item in menus" :key="item" type="button">{{ item }}</button>
+      <button
+        v-for="item in menus"
+        :key="item"
+        type="button"
+        :aria-label="`${item}, not supported`"
+        :title="`${item}, not supported`"
+        disabled
+      >
+        {{ item }}
+      </button>
       <span class="menu-spacer" />
       <span class="status-pill" :class="connection" :title="serviceError">
         {{ connection.toUpperCase() }}

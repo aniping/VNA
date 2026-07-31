@@ -100,6 +100,8 @@ pnpm run dev
 S 参数区创建 Trace。采样后端接通前只显示坐标网格，不绘制静态测量曲线。
 顶部 Toolbar 仅启用 `Maximize Diagram`；点击或使用 `Enter` / `Space` 可在活动
 Diagram 最大化与 2×2 布局间切换，其余尚未实现的 Toolbar 项保持禁用。
+底部 `File` 至 `Help` 菜单尚未接通并保持禁用；连接、revision 和实体计数仍
+显示本地仪表服务的真实状态。
 
 `Start`、`Stop`、`Center` 和 `Span` Hard Key 已连接到真实 Channel 状态。修改
 Center 时保持当前 Span，修改 Span 时保持当前 Center，并通过 revision 冲突检查
