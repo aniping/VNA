@@ -310,8 +310,6 @@ struct CommandEnvelope {
     SessionId sessionId;
     InstrumentId instrumentId;
     std::optional<std::uint64_t> expectedStateRevision;
-    std::chrono::milliseconds timeout;
-    CommandPriority priority;
     CommandPayload payload;
 };
 ```
@@ -319,6 +317,7 @@ struct CommandEnvelope {
 关键语义：
 
 - `expectedStateRevision` 不匹配时返回明确冲突，禁止静默覆盖。
+- 同步配置命令不公开尚未兑现的超时或优先级字段。
 - 命令成功表示业务状态已提交；涉及长操作时返回 `operationId`，完成由事件或同步 Query 表达。
 - 频率、点数、IFBW、功率等配置不会在当前扫频中途生效。
 - `INIT;*OPC?` 只有在采集、完整性校验、校准修正和 FrameRepository 提交全部完成后才结束。

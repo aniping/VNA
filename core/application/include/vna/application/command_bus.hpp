@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -31,10 +30,6 @@ private:
 using CommandId = TextId<struct CommandIdTag>;
 using SessionId = TextId<struct SessionIdTag>;
 using InstrumentId = TextId<struct InstrumentIdTag>;
-
-enum class CommandPriority {
-    Normal,
-};
 
 struct CreateChannelCommand {
     domain::SweepSettings sweep;
@@ -94,8 +89,6 @@ struct CommandEnvelope {
     SessionId sessionId;
     InstrumentId instrumentId;
     std::optional<std::uint64_t> expectedStateRevision;
-    std::chrono::milliseconds timeout;
-    CommandPriority priority;
     CommandPayload payload;
 };
 

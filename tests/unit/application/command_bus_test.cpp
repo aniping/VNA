@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
-#include <chrono>
 #include <future>
 #include <string>
 #include <thread>
@@ -42,8 +41,6 @@ CommandEnvelope makeCommand(
         .sessionId = SessionId{"session-1"},
         .instrumentId = std::move(instrumentId),
         .expectedStateRevision = revision,
-        .timeout = std::chrono::seconds{5},
-        .priority = CommandPriority::Normal,
         .payload = std::move(payload),
     };
 }

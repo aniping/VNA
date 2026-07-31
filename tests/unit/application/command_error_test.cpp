@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <chrono>
 #include <string>
 #include <utility>
 
@@ -27,8 +26,6 @@ CommandEnvelope traceCommand(std::string commandId, CommandPayload payload) {
         .sessionId = SessionId{"session-1"},
         .instrumentId = InstrumentId{"instrument-1"},
         .expectedStateRevision = 0,
-        .timeout = std::chrono::seconds{5},
-        .priority = CommandPriority::Normal,
         .payload = std::move(payload),
     };
 }
@@ -40,8 +37,6 @@ TEST(CommandErrorTest, PreservesInvalidSweepDomainError) {
         .sessionId = SessionId{"session-1"},
         .instrumentId = InstrumentId{"instrument-1"},
         .expectedStateRevision = 0,
-        .timeout = std::chrono::seconds{5},
-        .priority = CommandPriority::Normal,
         .payload = CreateChannelCommand{domain::SweepSettings{
             .startFrequencyHz = 2'000'000'000,
             .stopFrequencyHz = 1'000'000'000,

@@ -3,7 +3,6 @@
 
 #include <nlohmann/json.hpp>
 
-#include <chrono>
 #include <stdexcept>
 #include <string>
 
@@ -114,8 +113,6 @@ application::CommandEnvelope commandFromJson(const Json& request) {
         .instrumentId = application::InstrumentId{
             request.at("instrumentId").get<std::string>()},
         .expectedStateRevision = expectedRevision(request),
-        .timeout = std::chrono::seconds{5},
-        .priority = application::CommandPriority::Normal,
         .payload = commandPayloadFromJson(type, payload),
     };
 }

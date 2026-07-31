@@ -1,6 +1,5 @@
 #include <gtest/gtest.h>
 
-#include <chrono>
 #include <limits>
 #include <utility>
 
@@ -40,8 +39,6 @@ CommandEnvelope command(
         .sessionId = SessionId{"session-1"},
         .instrumentId = InstrumentId{"instrument-1"},
         .expectedStateRevision = revision,
-        .timeout = std::chrono::seconds{5},
-        .priority = CommandPriority::Normal,
         .payload = std::move(payload),
     };
 }
