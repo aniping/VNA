@@ -10,6 +10,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_subdirectory(third-part)
 add_subdirectory(core/domain)
+add_subdirectory(core/display-model)
 add_subdirectory(core/observability)
 add_subdirectory(core/application)
 add_subdirectory(infrastructure/platform)

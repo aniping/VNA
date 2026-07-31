@@ -8,6 +8,18 @@ target_link_libraries(vna_domain_tests PRIVATE vna::domain GTest::gtest_main)
 gtest_discover_tests(vna_domain_tests)
 
 add_executable(
+    vna_display_model_tests
+    unit/display_model/display_workspace_test.cpp
+)
+target_link_libraries(
+    vna_display_model_tests
+    PRIVATE
+        vna::display_model
+        GTest::gtest_main
+)
+gtest_discover_tests(vna_display_model_tests)
+
+add_executable(
     vna_application_tests
     unit/application/channel_command_test.cpp
     unit/application/command_bus_test.cpp
