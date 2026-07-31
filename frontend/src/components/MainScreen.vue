@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { StateSnapshot } from '../api/vnaApi'
 import type { SweepSettings } from '../api/vnaApi'
 import ChannelSetup from './ChannelSetup.vue'
@@ -14,9 +14,11 @@ const props = defineProps<{
 const emit = defineEmits<{ createChannel: [sweep: SweepSettings] }>()
 
 const toolbar = ['↶', '↷', 'Zoom', 'Max', '+ Trace', '+ Marker', 'Delete', 'Print', 'Save', 'Recall']
+const hardkeys = ['Meas', 'Format', 'Scale', 'Trace Config', 'Marker', 'Stimulus', 'Channel', 'Cal']
 const softkeys = ['S-Parameters', 'Wave Quantities', 'Ratios', 'Receivers', 'More…']
 const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
 const channel = computed(() => props.state?.instrument.channels[0])
+const activeSofttool = ref<'measurement' | null>('measurement')
 const trace = computed(() => props.state?.instrument.traces[0])
 const windowState = computed(() => props.state?.instrument.windows[0])
 const measurement = computed(() => props.state?.instrument.measurements.find(
@@ -51,7 +53,7 @@ function frequency(value: number | undefined): string {
       <span class="instrument-title">Vector Network Analyzer</span>
     </header>
 
-    <div class="measurement-workspace">
+    <div class="measurement-workspace" :class="{ 'softtool-visible': activeSofttool }">
       <section class="diagram" aria-label="Cartesian measurement diagram">
         <header class="trace-strip">
           <span class="trace-index">{{ trace ? `Trc${trace.id}` : 'Trc —' }}</span>
@@ -71,7 +73,21 @@ function frequency(value: number | undefined): string {
         </footer>
       </section>
 
-      <aside class="softtool" aria-label="Softtool panel">
+      <nav class="hardkey-panel" aria-label="Virtual hard keys">
+        <h2>HARD KEY</h2>
+        <button
+          v-for="item in hardkeys"
+          :key="item"
+          type="button"
+          :class="{ active: item === 'Meas' && activeSofttool }"
+          :disabled="item !== 'Meas'"
+          @click="activeSofttool = 'measurement'"
+        >
+          {{ item }}
+        </button>
+      </nav>
+
+      <aside v-if="activeSofttool" class="softtool" aria-label="Softtool panel">
         <div class="softtool-tabs">
           <button class="active" type="button">Meas</button>
           <button type="button">Favorites</button>
@@ -89,7 +105,7 @@ function frequency(value: number | undefined): string {
           @create-channel="emit('createChannel', $event)"
         />
         <div class="softtool-fill" />
-        <button type="button" class="softkey close-key">Close</button>
+        <button type="button" class="softkey close-key" @click="activeSofttool = null">Close</button>
       </aside>
     </div>
 

@@ -56,7 +56,8 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
 .toolbar-spacer, .menu-spacer { flex: 1; }
 .instrument-title { align-self: center; padding: 0 10px; font-size: 13px; color: #c8d1d4; }
 
-.measurement-workspace { display: grid; grid-template-columns: 1fr 252px; min-height: 0; }
+.measurement-workspace { display: grid; grid-template-columns: 1fr 96px; min-height: 0; }
+.measurement-workspace.softtool-visible { grid-template-columns: 1fr 96px 252px; }
 .diagram { display: grid; grid-template-rows: 34px 1fr 31px; min-width: 0; border-right: 2px solid #0b1012; }
 .trace-strip { display: flex; align-items: center; gap: 10px; padding: 0 9px; color: #f5da25; background: #202a2f; border-bottom: 1px solid #526069; font-size: 14px; }
 .trace-index { padding: 2px 8px; color: #111; background: #f5da25; font-weight: 700; }
@@ -74,6 +75,12 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
 .plot-empty { position: absolute; inset: 0; display: grid; place-items: center; color: #748186; font-size: 16px; }
 .channel-row { display: flex; align-items: center; justify-content: space-between; padding: 0 9px; color: #d3dcdf; background: #1d272b; font-size: 12px; border-top: 1px solid #56636a; }
 .channel-row span:first-child { color: #ffdf24; font-weight: 700; }
+
+.hardkey-panel { display: flex; flex-direction: column; gap: 3px; padding: 4px; background: #202d33; border-right: 2px solid #0b1012; }
+.hardkey-panel h2 { margin: 0; padding: 5px 2px; color: #aebdc2; background: #172126; font-size: 10px; text-align: center; letter-spacing: .08em; }
+.hardkey-panel button { flex: 1; min-height: 38px; padding: 2px; border: 1px solid #111a1e; border-radius: 2px; background: linear-gradient(#64767e, #405058); font-size: 11px; }
+.hardkey-panel button.active { background: #168eb8; }
+.hardkey-panel button:disabled { color: #a6b1b5; opacity: .7; }
 
 .softtool { display: flex; flex-direction: column; min-width: 0; padding: 4px; background: #2e3c43; }
 .softtool-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
