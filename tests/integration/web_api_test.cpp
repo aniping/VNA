@@ -1,13 +1,33 @@
 #include <gtest/gtest.h>
 
 #include <httplib.h>
+#include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <thread>
 
 #include <vna/web_api/web_api.hpp>
 
 namespace vna::web_api {
 namespace {
+
+application::CommandEnvelope createChannelCommand() {
+    return {
+        .commandId = application::CommandId{"command-1"},
+        .sessionId = application::SessionId{"session-1"},
+        .instrumentId = application::InstrumentId{"instrument-1"},
+        .expectedStateRevision = 0,
+        .timeout = std::chrono::seconds{5},
+        .priority = application::CommandPriority::Normal,
+        .payload = application::CreateChannelCommand{domain::SweepSettings{
+            .startFrequencyHz = 10'000'000,
+            .stopFrequencyHz = 26'500'000'000,
+            .points = 201,
+            .ifBandwidthHz = 10'000,
+            .powerDbm = -10.0,
+        }},
+    };
+}
 
 class WebApiTest : public ::testing::Test {
 protected:
@@ -43,6 +63,28 @@ TEST_F(WebApiTest, ReportsHealthOverHttp) {
     EXPECT_EQ(response->status, httplib::StatusCode::OK_200);
     EXPECT_EQ(response->get_header_value("Content-Type"), "application/json");
     EXPECT_EQ(response->body, R"({"status":"ok"})");
+}
+
+TEST_F(WebApiTest, ReturnsCurrentStateSnapshot) {
+    ASSERT_EQ(
+        commandBus_.dispatch(createChannelCommand()).status,
+        application::CommandStatus::Succeeded);
+    httplib::Client client{"127.0.0.1", port_};
+
+    const auto response = client.Get("/api/v1/state");
+
+    ASSERT_TRUE(response);
+    ASSERT_EQ(response->status, httplib::StatusCode::OK_200);
+    const auto body = nlohmann::json::parse(response->body);
+    EXPECT_EQ(body.at("stateRevision"), 1);
+    const auto& instrument = body.at("instrument");
+    ASSERT_EQ(instrument.at("channels").size(), 1U);
+    const auto& channel = instrument.at("channels").at(0);
+    EXPECT_EQ(channel.at("id"), 1);
+    EXPECT_EQ(channel.at("sweep").at("stopFrequencyHz"), 26'500'000'000);
+    EXPECT_TRUE(instrument.at("measurements").empty());
+    EXPECT_TRUE(instrument.at("windows").empty());
+    EXPECT_TRUE(instrument.at("traces").empty());
 }
 
 }  // namespace
