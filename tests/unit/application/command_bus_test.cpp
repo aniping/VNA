@@ -35,6 +35,32 @@ CommandEnvelope makeCommand(
     };
 }
 
+domain::TraceId createTrace(CommandBus& commandBus) {
+    const auto channelResult = commandBus.dispatch(makeCommand(
+        "setup-channel",
+        0,
+        CreateChannelCommand{validSweep()}));
+    const auto channelId = std::get<domain::ChannelId>(channelResult.value);
+    const auto measurementResult = commandBus.dispatch(makeCommand(
+        "setup-measurement",
+        1,
+        CreateMeasurementCommand{channelId, domain::MeasurementType::S11}));
+    const auto measurementId =
+        std::get<domain::MeasurementId>(measurementResult.value);
+    const auto windowResult = commandBus.dispatch(
+        makeCommand("setup-window", 2, CreateWindowCommand{}));
+    const auto windowId = std::get<domain::WindowId>(windowResult.value);
+    const auto traceResult = commandBus.dispatch(makeCommand(
+        "setup-trace",
+        3,
+        CreateTraceCommand{
+            windowId,
+            measurementId,
+            domain::TraceFormat::LogMagnitude,
+        }));
+    return std::get<domain::TraceId>(traceResult.value);
+}
+
 TEST(CommandBusTest, SuccessfulCommandIncrementsRevisionOnce) {
     CommandBus commandBus{InstrumentId{"instrument-1"}};
     const auto command =
@@ -143,6 +169,21 @@ TEST(CommandBusTest, CreatesMeasurementAndTraceThroughUnifiedEntryPoint) {
     EXPECT_EQ(snapshot.instrument.measurements.size(), 1U);
     EXPECT_EQ(snapshot.instrument.windows.size(), 1U);
     EXPECT_EQ(snapshot.instrument.traces.size(), 1U);
+}
+
+TEST(CommandBusTest, RemovesTraceThroughUnifiedEntryPoint) {
+    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    const auto traceId = createTrace(commandBus);
+
+    const auto result = commandBus.dispatch(
+        makeCommand("command-5", 4, RemoveTraceCommand{traceId}));
+
+    EXPECT_EQ(result.status, CommandStatus::Succeeded);
+    EXPECT_EQ(result.stateRevision, 5U);
+    EXPECT_TRUE(std::holds_alternative<std::monostate>(result.value));
+    const auto snapshot = commandBus.snapshot();
+    EXPECT_EQ(snapshot.instrument.measurements.size(), 1U);
+    EXPECT_TRUE(snapshot.instrument.traces.empty());
 }
 
 }  // namespace

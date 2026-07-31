@@ -21,38 +21,48 @@ CommandResult CommandBus::dispatch(const CommandEnvelope& command) {
         };
     }
 
-    if (const auto* payload =
-            std::get_if<CreateChannelCommand>(&command.payload)) {
-        const auto channel = instrument_.createChannel(payload->sweep);
-        if (!channel.hasValue()) {
-            return validationError();
-        }
-        return succeeded(CommandValue{channel.value()});
-    }
+    return std::visit(
+        [this](const auto& payload) { return execute(payload); },
+        command.payload);
+}
 
-    if (const auto* payload =
-            std::get_if<CreateMeasurementCommand>(&command.payload)) {
-        const auto measurement =
-            instrument_.createMeasurement(payload->channelId, payload->type);
-        if (!measurement.hasValue()) {
-            return validationError();
-        }
-        return succeeded(CommandValue{measurement.value()});
+CommandResult CommandBus::execute(const CreateChannelCommand& command) {
+    const auto channel = instrument_.createChannel(command.sweep);
+    if (!channel.hasValue()) {
+        return validationError();
     }
+    return succeeded(CommandValue{channel.value()});
+}
 
-    if (std::holds_alternative<CreateWindowCommand>(command.payload)) {
-        return succeeded(CommandValue{instrument_.createWindow()});
+CommandResult CommandBus::execute(const CreateMeasurementCommand& command) {
+    const auto measurement =
+        instrument_.createMeasurement(command.channelId, command.type);
+    if (!measurement.hasValue()) {
+        return validationError();
     }
+    return succeeded(CommandValue{measurement.value()});
+}
 
-    const auto& payload = std::get<CreateTraceCommand>(command.payload);
+CommandResult CommandBus::execute(const CreateWindowCommand&) {
+    return succeeded(CommandValue{instrument_.createWindow()});
+}
+
+CommandResult CommandBus::execute(const CreateTraceCommand& command) {
     const auto trace = instrument_.createTrace(
-        payload.windowId,
-        payload.measurementId,
-        payload.format);
+        command.windowId,
+        command.measurementId,
+        command.format);
     if (!trace.hasValue()) {
         return validationError();
     }
     return succeeded(CommandValue{trace.value()});
+}
+
+CommandResult CommandBus::execute(const RemoveTraceCommand& command) {
+    if (!instrument_.removeTrace(command.traceId)) {
+        return validationError();
+    }
+    return succeeded(CommandValue{std::monostate{}});
 }
 
 CommandResult CommandBus::succeeded(CommandValue value) {
