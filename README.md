@@ -39,6 +39,7 @@ git submodule update --init --recursive
 
 - GoogleTest `v1.17.0`
 - cpp-httplib `v0.51.0`
+- JSON for Modern C++ `v3.12.0`
 
 ## 构建与测试
 
