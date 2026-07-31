@@ -135,16 +135,16 @@ TEST(OperationManagerTest, RetainsStructuredFailureInTerminalState) {
 
     const auto result = manager.complete(
         created.id,
-        OperationFailed{CommandError{domain::DomainError{
-            .code = domain::DomainErrorCode::InvalidSweepSettings}}});
+        OperationFailed{OperationFailure{
+            .code = SingleSweepFailureCode::MeasurementSynthesisFailed}});
 
     const auto* snapshot = std::get_if<OperationSnapshot>(&result);
     ASSERT_NE(snapshot, nullptr);
     const auto* failed = std::get_if<OperationFailed>(&snapshot->state);
     ASSERT_NE(failed, nullptr);
-    const auto* error = std::get_if<domain::DomainError>(&failed->error);
-    ASSERT_NE(error, nullptr);
-    EXPECT_EQ(error->code, domain::DomainErrorCode::InvalidSweepSettings);
+    EXPECT_EQ(
+        failed->error.code,
+        SingleSweepFailureCode::MeasurementSynthesisFailed);
 }
 
 TEST(OperationManagerTest, BackendCompletesCancelRequestAsCanceled) {
@@ -197,8 +197,8 @@ TEST(OperationManagerTest, AcceptsTerminalRaceAfterCancelRequest) {
         manager.complete(succeeded.id, OperationSucceeded{});
     const auto failureResult = manager.complete(
         failed.id,
-        OperationFailed{CommandError{ApplicationError{
-            .code = ApplicationErrorCode::StateRevisionConflict}}});
+        OperationFailed{OperationFailure{
+            .code = SingleSweepFailureCode::RawSweepFailed}});
 
     EXPECT_TRUE(std::holds_alternative<OperationSucceeded>(
         std::get<OperationSnapshot>(successResult).state));

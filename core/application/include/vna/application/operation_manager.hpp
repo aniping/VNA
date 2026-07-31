@@ -7,7 +7,8 @@
 #include <unordered_map>
 #include <variant>
 
-#include <vna/application/command_bus.hpp>
+#include <vna/application/command_contract.hpp>
+#include <vna/application/operation_failure.hpp>
 #include <vna/application/operation_id.hpp>
 
 namespace vna::application {
@@ -65,7 +66,7 @@ struct OperationCancelRequested {};
 struct OperationSucceeded {};
 
 struct OperationFailed {
-    CommandError error;
+    OperationFailure error;
 };
 
 struct OperationCanceled {};
