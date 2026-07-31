@@ -677,5 +677,6 @@ vna-platform/
 - [ADR-0005：采用结构化可观测性接口与双日志输出](adr/0005-structured-observability.md)
 - [ADR-0006：采用乐观并发控制、幂等命令与结构化错误](adr/0006-optimistic-control-and-command-reliability.md)
 - [ADR-0007：在 Scale 和 Marker 前拆分显示模型](adr/0007-separate-display-model.md)
+- [ADR-0008：以 Operation 完成栅栏实现 SCPI 同步](adr/0008-operation-fences-for-scpi-synchronization.md)
 
 第一阶段的具体范围和验收标准见 [第一阶段实施范围](phase-1.md)。
