@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { StateSnapshot, SweepSettings, TraceSetup as TraceSetupModel } from '../api/vnaApi'
-import ChannelSetup from './ChannelSetup.vue'
 import DiagramGrid from './DiagramGrid.vue'
 import HardkeyPanel from './HardkeyPanel.vue'
-import TraceSetup from './TraceSetup.vue'
+import MeasurementSofttool from './MeasurementSofttool.vue'
 
 const props = defineProps<{
   state: StateSnapshot | null
@@ -19,11 +18,9 @@ const emit = defineEmits<{
 }>()
 
 const toolbar = ['↶', '↷', 'Zoom', 'Max', '+ Trace', '+ Marker', 'Delete', 'Print', 'Save', 'Recall']
-const softkeys = ['S-Parameters', 'Wave Quantities', 'Ratios', 'Receivers', 'More…']
 const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
 const channel = computed(() => props.state?.instrument.channels[0])
 const activeSofttool = ref<'measurement' | null>('measurement')
-const softtoolPage = ref<'measurement' | 'sParameters'>('measurement')
 const entityCounts = computed(() => {
   const instrument = props.state?.instrument
   if (!instrument) return 'Ch — · Meas — · Trc — · Win —'
@@ -31,6 +28,10 @@ const entityCounts = computed(() => {
     + ` · Trc ${instrument.traces.length} · Win ${instrument.windows.length}`
 })
 
+function selectHardkey(key: string): void {
+  if (key !== 'Meas') return
+  activeSofttool.value = activeSofttool.value ? null : 'measurement'
+}
 </script>
 
 <template>
@@ -44,43 +45,18 @@ const entityCounts = computed(() => {
     <div class="measurement-workspace" :class="{ 'softtool-visible': activeSofttool }">
       <DiagramGrid :state="state" />
 
-      <aside v-if="activeSofttool" class="softtool" aria-label="Softtool panel">
-        <div class="softtool-tabs">
-          <button class="active" type="button" @click="softtoolPage = 'measurement'">Meas</button>
-          <button type="button">Favorites</button>
-        </div>
-        <h2>{{ softtoolPage === 'measurement' ? 'Measurement' : 'S-Parameters' }}</h2>
-        <template v-if="channel && softtoolPage === 'measurement'">
-          <button
-            v-for="item in softkeys"
-            :key="item"
-            type="button"
-            class="softkey"
-            :disabled="item !== 'S-Parameters'"
-            @click="softtoolPage = 'sParameters'"
-          >
-            <span>{{ item }}</span><span aria-hidden="true">›</span>
-          </button>
-        </template>
-        <ChannelSetup
-          v-else-if="!channel"
-          :disabled="disabled"
-          :busy="busy"
-          @create-channel="emit('createChannel', $event)"
-        />
-        <TraceSetup
-          v-else
-          :disabled="disabled"
-          :busy="busy"
-          @create-trace="emit('createTrace', $event)"
-        />
-        <div class="softtool-fill" />
-        <button type="button" class="softkey close-key" @click="activeSofttool = null">Close</button>
-      </aside>
+      <MeasurementSofttool
+        v-if="activeSofttool"
+        :has-channel="Boolean(channel)"
+        :disabled="disabled"
+        :busy="busy"
+        @create-channel="emit('createChannel', $event)"
+        @create-trace="emit('createTrace', $event)"
+      />
 
       <HardkeyPanel
         :active-key="activeSofttool ? 'Meas' : null"
-        @select="activeSofttool = 'measurement'; softtoolPage = 'measurement'"
+        @select="selectHardkey"
       />
     </div>
 

@@ -51,7 +51,7 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
   font-size: 14px;
 }
 
-.toolbar button:active, .menu-bar button:active, .softkey:active,
+.toolbar button:active, .menu-bar button:active,
 .hardkey-panel button:active { background: #168db7; }
 .toolbar-spacer, .menu-spacer { flex: 1; }
 .instrument-title { align-self: center; padding: 0 10px; font-size: 13px; color: #c8d1d4; }
@@ -59,27 +59,12 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
 .measurement-workspace { display: grid; grid-template-columns: 1fr 160px; min-height: 0; }
 .measurement-workspace.softtool-visible { grid-template-columns: 848px 272px 160px; }
 
-.softtool { display: flex; flex-direction: column; min-width: 0; padding: 4px; background: #2e3c43; }
-.softtool-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
-.softtool-tabs button { height: 34px; border: 1px solid #172126; background: #475860; }
-.softtool-tabs .active { background: #168eb8; }
-.softtool h2 { margin: 5px 0 3px; padding: 6px 7px; color: #dce7ea; background: #1d282d; font-size: 15px; font-weight: 600; }
-.softkey { display: flex; justify-content: space-between; align-items: center; min-height: 48px; margin-bottom: 3px; padding: 0 12px; border: 1px solid #111a1e; border-radius: 2px; background: linear-gradient(#64767e, #405058); text-align: left; }
-.softkey span:last-child { font-size: 25px; }
-.softtool-fill { flex: 1; }
-.close-key { justify-content: center; min-height: 40px; }
 .channel-setup h3 { margin: 5px 0 3px; padding: 6px 7px; background: #1d282d; font-size: 15px; }
 .channel-setup label { display: flex; justify-content: space-between; align-items: center; min-height: 39px; padding: 0 8px; border-bottom: 1px solid #1b252a; font-size: 13px; }
 .channel-setup label span { color: #c5d0d4; }
 .channel-setup input { width: 88px; height: 28px; padding: 0 5px; color: #fff; background: #11191d; border: 1px solid #738087; text-align: right; }
 .channel-setup > button { width: 100%; height: 40px; margin-top: 6px; border: 1px solid #0a3b4d; background: #168eb8; font-weight: 700; }
 .channel-setup > button:disabled { color: #829096; background: #35434a; }
-.trace-setup h3 { margin: 5px 0 3px; padding: 6px 7px; background: #1d282d; font-size: 15px; }
-.trace-setup label { display: grid; gap: 5px; padding: 8px; border-bottom: 1px solid #1b252a; font-size: 13px; }
-.trace-setup select { width: 100%; height: 34px; padding: 0 6px; color: #fff; background: #11191d; border: 1px solid #738087; }
-.trace-setup > button { width: 100%; height: 40px; margin-top: 6px; border: 1px solid #0a3b4d; background: #168eb8; font-weight: 700; }
-.trace-setup > button:disabled { color: #829096; background: #35434a; }
-
 .menu-bar { border-top: 1px solid #0c1114; border-bottom: 0; }
 .menu-bar button { min-width: 74px; }
 .menu-bar > span, .menu-bar time { align-self: center; margin: 0 7px; font-size: 12px; }
