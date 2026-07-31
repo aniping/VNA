@@ -112,6 +112,14 @@ export async function createTrace(
   return sendCommand(stateRevision, 'createTrace', { windowId, measurementId, format })
 }
 
+export async function updateTraceFormat(
+  stateRevision: number,
+  traceId: number,
+  format: TraceFormat,
+): Promise<CommandResult<{ traceId: number }>> {
+  return sendCommand(stateRevision, 'updateTraceFormat', { traceId, format })
+}
+
 async function sendCommand<T>(
   stateRevision: number,
   type: string,
