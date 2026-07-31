@@ -77,6 +77,11 @@ Linux/GCC：
 `errorCode` 供客户端区分具体错误。
 `commandId`、`sessionId` 和 `instrumentId` 必须为 1..128 bytes，且不得包含
 ASCII 控制字节 `00..1F` 或 `7F`；非法 ID 返回 `400 invalidCommand`。
+对进入幂等窗口且仍被保留的确定性命令结果，相同
+`(instrumentId, sessionId, commandId)` 与相同命令内容会重放首次完整响应；
+同一已保留键复用于不同内容时返回 `409 conflict` 和 `command-id-reuse`。
+幂等窗口在当前进程中默认保留 1024 条确定结果；淘汰后旧键按届时状态重新
+处理，不再承诺重放，应用层统计可观察条目数与淘汰数。
 
 当前可用 `updateTraceScalePerDivision` 命令更新 Log Magnitude Trace 的
 Scale/Div，payload 为 `{"traceId": <id>, "scalePerDivision": <number>}`。
