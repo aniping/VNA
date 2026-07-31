@@ -2,9 +2,13 @@
 
 > 目标：在没有真实硬件的条件下，证明统一业务内核、控制面、数据面和多协议入口能够形成一个可重复验证的 VNA 最小闭环。
 
+## 0. 当前最高优先级
+
+第一交付目标不是配置功能，而是核心采集链路。程序在没有历史会话时必须按用户手册自动进入默认 S21、dB Magnitude、内触发连续扫频；用户不创建 Channel、Measurement 或 Trace，也不点击 Restart Sweep，就能看到持续更新的开路端口隔离噪声底。采集引擎独立于页面和这些上层对象持续产生原始接收机帧。达到这一启动体验前，其余配置、控制与扩展显示功能不得占用更高优先级。
+
 ## 1. 成功标准
 
-用户能够在 Vue 工作台创建并配置一个 Channel，定义 S11 和 S21 Measurement，以多种 Trace 格式显示；命令经统一业务入口生成 SweepPlan，由 Simulation Backend 返回 RawReceiverFrame，经过测量合成和显示处理后，通过 WebSocket 展示并可保存、查询和回放。
+用户启动程序后无需配置即可看到持续更新的默认 S21 测量；在此基础上，Vue 工作台再允许配置 Channel、定义 S 参数 Measurement 和以多种 Trace 格式显示。SweepPlan 驱动的采集不依赖浏览器，Simulation Backend 返回 RawReceiverFrame，经测量合成和显示处理后推送给消费者。
 
 该闭环必须证明：
 
@@ -36,7 +40,7 @@
 
 - Measurement Planner 与 SweepPlan。
 - L1 Simulation Backend 的最小实现。
-- 可配置的解析 DUT 或内置确定性双端口模型。
+- 默认所有测试端口开路，并在原始接收机层生成可复现的隔离泄漏与噪声。
 - RawReceiverFrame 完整性、序号和质量标志。
 - 接收机比值到 S11/S21 复数数据的测量合成。
 - Trace 格式转换与 FrameRepository。
@@ -188,7 +192,7 @@ Vue 工作台骨架。前端按 [ZNA26 界面复刻基线](ui-zna26-reference.md
 
 | 场景 | 操作 | 预期结果 |
 | --- | --- | --- |
-| 首次连接 | 浏览器连接服务端 | 收到完整 StateSnapshot 和 CapabilitySet |
+| 首次启动 | 启动程序并打开浏览器，不进行配置或点击 | 页面与手册默认状态一致，S21 dB 曲线随连续扫频自动刷新 |
 | 配置修改 | 客户端基于当前 revision 修改频率 | 命令成功、revision 递增、所有会话收到 StatePatch |
 | 并发冲突 | 客户端使用过期 revision 修改点数 | 返回 Conflict，不覆盖新状态 |
 | S 参数闭环 | 创建 S11/S21 并触发单次扫频 | 产生一份原始帧并显示两项测量 |
