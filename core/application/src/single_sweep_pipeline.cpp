@@ -12,7 +12,7 @@ namespace {
 
 using RawResult = std::variant<
     frames::RawReceiverFrame,
-    SingleSweepFailureCode>;
+    OperationFailure>;
 using FrequencyResult = std::variant<
     std::vector<double>,
     SingleSweepFailureCode>;
@@ -24,18 +24,24 @@ RawResult acquireRaw(
     try {
         auto payload = source(work.frequencyAxis, token);
         if (!payload.hasValue()) {
-            return SingleSweepFailureCode::RawSweepFailed;
+            return OperationFailure{
+                .code = SingleSweepFailureCode::RawSweepFailed,
+                .cause = payload.error()};
         }
         auto raw = frames::makeRawReceiverFrame(
             work.frameContext, work.frequencyAxis, payload.value());
         if (!raw.hasValue()) {
-            return SingleSweepFailureCode::RawFrameRejected;
+            return OperationFailure{
+                .code = SingleSweepFailureCode::RawFrameRejected,
+                .cause = raw.error()};
         }
         return raw.value();
     } catch (...) {
         // An adapter exception cannot escape the sole worker and strand later
         // queue entries; it is normalized at the acquisition boundary.
-        return SingleSweepFailureCode::RawSweepFailed;
+        return OperationFailure{
+            .code = SingleSweepFailureCode::RawSweepFailed,
+            .cause = std::current_exception()};
     }
 }
 
@@ -75,7 +81,7 @@ SweepPipelineResult buildSingleSweepFrame(
         return SweepPipelineCanceled{};
     }
     auto raw = acquireRaw(work, source, token);
-    if (const auto* error = std::get_if<SingleSweepFailureCode>(&raw)) {
+    if (const auto* error = std::get_if<OperationFailure>(&raw)) {
         return *error;
     }
     if (canceled()) {
@@ -84,19 +90,23 @@ SweepPipelineResult buildSingleSweepFrame(
     auto measured = measurement::synthesizeS11(
         std::get<frames::RawReceiverFrame>(raw), work.measurement);
     if (!measured.hasValue()) {
-        return SingleSweepFailureCode::MeasurementSynthesisFailed;
+        return OperationFailure{
+            .code = SingleSweepFailureCode::MeasurementSynthesisFailed,
+            .cause = measured.error()};
     }
     if (canceled()) {
         return SweepPipelineCanceled{};
     }
     auto values = data_plane::projectLogMagnitude(measured.value());
     if (!values.hasValue()) {
-        return SingleSweepFailureCode::LogMagnitudeProjectionFailed;
+        return OperationFailure{
+            .code = SingleSweepFailureCode::LogMagnitudeProjectionFailed,
+            .cause = values.error()};
     }
     auto frequencies = materializeFrequencies(work.frequencyAxis);
     if (const auto* error =
             std::get_if<SingleSweepFailureCode>(&frequencies)) {
-        return *error;
+        return OperationFailure{.code = *error};
     }
     if (canceled()) {
         return SweepPipelineCanceled{};

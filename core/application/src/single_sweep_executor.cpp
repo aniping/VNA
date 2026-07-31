@@ -121,8 +121,7 @@ private:
             (void)finishCancellation(pending.operationId, token);
             return;
         }
-        if (const auto* error =
-                std::get_if<SingleSweepFailureCode>(&result)) {
+        if (const auto* error = std::get_if<OperationFailure>(&result)) {
             fail(pending.operationId, *error);
             return;
         }
@@ -132,7 +131,10 @@ private:
             frames_.publish(std::move(std::get<TraceDisplayFrame>(result)));
         if (!published.hasValue()) {
             fail(pending.operationId,
-                 SingleSweepFailureCode::TraceDisplayPublishFailed);
+                 OperationFailure{
+                     .code =
+                         SingleSweepFailureCode::TraceDisplayPublishFailed,
+                     .cause = published.error()});
             return;
         }
         (void)operations_.complete(pending.operationId, OperationSucceeded{});
@@ -166,10 +168,10 @@ private:
         (void)operations_.complete(operationId, OperationCanceled{});
     }
 
-    void fail(OperationId operationId, SingleSweepFailureCode code) {
+    void fail(OperationId operationId, OperationFailure failure) {
         (void)operations_.complete(
             operationId,
-            OperationFailed{OperationFailure{.code = code}});
+            OperationFailed{std::move(failure)});
     }
 
     const std::size_t capacity_;

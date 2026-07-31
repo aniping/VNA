@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <exception>
+#include <functional>
 #include <limits>
 #include <stop_token>
+#include <stdexcept>
 #include <utility>
 #include <variant>
 
@@ -26,7 +29,8 @@ RawSweepSource simulationSource() {
 void expectFailure(
     RawSweepSource source,
     SingleSweepWorkItem work,
-    SingleSweepFailureCode expected) {
+    SingleSweepFailureCode expected,
+    std::function<void(const OperationFailure&)> inspect = [](const auto&) {}) {
     OperationManager manager;
     TraceDisplayFrameRepository repository{1};
     const auto traceId = work.traceId;
@@ -40,6 +44,7 @@ void expectFailure(
     const auto* failed = std::get_if<OperationFailed>(&terminal.state);
     ASSERT_NE(failed, nullptr);
     EXPECT_EQ(failed->error.code, expected);
+    inspect(failed->error);
     EXPECT_EQ(repository.latest(traceId), nullptr);
 }
 
@@ -52,7 +57,29 @@ TEST(SingleSweepExecutorFailureTest, RawSourceFailureIsAtomic) {
 
     expectFailure(
         std::move(source), validWorkItem(),
-        SingleSweepFailureCode::RawSweepFailed);
+        SingleSweepFailureCode::RawSweepFailed,
+        [](const OperationFailure& failure) {
+            const auto* cause = std::get_if<frames::FrameError>(&failure.cause);
+            ASSERT_NE(cause, nullptr);
+            EXPECT_EQ(cause->code, frames::FrameErrorCode::InvalidFrequencyAxis);
+        });
+}
+
+TEST(SingleSweepExecutorFailureTest, RawSourceExceptionIsPreserved) {
+    RawSweepSource source = [](const frames::FrequencyAxis&,
+                               std::stop_token)
+        -> frames::Result<frames::RawReceiverPayload> {
+        throw std::runtime_error{"source failed"};
+    };
+
+    expectFailure(
+        std::move(source), validWorkItem(),
+        SingleSweepFailureCode::RawSweepFailed,
+        [](const OperationFailure& failure) {
+            const auto* cause = std::get_if<std::exception_ptr>(&failure.cause);
+            ASSERT_NE(cause, nullptr);
+            EXPECT_THROW(std::rethrow_exception(*cause), std::runtime_error);
+        });
 }
 
 TEST(SingleSweepExecutorFailureTest, RawFrameRejectionIsAtomic) {
@@ -100,7 +127,10 @@ TEST(SingleSweepExecutorFailureTest, FrequencyRoundingFailureIsAtomic) {
 
     expectFailure(
         simulationSource(), std::move(work),
-        SingleSweepFailureCode::FrequencyMaterializationFailed);
+        SingleSweepFailureCode::FrequencyMaterializationFailed,
+        [](const OperationFailure& failure) {
+            EXPECT_TRUE(std::holds_alternative<std::monostate>(failure.cause));
+        });
 }
 
 TEST(SingleSweepExecutorFailureTest, PublishFailureKeepsExistingFrame) {
@@ -129,6 +159,10 @@ TEST(SingleSweepExecutorFailureTest, PublishFailureKeepsExistingFrame) {
     EXPECT_EQ(
         failed->error.code,
         SingleSweepFailureCode::TraceDisplayPublishFailed);
+    const auto* cause =
+        std::get_if<TraceDisplayFrameError>(&failed->error.cause);
+    ASSERT_NE(cause, nullptr);
+    EXPECT_EQ(cause->code, TraceDisplayFrameErrorCode::CapacityExceeded);
     EXPECT_EQ(repository.latest(display_model::TraceId{3}), nullptr);
     EXPECT_EQ(repository.latest(display_model::TraceId{9}), existing.value());
 }

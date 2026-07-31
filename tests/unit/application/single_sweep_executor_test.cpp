@@ -7,6 +7,7 @@
 #include <mutex>
 #include <optional>
 #include <stop_token>
+#include <stdexcept>
 #include <variant>
 #include <vector>
 

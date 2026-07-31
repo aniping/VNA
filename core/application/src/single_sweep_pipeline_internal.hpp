@@ -12,7 +12,7 @@ struct SweepPipelineCanceled {};
 
 using SweepPipelineResult = std::variant<
     TraceDisplayFrame,
-    SingleSweepFailureCode,
+    OperationFailure,
     SweepPipelineCanceled>;
 using SweepCancellationCheck = std::function<bool()>;
 

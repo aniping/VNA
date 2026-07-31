@@ -1,20 +1,33 @@
 #include <vna/application/operation_manager.hpp>
 
+#include <optional>
 #include <utility>
 
 namespace vna::application {
 
 OperationSnapshot OperationManager::create(OperationSubmission submission) {
-    const std::scoped_lock lock{mutex_};
-    const OperationSnapshot snapshot{
-        .id = OperationId{nextOperationId_++},
-        .commandId = std::move(submission.commandId),
-        .sessionId = std::move(submission.sessionId),
-        .submittedAtStateRevision = submission.submittedAtStateRevision,
-        .state = OperationQueued{},
-    };
-    operations_.emplace(snapshot.id.value(), snapshot);
-    return snapshot;
+    std::unique_lock lock{mutex_};
+    std::optional<OperationId> committed;
+    try {
+        const OperationSnapshot snapshot{
+            .id = OperationId{nextOperationId_++},
+            .commandId = std::move(submission.commandId),
+            .sessionId = std::move(submission.sessionId),
+            .submittedAtStateRevision = submission.submittedAtStateRevision,
+            .state = OperationQueued{},
+        };
+        operations_.emplace(snapshot.id.value(), snapshot);
+        committed = snapshot.id;
+        return snapshot;
+    } catch (...) {
+        // Text identifiers deliberately preserve moved-from values, so return
+        // construction may allocate. Keep the manager lock through rollback:
+        // no fence can capture a Queued Operation that its caller never saw.
+        if (committed) {
+            operations_.erase(committed->value());
+        }
+        throw;
+    }
 }
 
 OperationResult OperationManager::markRunning(OperationId operationId) {
