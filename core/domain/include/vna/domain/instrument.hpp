@@ -122,6 +122,9 @@ public:
         WindowId windowId,
         MeasurementId measurementId,
         TraceFormat format);
+    [[nodiscard]] bool updateTraceFormat(
+        TraceId traceId,
+        TraceFormat format);
     [[nodiscard]] bool removeTrace(TraceId traceId);
     [[nodiscard]] InstrumentSnapshot snapshot() const;
 

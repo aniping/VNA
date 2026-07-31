@@ -112,6 +112,21 @@ Result<TraceId> Instrument::createTrace(
     return Result<TraceId>{id};
 }
 
+bool Instrument::updateTraceFormat(TraceId traceId, TraceFormat format) {
+    const auto trace = std::find_if(
+        state_.traces.begin(),
+        state_.traces.end(),
+        [traceId](const TraceSnapshot& candidate) {
+            return candidate.id == traceId;
+        });
+    if (trace == state_.traces.end()) {
+        return false;
+    }
+
+    trace->format = format;
+    return true;
+}
+
 bool Instrument::removeTrace(TraceId traceId) {
     const auto trace = std::find_if(
         state_.traces.cbegin(),

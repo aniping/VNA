@@ -68,6 +68,13 @@ CommandResult CommandBus::execute(const CreateTraceCommand& command) {
     return succeeded(CommandValue{trace.value()});
 }
 
+CommandResult CommandBus::execute(const UpdateTraceFormatCommand& command) {
+    if (!instrument_.updateTraceFormat(command.traceId, command.format)) {
+        return validationError();
+    }
+    return succeeded(CommandValue{command.traceId});
+}
+
 CommandResult CommandBus::execute(const RemoveTraceCommand& command) {
     if (!instrument_.removeTrace(command.traceId)) {
         return validationError();

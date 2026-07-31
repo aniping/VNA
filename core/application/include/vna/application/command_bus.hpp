@@ -57,6 +57,11 @@ struct CreateTraceCommand {
     domain::TraceFormat format;
 };
 
+struct UpdateTraceFormatCommand {
+    domain::TraceId traceId;
+    domain::TraceFormat format;
+};
+
 struct RemoveTraceCommand {
     domain::TraceId traceId;
 };
@@ -67,6 +72,7 @@ using CommandPayload = std::variant<
     CreateMeasurementCommand,
     CreateWindowCommand,
     CreateTraceCommand,
+    UpdateTraceFormatCommand,
     RemoveTraceCommand>;
 
 using CommandValue = std::variant<
@@ -119,6 +125,8 @@ private:
         const CreateMeasurementCommand& command);
     [[nodiscard]] CommandResult execute(const CreateWindowCommand& command);
     [[nodiscard]] CommandResult execute(const CreateTraceCommand& command);
+    [[nodiscard]] CommandResult execute(
+        const UpdateTraceFormatCommand& command);
     [[nodiscard]] CommandResult execute(const RemoveTraceCommand& command);
     [[nodiscard]] CommandResult succeeded(CommandValue value);
     [[nodiscard]] CommandResult validationError() const;
