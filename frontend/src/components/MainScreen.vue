@@ -6,6 +6,7 @@ import type {
   TraceFormat,
   TraceSetup as TraceSetupModel,
 } from '../api/vnaApi'
+import type { TraceDisplayFrame } from '../api/traceDisplayFrameApi'
 import ChannelSofttool from './ChannelSofttool.vue'
 import DiagramGrid from './DiagramGrid.vue'
 import FormatSofttool from './FormatSofttool.vue'
@@ -28,6 +29,8 @@ const props = defineProps<{
   serviceError: string
   disabled: boolean
   busy: boolean
+  sweepBusy: boolean
+  frames: ReadonlyMap<number, TraceDisplayFrame>
 }>()
 const emit = defineEmits<{
   createChannel: [sweep: SweepSettings]
@@ -35,6 +38,7 @@ const emit = defineEmits<{
   updateSweep: [channelId: number, sweep: SweepSettings]
   updateTraceFormat: [traceId: number, format: TraceFormat]
   updateTraceScalePerDivision: [traceId: number, value: number]
+  startSingleSweep: [channelId: number, traceId: number]
 }>()
 
 const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
@@ -46,6 +50,20 @@ const activeTrace = computed(() => {
 })
 const isDiagramMaximized = ref(false)
 const canMaximizeDiagram = computed(() => Boolean(activeTrace.value))
+const singleSweepTarget = computed(() => {
+  const trace = activeTrace.value
+  if (!trace || trace.format !== 'logMagnitude') return null
+  const measurement = props.state?.instrument.measurements.find(
+    (candidate) => candidate.id === trace.measurementId,
+  )
+  const targetChannel = props.state?.instrument.channels.find(
+    (candidate) => candidate.id === measurement?.channelId,
+  )
+  return targetChannel ? { channelId: targetChannel.id, traceId: trace.id } : null
+})
+const canStartSingleSweep = computed(() => (
+  props.connection === 'online' && !props.busy && singleSweepTarget.value !== null
+))
 // Nullable scale is the display-model capability seam; format must not re-derive support.
 const activeScale = computed(() => activeTrace.value?.scale ?? null)
 const activeSofttool = ref<'measurement' | 'format' | 'scale' | 'stimulus' | 'channel' | null>(
@@ -81,6 +99,13 @@ watch(activeScale, (scale) => {
 function toggleDiagramMaximized(): void {
   if (!canMaximizeDiagram.value) return
   isDiagramMaximized.value = !isDiagramMaximized.value
+}
+
+function startSingleSweep(): void {
+  const target = singleSweepTarget.value
+  if (canStartSingleSweep.value && target) {
+    emit('startSingleSweep', target.channelId, target.traceId)
+  }
 }
 
 function selectHardkey(key: HardkeyName): void {
@@ -126,10 +151,14 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
         <InstrumentToolbar
           :maximized="isDiagramMaximized"
           :can-maximize="canMaximizeDiagram"
+          :can-restart-sweep="canStartSingleSweep"
+          :sweep-busy="sweepBusy"
           @toggle-maximize="toggleDiagramMaximized"
+          @restart-sweep="startSingleSweep"
         />
         <DiagramGrid
           :state="state"
+          :frames="frames"
           :active-trace-id="activeTrace?.id"
           :maximized="isDiagramMaximized"
           @select-trace="activeTraceId = $event"

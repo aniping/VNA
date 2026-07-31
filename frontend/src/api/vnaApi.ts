@@ -141,14 +141,33 @@ export async function updateTraceScalePerDivision(
   })
 }
 
+export async function startSingleSweep(
+  stateRevision: number,
+  channelId: number,
+  signal: AbortSignal,
+): Promise<CommandResult<{ operationId: number }>> {
+  const result = await sendCommand<{ operationId: number }>(
+    stateRevision,
+    'startSingleSweep',
+    { channelId },
+    signal,
+  )
+  if (!Number.isSafeInteger(result.value?.operationId) || result.value.operationId < 1) {
+    throw new Error('Invalid start sweep response')
+  }
+  return result
+}
+
 async function sendCommand<T>(
   stateRevision: number,
   type: string,
   payload: unknown,
+  signal?: AbortSignal,
 ): Promise<CommandResult<T>> {
   const response = await fetch('/api/v1/commands', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal,
     body: JSON.stringify({
       commandId: crypto.randomUUID(),
       sessionId: 'browser-session',

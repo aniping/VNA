@@ -4,9 +4,14 @@ import ToolbarGlyph from './ToolbarGlyph.vue'
 defineProps<{
   maximized: boolean
   canMaximize: boolean
+  canRestartSweep: boolean
+  sweepBusy: boolean
 }>()
 
-const emit = defineEmits<{ toggleMaximize: [] }>()
+const emit = defineEmits<{
+  toggleMaximize: []
+  restartSweep: []
+}>()
 
 const groups = [
   { label: 'History', items: [
@@ -31,7 +36,7 @@ const groups = [
     { icon: 'system-menu', label: 'Open System Menu' },
   ] },
   { label: 'Sweep', items: [
-    { icon: 'restart-sweep', label: 'Restart Sweep' },
+    { icon: 'restart-sweep', label: 'Restart Sweep', action: 'restartSweep' },
   ] },
   { label: 'Diagram Controls', items: [
     { icon: 'edit-diagrams', label: 'Edit Diagram Area' },
@@ -70,7 +75,7 @@ const groups = [
       <div class="toolbar-group" role="group" :aria-label="group.label">
         <template v-for="item in group.items" :key="item.icon">
           <button
-            v-if="'action' in item"
+            v-if="'action' in item && item.action === 'maximize'"
             class="toolbar-button"
             type="button"
             data-toolbar-item="maximize"
@@ -81,6 +86,23 @@ const groups = [
             @click="emit('toggleMaximize')"
             @keydown.enter.prevent="emit('toggleMaximize')"
             @keydown.space.prevent="emit('toggleMaximize')"
+          >
+            <ToolbarGlyph :name="item.icon" />
+          </button>
+          <button
+            v-else-if="'action' in item"
+            class="toolbar-button"
+            type="button"
+            data-toolbar-item="restart-sweep"
+            :disabled="!canRestartSweep"
+            :aria-busy="sweepBusy"
+            :aria-label="sweepBusy
+              ? `${item.label}, measurement in progress`
+              : canRestartSweep ? item.label : `${item.label}, unavailable for active Trace`"
+            :title="sweepBusy
+              ? `${item.label} — Measurement in progress`
+              : canRestartSweep ? item.label : `${item.label} — Unavailable for active Trace`"
+            @click="emit('restartSweep')"
           >
             <ToolbarGlyph :name="item.icon" />
           </button>
