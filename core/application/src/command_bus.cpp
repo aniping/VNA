@@ -1,6 +1,28 @@
 #include <vna/application/command_bus.hpp>
 
+#include <exception>
+
 namespace vna::application {
+
+CommandErrorCode commandErrorCode(const CommandError& error) noexcept {
+    const auto* domainError = std::get_if<domain::DomainError>(&error);
+    if (domainError == nullptr) {
+        return std::get<ApplicationError>(error).code;
+    }
+    switch (domainError->code) {
+        case domain::DomainErrorCode::InvalidSweepSettings:
+            return CommandErrorCode::InvalidSweepSettings;
+        case domain::DomainErrorCode::ChannelNotFound:
+            return CommandErrorCode::ChannelNotFound;
+        case domain::DomainErrorCode::MeasurementNotFound:
+            return CommandErrorCode::MeasurementNotFound;
+        case domain::DomainErrorCode::WindowNotFound:
+            return CommandErrorCode::WindowNotFound;
+        case domain::DomainErrorCode::TraceNotFound:
+            return CommandErrorCode::TraceNotFound;
+    }
+    std::terminate();
+}
 
 CommandBus::CommandBus(InstrumentId instrumentId)
     : instrumentId_(std::move(instrumentId)) {}
@@ -8,18 +30,12 @@ CommandBus::CommandBus(InstrumentId instrumentId)
 CommandResult CommandBus::dispatch(const CommandEnvelope& command) {
     const std::scoped_lock lock{mutex_};
     if (command.instrumentId != instrumentId_) {
-        return CommandResult{
-            .status = CommandStatus::WrongInstrument,
-            .stateRevision = stateRevision_,
-        };
+        return applicationError(CommandErrorCode::WrongInstrument);
     }
 
     if (command.expectedStateRevision.has_value() &&
         command.expectedStateRevision.value() != stateRevision_) {
-        return CommandResult{
-            .status = CommandStatus::Conflict,
-            .stateRevision = stateRevision_,
-        };
+        return applicationError(CommandErrorCode::StateRevisionConflict);
     }
 
     return std::visit(
@@ -30,7 +46,7 @@ CommandResult CommandBus::dispatch(const CommandEnvelope& command) {
 CommandResult CommandBus::execute(const CreateChannelCommand& command) {
     const auto channel = instrument_.createChannel(command.sweep);
     if (!channel.hasValue()) {
-        return validationError();
+        return domainError(channel.error());
     }
     return succeeded(CommandValue{channel.value()});
 }
@@ -39,7 +55,7 @@ CommandResult CommandBus::execute(const UpdateChannelSweepCommand& command) {
     const auto channel =
         instrument_.updateChannelSweep(command.channelId, command.sweep);
     if (!channel.hasValue()) {
-        return validationError();
+        return domainError(channel.error());
     }
     return succeeded(CommandValue{channel.value()});
 }
@@ -48,7 +64,7 @@ CommandResult CommandBus::execute(const CreateMeasurementCommand& command) {
     const auto measurement =
         instrument_.createMeasurement(command.channelId, command.type);
     if (!measurement.hasValue()) {
-        return validationError();
+        return domainError(measurement.error());
     }
     return succeeded(CommandValue{measurement.value()});
 }
@@ -63,21 +79,24 @@ CommandResult CommandBus::execute(const CreateTraceCommand& command) {
         command.measurementId,
         command.format);
     if (!trace.hasValue()) {
-        return validationError();
+        return domainError(trace.error());
     }
     return succeeded(CommandValue{trace.value()});
 }
 
 CommandResult CommandBus::execute(const UpdateTraceFormatCommand& command) {
-    if (!instrument_.updateTraceFormat(command.traceId, command.format)) {
-        return validationError();
+    const auto trace =
+        instrument_.updateTraceFormat(command.traceId, command.format);
+    if (!trace.hasValue()) {
+        return domainError(trace.error());
     }
-    return succeeded(CommandValue{command.traceId});
+    return succeeded(CommandValue{trace.value()});
 }
 
 CommandResult CommandBus::execute(const RemoveTraceCommand& command) {
-    if (!instrument_.removeTrace(command.traceId)) {
-        return validationError();
+    const auto trace = instrument_.removeTrace(command.traceId);
+    if (!trace.hasValue()) {
+        return domainError(trace.error());
     }
     return succeeded(CommandValue{std::monostate{}});
 }
@@ -85,16 +104,22 @@ CommandResult CommandBus::execute(const RemoveTraceCommand& command) {
 CommandResult CommandBus::succeeded(CommandValue value) {
     ++stateRevision_;
     return CommandResult{
-        .status = CommandStatus::Succeeded,
         .stateRevision = stateRevision_,
-        .value = std::move(value),
+        .outcome = CommandSuccess{.value = std::move(value)},
     };
 }
 
-CommandResult CommandBus::validationError() const {
+CommandResult CommandBus::domainError(domain::DomainError error) const {
     return CommandResult{
-        .status = CommandStatus::ValidationError,
         .stateRevision = stateRevision_,
+        .outcome = CommandError{error},
+    };
+}
+
+CommandResult CommandBus::applicationError(CommandErrorCode code) const {
+    return CommandResult{
+        .stateRevision = stateRevision_,
+        .outcome = CommandError{ApplicationError{.code = code}},
     };
 }
 

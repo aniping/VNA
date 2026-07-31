@@ -8,6 +8,10 @@
 namespace vna::application {
 namespace {
 
+bool isSuccess(const CommandResult& result) {
+    return std::holds_alternative<CommandSuccess>(result.outcome);
+}
+
 CommandEnvelope command(
     const char* id,
     std::uint64_t revision,
@@ -31,31 +35,23 @@ void createTrace(CommandBus& commandBus) {
         .ifBandwidthHz = 10'000,
         .powerDbm = -10.0,
     };
-    ASSERT_EQ(
-        commandBus.dispatch(
-            command("create-channel", 0, CreateChannelCommand{sweep})).status,
-        CommandStatus::Succeeded);
-    ASSERT_EQ(
-        commandBus.dispatch(command(
+    ASSERT_TRUE(isSuccess(commandBus.dispatch(
+        command("create-channel", 0, CreateChannelCommand{sweep}))));
+    ASSERT_TRUE(isSuccess(commandBus.dispatch(command(
             "create-measurement",
             1,
             CreateMeasurementCommand{
                 domain::ChannelId{1},
-                domain::MeasurementType::S11})).status,
-        CommandStatus::Succeeded);
-    ASSERT_EQ(
-        commandBus.dispatch(
-            command("create-window", 2, CreateWindowCommand{})).status,
-        CommandStatus::Succeeded);
-    ASSERT_EQ(
-        commandBus.dispatch(command(
+                domain::MeasurementType::S11}))));
+    ASSERT_TRUE(isSuccess(commandBus.dispatch(
+        command("create-window", 2, CreateWindowCommand{}))));
+    ASSERT_TRUE(isSuccess(commandBus.dispatch(command(
             "create-trace",
             3,
             CreateTraceCommand{
                 domain::WindowId{1},
                 domain::MeasurementId{1},
-                domain::TraceFormat::LogMagnitude})).status,
-        CommandStatus::Succeeded);
+                domain::TraceFormat::LogMagnitude}))));
 }
 
 TEST(TraceCommandTest, UpdatesTraceFormatAndIncrementsRevisionOnce) {
@@ -69,9 +65,12 @@ TEST(TraceCommandTest, UpdatesTraceFormatAndIncrementsRevisionOnce) {
             domain::TraceId{1},
             domain::TraceFormat::Phase}));
 
-    EXPECT_EQ(result.status, CommandStatus::Succeeded);
+    EXPECT_TRUE(isSuccess(result));
     EXPECT_EQ(result.stateRevision, 5U);
-    EXPECT_EQ(std::get<domain::TraceId>(result.value), domain::TraceId{1});
+    EXPECT_EQ(
+        std::get<domain::TraceId>(
+            std::get<CommandSuccess>(result.outcome).value),
+        domain::TraceId{1});
     const auto snapshot = commandBus.snapshot();
     EXPECT_EQ(snapshot.stateRevision, 5U);
     ASSERT_EQ(snapshot.instrument.traces.size(), 1U);

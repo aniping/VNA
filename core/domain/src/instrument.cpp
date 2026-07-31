@@ -112,7 +112,9 @@ Result<TraceId> Instrument::createTrace(
     return Result<TraceId>{id};
 }
 
-bool Instrument::updateTraceFormat(TraceId traceId, TraceFormat format) {
+Result<TraceId> Instrument::updateTraceFormat(
+    TraceId traceId,
+    TraceFormat format) {
     const auto trace = std::find_if(
         state_.traces.begin(),
         state_.traces.end(),
@@ -120,14 +122,15 @@ bool Instrument::updateTraceFormat(TraceId traceId, TraceFormat format) {
             return candidate.id == traceId;
         });
     if (trace == state_.traces.end()) {
-        return false;
+        return Result<TraceId>{
+            DomainError{.code = DomainErrorCode::TraceNotFound}};
     }
 
     trace->format = format;
-    return true;
+    return Result<TraceId>{traceId};
 }
 
-bool Instrument::removeTrace(TraceId traceId) {
+Result<TraceId> Instrument::removeTrace(TraceId traceId) {
     const auto trace = std::find_if(
         state_.traces.cbegin(),
         state_.traces.cend(),
@@ -135,11 +138,12 @@ bool Instrument::removeTrace(TraceId traceId) {
             return candidate.id == traceId;
         });
     if (trace == state_.traces.cend()) {
-        return false;
+        return Result<TraceId>{
+            DomainError{.code = DomainErrorCode::TraceNotFound}};
     }
 
     state_.traces.erase(trace);
-    return true;
+    return Result<TraceId>{traceId};
 }
 
 InstrumentSnapshot Instrument::snapshot() const {

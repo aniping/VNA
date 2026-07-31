@@ -8,6 +8,10 @@
 namespace vna::application {
 namespace {
 
+bool isSuccess(const CommandResult& result) {
+    return std::holds_alternative<CommandSuccess>(result.outcome);
+}
+
 CommandEnvelope command(
     const char* id,
     std::uint64_t revision,
@@ -34,7 +38,7 @@ TEST(ChannelCommandTest, UpdatesExistingChannelSweep) {
     };
     const auto created = commandBus.dispatch(
         command("create-channel", 0, CreateChannelCommand{initial}));
-    ASSERT_EQ(created.status, CommandStatus::Succeeded);
+    ASSERT_TRUE(isSuccess(created));
 
     const domain::SweepSettings updated{
         .startFrequencyHz = 100'000'000,
@@ -48,7 +52,7 @@ TEST(ChannelCommandTest, UpdatesExistingChannelSweep) {
         1,
         UpdateChannelSweepCommand{domain::ChannelId{1}, updated}));
 
-    EXPECT_EQ(result.status, CommandStatus::Succeeded);
+    EXPECT_TRUE(isSuccess(result));
     EXPECT_EQ(result.stateRevision, 2U);
     const auto snapshot = commandBus.snapshot();
     ASSERT_EQ(snapshot.instrument.channels.size(), 1U);
@@ -68,10 +72,8 @@ TEST(ChannelCommandTest, InvalidUpdateKeepsChannelAndRevisionUnchanged) {
         .ifBandwidthHz = 10'000,
         .powerDbm = -10.0,
     };
-    ASSERT_EQ(
-        commandBus.dispatch(
-            command("create-channel", 0, CreateChannelCommand{initial})).status,
-        CommandStatus::Succeeded);
+    ASSERT_TRUE(isSuccess(commandBus.dispatch(
+        command("create-channel", 0, CreateChannelCommand{initial}))));
     auto invalid = initial;
     invalid.startFrequencyHz = 30'000'000'000;
 
@@ -80,7 +82,7 @@ TEST(ChannelCommandTest, InvalidUpdateKeepsChannelAndRevisionUnchanged) {
         1,
         UpdateChannelSweepCommand{domain::ChannelId{1}, invalid}));
 
-    EXPECT_EQ(result.status, CommandStatus::ValidationError);
+    EXPECT_TRUE(std::holds_alternative<CommandError>(result.outcome));
     EXPECT_EQ(result.stateRevision, 1U);
     const auto snapshot = commandBus.snapshot();
     EXPECT_EQ(snapshot.instrument.channels[0].sweep.startFrequencyHz, 10'000'000U);
@@ -102,7 +104,7 @@ TEST(ChannelCommandTest, RejectsUpdateForMissingChannel) {
         0,
         UpdateChannelSweepCommand{domain::ChannelId{99}, sweep}));
 
-    EXPECT_EQ(result.status, CommandStatus::ValidationError);
+    EXPECT_TRUE(std::holds_alternative<CommandError>(result.outcome));
     EXPECT_EQ(result.stateRevision, 0U);
     EXPECT_TRUE(commandBus.snapshot().instrument.channels.empty());
 }

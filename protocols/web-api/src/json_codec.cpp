@@ -92,18 +92,40 @@ struct CommandStatusInfo {
     int httpStatus;
 };
 
-CommandStatusInfo commandStatusInfo(application::CommandStatus status) {
-    switch (status) {
-        case application::CommandStatus::Succeeded:
-            return {"succeeded", 200};
-        case application::CommandStatus::ValidationError:
+CommandStatusInfo commandStatusInfo(const application::CommandOutcome& outcome) {
+    if (std::holds_alternative<application::CommandSuccess>(outcome)) {
+        return {"succeeded", 200};
+    }
+    const auto& error = std::get<application::CommandError>(outcome);
+    switch (application::commandErrorCode(error)) {
+        case application::CommandErrorCode::InvalidSweepSettings:
+        case application::CommandErrorCode::ChannelNotFound:
+        case application::CommandErrorCode::MeasurementNotFound:
+        case application::CommandErrorCode::WindowNotFound:
+        case application::CommandErrorCode::TraceNotFound:
             return {"validationError", 422};
-        case application::CommandStatus::Conflict:
+        case application::CommandErrorCode::StateRevisionConflict:
             return {"conflict", 409};
-        case application::CommandStatus::WrongInstrument:
+        case application::CommandErrorCode::WrongInstrument:
             return {"wrongInstrument", 404};
     }
     return {"unknown", 500};
+}
+
+void encodeCommandValue(Json& body, const application::CommandValue& value) {
+    if (const auto* channelId = std::get_if<domain::ChannelId>(&value)) {
+        body["value"] = {{"channelId", channelId->value()}};
+    }
+    if (const auto* measurementId =
+            std::get_if<domain::MeasurementId>(&value)) {
+        body["value"] = {{"measurementId", measurementId->value()}};
+    }
+    if (const auto* windowId = std::get_if<domain::WindowId>(&value)) {
+        body["value"] = {{"windowId", windowId->value()}};
+    }
+    if (const auto* traceId = std::get_if<domain::TraceId>(&value)) {
+        body["value"] = {{"traceId", traceId->value()}};
+    }
 }
 
 }  // namespace
@@ -117,23 +139,14 @@ std::string encodeState(const application::StateSnapshot& state) {
 
 CommandResponse encodeCommandResult(
     const application::CommandResult& result) {
-    const auto info = commandStatusInfo(result.status);
+    const auto info = commandStatusInfo(result.outcome);
     Json body{
         {"status", info.name},
         {"stateRevision", result.stateRevision},
     };
-    if (const auto* channelId = std::get_if<domain::ChannelId>(&result.value)) {
-        body["value"] = {{"channelId", channelId->value()}};
-    }
-    if (const auto* measurementId =
-            std::get_if<domain::MeasurementId>(&result.value)) {
-        body["value"] = {{"measurementId", measurementId->value()}};
-    }
-    if (const auto* windowId = std::get_if<domain::WindowId>(&result.value)) {
-        body["value"] = {{"windowId", windowId->value()}};
-    }
-    if (const auto* traceId = std::get_if<domain::TraceId>(&result.value)) {
-        body["value"] = {{"traceId", traceId->value()}};
+    if (const auto* success =
+            std::get_if<application::CommandSuccess>(&result.outcome)) {
+        encodeCommandValue(body, success->value);
     }
     return {info.httpStatus, body.dump()};
 }

@@ -115,7 +115,7 @@ TEST(InstrumentTest, RemovingTraceKeepsItsMeasurement) {
         window, measurement.value(), TraceFormat::LogMagnitude);
     ASSERT_TRUE(trace.hasValue());
 
-    EXPECT_TRUE(instrument.removeTrace(trace.value()));
+    EXPECT_TRUE(instrument.removeTrace(trace.value()).hasValue());
 
     const auto snapshot = instrument.snapshot();
     EXPECT_TRUE(snapshot.traces.empty());

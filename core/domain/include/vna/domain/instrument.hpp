@@ -32,6 +32,7 @@ enum class DomainErrorCode {
     ChannelNotFound,
     MeasurementNotFound,
     WindowNotFound,
+    TraceNotFound,
 };
 
 struct DomainError {
@@ -122,10 +123,10 @@ public:
         WindowId windowId,
         MeasurementId measurementId,
         TraceFormat format);
-    [[nodiscard]] bool updateTraceFormat(
+    [[nodiscard]] Result<TraceId> updateTraceFormat(
         TraceId traceId,
         TraceFormat format);
-    [[nodiscard]] bool removeTrace(TraceId traceId);
+    [[nodiscard]] Result<TraceId> removeTrace(TraceId traceId);
     [[nodiscard]] InstrumentSnapshot snapshot() const;
 
 private:

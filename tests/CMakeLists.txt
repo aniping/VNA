@@ -11,6 +11,7 @@ add_executable(
     vna_application_tests
     unit/application/channel_command_test.cpp
     unit/application/command_bus_test.cpp
+    unit/application/command_error_test.cpp
     unit/application/trace_command_test.cpp
 )
 target_link_libraries(

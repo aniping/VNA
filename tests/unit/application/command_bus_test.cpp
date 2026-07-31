@@ -13,6 +13,15 @@
 namespace vna::application {
 namespace {
 
+bool isSuccess(const CommandResult& result) {
+    return std::holds_alternative<CommandSuccess>(result.outcome);
+}
+
+const ApplicationError* applicationError(const CommandResult& result) {
+    const auto* error = std::get_if<CommandError>(&result.outcome);
+    return error == nullptr ? nullptr : std::get_if<ApplicationError>(error);
+}
+
 constexpr domain::SweepSettings validSweep() {
     return {
         .startFrequencyHz = 1'000'000'000,
@@ -44,16 +53,19 @@ domain::TraceId createTrace(CommandBus& commandBus) {
         "setup-channel",
         0,
         CreateChannelCommand{validSweep()}));
-    const auto channelId = std::get<domain::ChannelId>(channelResult.value);
+    const auto channelId = std::get<domain::ChannelId>(
+        std::get<CommandSuccess>(channelResult.outcome).value);
     const auto measurementResult = commandBus.dispatch(makeCommand(
         "setup-measurement",
         1,
         CreateMeasurementCommand{channelId, domain::MeasurementType::S11}));
     const auto measurementId =
-        std::get<domain::MeasurementId>(measurementResult.value);
+        std::get<domain::MeasurementId>(
+            std::get<CommandSuccess>(measurementResult.outcome).value);
     const auto windowResult = commandBus.dispatch(
         makeCommand("setup-window", 2, CreateWindowCommand{}));
-    const auto windowId = std::get<domain::WindowId>(windowResult.value);
+    const auto windowId = std::get<domain::WindowId>(
+        std::get<CommandSuccess>(windowResult.outcome).value);
     const auto traceResult = commandBus.dispatch(makeCommand(
         "setup-trace",
         3,
@@ -62,7 +74,8 @@ domain::TraceId createTrace(CommandBus& commandBus) {
             measurementId,
             domain::TraceFormat::LogMagnitude,
         }));
-    return std::get<domain::TraceId>(traceResult.value);
+    return std::get<domain::TraceId>(
+        std::get<CommandSuccess>(traceResult.outcome).value);
 }
 
 TEST(CommandBusTest, SuccessfulCommandIncrementsRevisionOnce) {
@@ -72,7 +85,7 @@ TEST(CommandBusTest, SuccessfulCommandIncrementsRevisionOnce) {
 
     const auto result = commandBus.dispatch(command);
 
-    EXPECT_EQ(result.status, CommandStatus::Succeeded);
+    EXPECT_TRUE(isSuccess(result));
     EXPECT_EQ(result.stateRevision, 1U);
     const auto snapshot = commandBus.snapshot();
     EXPECT_EQ(snapshot.stateRevision, 1U);
@@ -94,7 +107,7 @@ TEST(CommandBusTest, InvalidCommandDoesNotChangeStateOrRevision) {
 
     const auto result = commandBus.dispatch(command);
 
-    EXPECT_EQ(result.status, CommandStatus::ValidationError);
+    EXPECT_TRUE(std::holds_alternative<CommandError>(result.outcome));
     EXPECT_EQ(result.stateRevision, 0U);
     const auto snapshot = commandBus.snapshot();
     EXPECT_EQ(snapshot.stateRevision, 0U);
@@ -105,15 +118,16 @@ TEST(CommandBusTest, StaleRevisionIsRejectedWithoutChangingState) {
     CommandBus commandBus{InstrumentId{"instrument-1"}};
     const auto firstCommand =
         makeCommand("command-1", 0, CreateChannelCommand{validSweep()});
-    ASSERT_EQ(
-        commandBus.dispatch(firstCommand).status,
-        CommandStatus::Succeeded);
+    ASSERT_TRUE(isSuccess(commandBus.dispatch(firstCommand)));
     const auto staleCommand =
         makeCommand("command-2", 0, CreateChannelCommand{validSweep()});
 
     const auto result = commandBus.dispatch(staleCommand);
 
-    EXPECT_EQ(result.status, CommandStatus::Conflict);
+    ASSERT_NE(applicationError(result), nullptr);
+    EXPECT_EQ(
+        applicationError(result)->code,
+        CommandErrorCode::StateRevisionConflict);
     EXPECT_EQ(result.stateRevision, 1U);
     const auto snapshot = commandBus.snapshot();
     EXPECT_EQ(snapshot.stateRevision, 1U);
@@ -130,7 +144,10 @@ TEST(CommandBusTest, CommandForAnotherInstrumentIsRejected) {
 
     const auto result = commandBus.dispatch(command);
 
-    EXPECT_EQ(result.status, CommandStatus::WrongInstrument);
+    ASSERT_NE(applicationError(result), nullptr);
+    EXPECT_EQ(
+        applicationError(result)->code,
+        CommandErrorCode::WrongInstrument);
     EXPECT_EQ(result.stateRevision, 0U);
     EXPECT_TRUE(commandBus.snapshot().instrument.channels.empty());
 }
@@ -141,21 +158,24 @@ TEST(CommandBusTest, CreatesMeasurementAndTraceThroughUnifiedEntryPoint) {
         "command-1",
         0,
         CreateChannelCommand{validSweep()}));
-    ASSERT_EQ(channelResult.status, CommandStatus::Succeeded);
-    const auto channelId = std::get<domain::ChannelId>(channelResult.value);
+    ASSERT_TRUE(isSuccess(channelResult));
+    const auto channelId = std::get<domain::ChannelId>(
+        std::get<CommandSuccess>(channelResult.outcome).value);
 
     const auto measurementResult = commandBus.dispatch(makeCommand(
         "command-2",
         1,
         CreateMeasurementCommand{channelId, domain::MeasurementType::S11}));
-    ASSERT_EQ(measurementResult.status, CommandStatus::Succeeded);
+    ASSERT_TRUE(isSuccess(measurementResult));
     const auto measurementId =
-        std::get<domain::MeasurementId>(measurementResult.value);
+        std::get<domain::MeasurementId>(
+            std::get<CommandSuccess>(measurementResult.outcome).value);
 
     const auto windowResult = commandBus.dispatch(
         makeCommand("command-3", 2, CreateWindowCommand{}));
-    ASSERT_EQ(windowResult.status, CommandStatus::Succeeded);
-    const auto windowId = std::get<domain::WindowId>(windowResult.value);
+    ASSERT_TRUE(isSuccess(windowResult));
+    const auto windowId = std::get<domain::WindowId>(
+        std::get<CommandSuccess>(windowResult.outcome).value);
 
     const auto traceResult = commandBus.dispatch(makeCommand(
         "command-4",
@@ -165,7 +185,7 @@ TEST(CommandBusTest, CreatesMeasurementAndTraceThroughUnifiedEntryPoint) {
             measurementId,
             domain::TraceFormat::LogMagnitude,
         }));
-    ASSERT_EQ(traceResult.status, CommandStatus::Succeeded);
+    ASSERT_TRUE(isSuccess(traceResult));
 
     const auto snapshot = commandBus.snapshot();
     EXPECT_EQ(snapshot.stateRevision, 4U);
@@ -182,9 +202,10 @@ TEST(CommandBusTest, RemovesTraceThroughUnifiedEntryPoint) {
     const auto result = commandBus.dispatch(
         makeCommand("command-5", 4, RemoveTraceCommand{traceId}));
 
-    EXPECT_EQ(result.status, CommandStatus::Succeeded);
+    EXPECT_TRUE(isSuccess(result));
     EXPECT_EQ(result.stateRevision, 5U);
-    EXPECT_TRUE(std::holds_alternative<std::monostate>(result.value));
+    EXPECT_TRUE(std::holds_alternative<std::monostate>(
+        std::get<CommandSuccess>(result.outcome).value));
     const auto snapshot = commandBus.snapshot();
     EXPECT_EQ(snapshot.instrument.measurements.size(), 1U);
     EXPECT_TRUE(snapshot.instrument.traces.empty());
@@ -213,11 +234,11 @@ TEST(CommandBusTest, SerializesCommandsThatExpectTheSameRevision) {
     }
     startPromise.set_value();
 
-    std::size_t succeeded = 0;
+    std::size_t successCount = 0;
     for (auto& result : pending) {
-        succeeded += result.get().status == CommandStatus::Succeeded;
+        successCount += isSuccess(result.get());
     }
-    EXPECT_EQ(succeeded, 1U);
+    EXPECT_EQ(successCount, 1U);
     const auto snapshot = commandBus.snapshot();
     EXPECT_EQ(snapshot.stateRevision, 1U);
     EXPECT_EQ(snapshot.instrument.channels.size(), 1U);

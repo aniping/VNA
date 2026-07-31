@@ -92,17 +92,33 @@ struct CommandEnvelope {
     CommandPayload payload;
 };
 
-enum class CommandStatus {
-    Succeeded,
-    ValidationError,
-    Conflict,
+enum class CommandErrorCode {
+    InvalidSweepSettings,
+    ChannelNotFound,
+    MeasurementNotFound,
+    WindowNotFound,
+    TraceNotFound,
+    StateRevisionConflict,
     WrongInstrument,
 };
 
-struct CommandResult {
-    CommandStatus status;
-    std::uint64_t stateRevision;
+struct ApplicationError {
+    CommandErrorCode code;
+};
+
+struct CommandSuccess {
     CommandValue value{};
+};
+
+using CommandError = std::variant<domain::DomainError, ApplicationError>;
+using CommandOutcome = std::variant<CommandSuccess, CommandError>;
+
+[[nodiscard]] CommandErrorCode commandErrorCode(
+    const CommandError& error) noexcept;
+
+struct CommandResult {
+    std::uint64_t stateRevision;
+    CommandOutcome outcome;
 };
 
 struct StateSnapshot {
@@ -129,7 +145,9 @@ private:
         const UpdateTraceFormatCommand& command);
     [[nodiscard]] CommandResult execute(const RemoveTraceCommand& command);
     [[nodiscard]] CommandResult succeeded(CommandValue value);
-    [[nodiscard]] CommandResult validationError() const;
+    [[nodiscard]] CommandResult domainError(domain::DomainError error) const;
+    [[nodiscard]] CommandResult applicationError(
+        CommandErrorCode code) const;
 
     InstrumentId instrumentId_;
     mutable std::mutex mutex_;
