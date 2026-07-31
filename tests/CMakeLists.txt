@@ -81,6 +81,7 @@ add_executable(
     unit/application/control_authority_test.cpp
     unit/application/control_authority_concurrency_test.cpp
     unit/application/operation_manager_test.cpp
+    unit/application/single_sweep_executor_test.cpp
     unit/application/text_id_test.cpp
     unit/application/trace_display_frame_query_test.cpp
     unit/application/trace_display_frame_repository_test.cpp
@@ -91,6 +92,7 @@ target_link_libraries(
     vna_application_tests
     PRIVATE
         vna::application
+        vna::simulation
         GTest::gtest_main
 )
 gtest_discover_tests(vna_application_tests)

@@ -1,3 +1,5 @@
+find_package(Threads REQUIRED)
+
 add_library(
     vna_application
     src/command_bus.cpp
@@ -6,6 +8,8 @@ add_library(
     src/completion_fence.cpp
     src/completion_fence_handles.cpp
     src/operation_manager.cpp
+    src/single_sweep_executor.cpp
+    src/single_sweep_pipeline.cpp
     src/trace_display_frame_query.cpp
     src/trace_display_frame_repository.cpp
 )
@@ -20,5 +24,6 @@ target_include_directories(
 target_link_libraries(
     vna_application
     PUBLIC vna::display_model vna::domain vna::frame_contracts
+    PRIVATE Threads::Threads vna::data_plane vna::measurement
 )
 target_compile_options(vna_application PRIVATE -Wall -Wextra -Wpedantic)
