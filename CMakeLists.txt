@@ -9,5 +9,9 @@ endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_subdirectory(third-part)
+add_subdirectory(core/domain)
 
 include(CTest)
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
