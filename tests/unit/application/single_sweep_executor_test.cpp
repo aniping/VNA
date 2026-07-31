@@ -1,68 +1,26 @@
 #include <gtest/gtest.h>
 
-#include <chrono>
+#include <atomic>
 #include <cstddef>
-#include <functional>
+#include <condition_variable>
 #include <future>
+#include <mutex>
+#include <optional>
 #include <stop_token>
-#include <utility>
 #include <variant>
 #include <vector>
 
 #include <vna/application/single_sweep_executor.hpp>
 #include <vna/simulation/simulation_sweep.hpp>
 
+#include "single_sweep_executor_test_support.hpp"
+
 namespace vna::application {
 namespace {
 
 using namespace std::chrono_literals;
-
-SingleSweepWorkItem validWorkItem(
-    CommandId commandId = CommandId{"sweep-1"},
-    display_model::TraceId traceId = display_model::TraceId{3}) {
-    return SingleSweepWorkItem{
-        .commandId = std::move(commandId),
-        .sessionId = SessionId{"session-1"},
-        .frameContext = {
-            .frameId = frames::FrameId{11},
-            .sweepId = frames::SweepId{21},
-            .channelId = domain::ChannelId{1},
-            .stateRevision = 7,
-            .sequenceNumber = 1,
-        },
-        .frequencyAxis = {
-            .id = frames::FrequencyAxisId{31},
-            .startFrequencyHz = 1'000'000,
-            .stopFrequencyHz = 2'000'000,
-            .points = 5,
-        },
-        .measurement = {
-            .id = domain::MeasurementId{1},
-            .channelId = domain::ChannelId{1},
-            .type = domain::MeasurementType::S11,
-        },
-        .traceId = traceId,
-    };
-}
-
-OperationSnapshot awaitTerminal(
-    OperationManager& manager,
-    const OperationSnapshot& submitted,
-    std::function<void()> atCompletion = [] {}) {
-    std::promise<void> completed;
-    auto future = completed.get_future();
-    auto fence = manager.captureFence(submitted.sessionId);
-    auto subscription = manager.subscribe(
-        std::move(fence),
-        [&] {
-            atCompletion();
-            completed.set_value();
-        });
-    if (future.wait_for(2s) != std::future_status::ready) {
-        ADD_FAILURE() << "operation did not reach a terminal state";
-    }
-    return std::get<OperationSnapshot>(manager.snapshot(submitted.id));
-}
+using test_support::awaitTerminal;
+using test_support::validWorkItem;
 
 TEST(SingleSweepExecutorTest, PublishesFivePointGoldenBeforeSuccess) {
     OperationManager manager;
@@ -107,6 +65,155 @@ TEST(SingleSweepExecutorTest, PublishesFivePointGoldenBeforeSuccess) {
     for (std::size_t index = 0; index < std::size(expected); ++index) {
         EXPECT_NEAR(visibleAtCompletion->values[index], expected[index], 1e-12);
     }
+}
+
+TEST(SingleSweepExecutorTest, RejectsInvalidConstruction) {
+    OperationManager manager;
+    TraceDisplayFrameRepository repository{1};
+    RawSweepSource empty;
+
+    EXPECT_THROW(
+        SingleSweepExecutor(1, std::move(empty), manager, repository),
+        std::invalid_argument);
+    RawSweepSource source = [](const frames::FrequencyAxis& axis,
+                               std::stop_token) {
+        return simulation::simulateSweep(axis);
+    };
+    EXPECT_THROW(
+        SingleSweepExecutor(0, std::move(source), manager, repository),
+        std::invalid_argument);
+}
+
+TEST(SingleSweepExecutorTest, RejectsFullQueueWithoutCreatingOperation) {
+    OperationManager manager;
+    TraceDisplayFrameRepository repository{1};
+    std::promise<void> entered;
+    auto enteredFuture = entered.get_future();
+    std::promise<void> release;
+    auto releaseFuture = release.get_future().share();
+    std::atomic<int> calls{0};
+    RawSweepSource source = [&](const frames::FrequencyAxis& axis,
+                                std::stop_token) {
+        if (calls.fetch_add(1) == 0) {
+            entered.set_value();
+            releaseFuture.wait();
+        }
+        return simulation::simulateSweep(axis);
+    };
+    SingleSweepExecutor executor{1, std::move(source), manager, repository};
+
+    const auto first = std::get<OperationSnapshot>(
+        executor.submit(validWorkItem(CommandId{"sweep-1"})));
+    ASSERT_EQ(enteredFuture.wait_for(2s), std::future_status::ready);
+    const auto second = std::get<OperationSnapshot>(
+        executor.submit(validWorkItem(CommandId{"sweep-2"})));
+    const auto rejected = executor.submit(
+        validWorkItem(CommandId{"sweep-rejected"}));
+
+    const auto* error = std::get_if<SingleSweepSubmitError>(&rejected);
+    ASSERT_NE(error, nullptr);
+    EXPECT_EQ(error->code, SingleSweepSubmitErrorCode::QueueFull);
+    EXPECT_EQ(calls.load(), 1);
+    release.set_value();
+    EXPECT_TRUE(std::holds_alternative<OperationSucceeded>(
+        awaitTerminal(manager, first).state));
+    EXPECT_TRUE(std::holds_alternative<OperationSucceeded>(
+        awaitTerminal(manager, second).state));
+    const auto after = std::get<OperationSnapshot>(
+        executor.submit(validWorkItem(CommandId{"sweep-3"})));
+    EXPECT_EQ(after.id, OperationId{3});
+    (void)awaitTerminal(manager, after);
+}
+
+TEST(SingleSweepExecutorTest, RejectsSubmissionAfterStopWithoutOperation) {
+    OperationManager manager;
+    TraceDisplayFrameRepository repository{1};
+    RawSweepSource source = [](const frames::FrequencyAxis& axis,
+                               std::stop_token) {
+        return simulation::simulateSweep(axis);
+    };
+    SingleSweepExecutor executor{1, std::move(source), manager, repository};
+    executor.stop();
+
+    const auto rejected = executor.submit(validWorkItem());
+
+    const auto* error = std::get_if<SingleSweepSubmitError>(&rejected);
+    ASSERT_NE(error, nullptr);
+    EXPECT_EQ(error->code, SingleSweepSubmitErrorCode::Stopped);
+    const auto proof = manager.create(OperationSubmission{
+        CommandId{"proof"}, SessionId{"session-1"}, 7});
+    EXPECT_EQ(proof.id, OperationId{1});
+}
+
+TEST(SingleSweepExecutorTest, CancelsOnlyAfterSourceReleases) {
+    OperationManager manager;
+    TraceDisplayFrameRepository repository{1};
+    std::promise<void> entered;
+    auto enteredFuture = entered.get_future();
+    std::promise<void> release;
+    auto releaseFuture = release.get_future().share();
+    RawSweepSource source = [&](const frames::FrequencyAxis& axis,
+                                std::stop_token) {
+        entered.set_value();
+        releaseFuture.wait();
+        return simulation::simulateSweep(axis);
+    };
+    SingleSweepExecutor executor{1, std::move(source), manager, repository};
+    const auto submitted =
+        std::get<OperationSnapshot>(executor.submit(validWorkItem()));
+    ASSERT_EQ(enteredFuture.wait_for(2s), std::future_status::ready);
+
+    const auto requested = manager.requestCancel(submitted.id);
+
+    EXPECT_TRUE(std::holds_alternative<OperationCancelRequested>(
+        std::get<OperationSnapshot>(requested).state));
+    EXPECT_EQ(repository.latest(display_model::TraceId{3}), nullptr);
+    release.set_value();
+    const auto terminal = awaitTerminal(manager, submitted);
+    EXPECT_TRUE(std::holds_alternative<OperationCanceled>(terminal.state));
+    EXPECT_EQ(repository.latest(display_model::TraceId{3}), nullptr);
+}
+
+TEST(SingleSweepExecutorTest, DestructorStopsSourceAndJoinsBeforeReturning) {
+    OperationManager manager;
+    TraceDisplayFrameRepository repository{1};
+    std::promise<void> entered;
+    auto enteredFuture = entered.get_future();
+    std::mutex sourceMutex;
+    std::condition_variable sourceCondition;
+    std::atomic<int> calls{0};
+    std::optional<OperationSnapshot> running;
+    std::optional<OperationSnapshot> queued;
+    {
+        RawSweepSource source = [&](const frames::FrequencyAxis& axis,
+                                    std::stop_token token) {
+            ++calls;
+            entered.set_value();
+            std::stop_callback notify{token, [&] {
+                sourceCondition.notify_all();
+            }};
+            std::unique_lock lock{sourceMutex};
+            sourceCondition.wait(lock, [&] { return token.stop_requested(); });
+            return simulation::simulateSweep(axis);
+        };
+        SingleSweepExecutor executor{1, std::move(source), manager, repository};
+        running = std::get<OperationSnapshot>(
+            executor.submit(validWorkItem()));
+        ASSERT_EQ(enteredFuture.wait_for(2s), std::future_status::ready);
+        queued = std::get<OperationSnapshot>(executor.submit(
+            validWorkItem(CommandId{"sweep-queued"})));
+    }
+
+    const auto runningTerminal = std::get<OperationSnapshot>(
+        manager.snapshot(running->id));
+    const auto queuedTerminal = std::get<OperationSnapshot>(
+        manager.snapshot(queued->id));
+    EXPECT_TRUE(
+        std::holds_alternative<OperationCanceled>(runningTerminal.state));
+    EXPECT_TRUE(
+        std::holds_alternative<OperationCanceled>(queuedTerminal.state));
+    EXPECT_EQ(calls.load(), 1);
+    EXPECT_EQ(repository.latest(display_model::TraceId{3}), nullptr);
 }
 
 }  // namespace
