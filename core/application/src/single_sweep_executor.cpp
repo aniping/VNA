@@ -25,7 +25,7 @@ public:
           worker_([this](std::stop_token token) { workerLoop(token); }) {}
 
     SingleSweepSubmitResult submit(SingleSweepWorkItem work) {
-        std::lock_guard lock{mutex_};
+        std::unique_lock lock{mutex_};
         if (!accepting_) {
             return SingleSweepSubmitError{
                 .code = SingleSweepSubmitErrorCode::Stopped};
@@ -38,17 +38,23 @@ public:
         // before unlock/notify. Rollback closes OperationManager::create's
         // exceptional boundary without leaving an id-zero Pending behind.
         queue_.push_back(Pending{.work = std::move(work)});
+        std::optional<OperationId> created;
         try {
             const auto& queued = queue_.back().work;
             auto operation = operations_.create(OperationSubmission{
                 queued.commandId,
                 queued.sessionId,
                 queued.frameContext.stateRevision});
+            created = operation.id;
             queue_.back().operationId = operation.id;
             condition_.notify_one();
             return operation;
         } catch (...) {
             queue_.pop_back();
+            lock.unlock();
+            if (created) {
+                abandon(*created);
+            }
             throw;
         }
     }
@@ -166,6 +172,20 @@ private:
     void cancel(OperationId operationId) {
         (void)operations_.requestCancel(operationId);
         (void)operations_.complete(operationId, OperationCanceled{});
+    }
+
+    void abandon(OperationId operationId) noexcept {
+        // Snapshot copying may throw after either state mutation. Always try
+        // both transitions; complete leaves a terminal record and wakes any
+        // fence that captured the Operation before submit reported failure.
+        try {
+            (void)operations_.requestCancel(operationId);
+        } catch (...) {
+        }
+        try {
+            (void)operations_.complete(operationId, OperationCanceled{});
+        } catch (...) {
+        }
     }
 
     void fail(OperationId operationId, OperationFailure failure) {
