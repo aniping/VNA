@@ -1,0 +1,17 @@
+:root {
+  font-family: "Segoe UI", Arial, sans-serif;
+  color: #eef4f6;
+  background: #10171b;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.app-shell {
+  min-height: 100vh;
+}

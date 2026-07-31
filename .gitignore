@@ -36,3 +36,7 @@ compile_commands.json
 .DS_Store
 Thumbs.db
 /archive.zip
+
+# Frontend dependencies and build output
+/frontend/node_modules/
+/frontend/dist/
