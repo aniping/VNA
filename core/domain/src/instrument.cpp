@@ -70,80 +70,13 @@ Result<MeasurementId> Instrument::createMeasurement(
     return Result<MeasurementId>{id};
 }
 
-WindowId Instrument::createWindow() {
-    const WindowId id{nextWindowId_++};
-    state_.windows.push_back(WindowSnapshot{.id = id});
-    return id;
-}
-
-Result<TraceId> Instrument::createTrace(
-    WindowId windowId,
-    MeasurementId measurementId,
-    TraceFormat format) {
-    const auto measurement = std::find_if(
-        state_.measurements.cbegin(),
-        state_.measurements.cend(),
-        [measurementId](const MeasurementSnapshot& candidate) {
-            return candidate.id == measurementId;
-        });
-    if (measurement == state_.measurements.cend()) {
-        return Result<TraceId>{
-            DomainError{.code = DomainErrorCode::MeasurementNotFound}};
-    }
-
-    const auto window = std::find_if(
-        state_.windows.cbegin(),
-        state_.windows.cend(),
-        [windowId](const WindowSnapshot& candidate) {
-            return candidate.id == windowId;
-        });
-    if (window == state_.windows.cend()) {
-        return Result<TraceId>{
-            DomainError{.code = DomainErrorCode::WindowNotFound}};
-    }
-
-    const TraceId id{nextTraceId_++};
-    state_.traces.push_back(TraceSnapshot{
-        .id = id,
-        .windowId = windowId,
-        .measurementId = measurementId,
-        .format = format,
-    });
-    return Result<TraceId>{id};
-}
-
-Result<TraceId> Instrument::updateTraceFormat(
-    TraceId traceId,
-    TraceFormat format) {
-    const auto trace = std::find_if(
-        state_.traces.begin(),
-        state_.traces.end(),
-        [traceId](const TraceSnapshot& candidate) {
-            return candidate.id == traceId;
-        });
-    if (trace == state_.traces.end()) {
-        return Result<TraceId>{
-            DomainError{.code = DomainErrorCode::TraceNotFound}};
-    }
-
-    trace->format = format;
-    return Result<TraceId>{traceId};
-}
-
-Result<TraceId> Instrument::removeTrace(TraceId traceId) {
-    const auto trace = std::find_if(
-        state_.traces.cbegin(),
-        state_.traces.cend(),
-        [traceId](const TraceSnapshot& candidate) {
-            return candidate.id == traceId;
-        });
-    if (trace == state_.traces.cend()) {
-        return Result<TraceId>{
-            DomainError{.code = DomainErrorCode::TraceNotFound}};
-    }
-
-    state_.traces.erase(trace);
-    return Result<TraceId>{traceId};
+bool Instrument::containsMeasurement(MeasurementId measurementId) const {
+    return std::find_if(
+               state_.measurements.cbegin(),
+               state_.measurements.cend(),
+               [measurementId](const MeasurementSnapshot& candidate) {
+                   return candidate.id == measurementId;
+               }) != state_.measurements.cend();
 }
 
 InstrumentSnapshot Instrument::snapshot() const {

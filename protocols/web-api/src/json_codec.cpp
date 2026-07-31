@@ -41,19 +41,19 @@ Json measurementToJson(const domain::MeasurementSnapshot& measurement) {
     };
 }
 
-const char* traceFormatName(domain::TraceFormat format) {
+const char* traceFormatName(display_model::TraceFormat format) {
     switch (format) {
-        case domain::TraceFormat::LogMagnitude:
+        case display_model::TraceFormat::LogMagnitude:
             return "logMagnitude";
-        case domain::TraceFormat::Phase:
+        case display_model::TraceFormat::Phase:
             return "phase";
-        case domain::TraceFormat::Smith:
+        case display_model::TraceFormat::Smith:
             return "smith";
     }
     return "unknown";
 }
 
-Json traceToJson(const domain::TraceSnapshot& trace) {
+Json traceToJson(const display_model::TraceSnapshot& trace) {
     return {
         {"id", trace.id.value()},
         {"windowId", trace.windowId.value()},
@@ -62,7 +62,9 @@ Json traceToJson(const domain::TraceSnapshot& trace) {
     };
 }
 
-Json instrumentToJson(const domain::InstrumentSnapshot& instrument) {
+Json instrumentToJson(
+    const domain::InstrumentSnapshot& instrument,
+    const display_model::DisplayWorkspaceSnapshot& display) {
     Json channels = Json::array();
     for (const auto& channel : instrument.channels) {
         channels.push_back(channelToJson(channel));
@@ -72,11 +74,11 @@ Json instrumentToJson(const domain::InstrumentSnapshot& instrument) {
         measurements.push_back(measurementToJson(measurement));
     }
     Json windows = Json::array();
-    for (const auto& window : instrument.windows) {
+    for (const auto& window : display.windows) {
         windows.push_back({{"id", window.id.value()}});
     }
     Json traces = Json::array();
-    for (const auto& trace : instrument.traces) {
+    for (const auto& trace : display.traces) {
         traces.push_back(traceToJson(trace));
     }
     return {
@@ -126,10 +128,11 @@ void encodeCommandValue(Json& body, const application::CommandValue& value) {
             std::get_if<domain::MeasurementId>(&value)) {
         body["value"] = {{"measurementId", measurementId->value()}};
     }
-    if (const auto* windowId = std::get_if<domain::WindowId>(&value)) {
+    if (const auto* windowId =
+            std::get_if<display_model::WindowId>(&value)) {
         body["value"] = {{"windowId", windowId->value()}};
     }
-    if (const auto* traceId = std::get_if<domain::TraceId>(&value)) {
+    if (const auto* traceId = std::get_if<display_model::TraceId>(&value)) {
         body["value"] = {{"traceId", traceId->value()}};
     }
 }
@@ -139,7 +142,7 @@ void encodeCommandValue(Json& body, const application::CommandValue& value) {
 std::string encodeState(const application::StateSnapshot& state) {
     return Json{
         {"stateRevision", state.stateRevision},
-        {"instrument", instrumentToJson(state.instrument)},
+        {"instrument", instrumentToJson(state.instrument, state.display)},
     }.dump();
 }
 

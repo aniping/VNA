@@ -7,5 +7,5 @@ target_include_directories(
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-target_link_libraries(vna_application PUBLIC vna::domain)
+target_link_libraries(vna_application PUBLIC vna::display_model vna::domain)
 target_compile_options(vna_application PRIVATE -Wall -Wextra -Wpedantic)

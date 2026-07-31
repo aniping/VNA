@@ -4,12 +4,18 @@
 #include <utility>
 
 #include <vna/application/command_bus.hpp>
+#include <vna/display_model/display_workspace.hpp>
 
 namespace vna::application {
 namespace {
 
 bool isSuccess(const CommandResult& result) {
     return std::holds_alternative<CommandSuccess>(result.outcome);
+}
+
+const domain::DomainError* domainError(const CommandResult& result) {
+    const auto* error = std::get_if<CommandError>(&result.outcome);
+    return error == nullptr ? nullptr : std::get_if<domain::DomainError>(error);
 }
 
 CommandEnvelope command(
@@ -49,9 +55,9 @@ void createTrace(CommandBus& commandBus) {
             "create-trace",
             3,
             CreateTraceCommand{
-                domain::WindowId{1},
+                display_model::WindowId{1},
                 domain::MeasurementId{1},
-                domain::TraceFormat::LogMagnitude}))));
+                display_model::TraceFormat::LogMagnitude}))));
 }
 
 TEST(TraceCommandTest, UpdatesTraceFormatAndIncrementsRevisionOnce) {
@@ -62,19 +68,42 @@ TEST(TraceCommandTest, UpdatesTraceFormatAndIncrementsRevisionOnce) {
         "update-trace-format",
         4,
         UpdateTraceFormatCommand{
-            domain::TraceId{1},
-            domain::TraceFormat::Phase}));
+            display_model::TraceId{1},
+            display_model::TraceFormat::Phase}));
 
     EXPECT_TRUE(isSuccess(result));
     EXPECT_EQ(result.stateRevision, 5U);
     EXPECT_EQ(
-        std::get<domain::TraceId>(
+        std::get<display_model::TraceId>(
             std::get<CommandSuccess>(result.outcome).value),
-        domain::TraceId{1});
+        display_model::TraceId{1});
     const auto snapshot = commandBus.snapshot();
     EXPECT_EQ(snapshot.stateRevision, 5U);
-    ASSERT_EQ(snapshot.instrument.traces.size(), 1U);
-    EXPECT_EQ(snapshot.instrument.traces[0].format, domain::TraceFormat::Phase);
+    ASSERT_EQ(snapshot.display.traces.size(), 1U);
+    EXPECT_EQ(
+        snapshot.display.traces[0].format,
+        display_model::TraceFormat::Phase);
+}
+
+TEST(TraceCommandTest, RejectsTraceForMissingMeasurement) {
+    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    ASSERT_TRUE(isSuccess(commandBus.dispatch(
+        command("create-window", 0, CreateWindowCommand{}))));
+
+    const auto result = commandBus.dispatch(command(
+        "missing-measurement",
+        1,
+        CreateTraceCommand{
+            display_model::WindowId{1},
+            domain::MeasurementId{99},
+            display_model::TraceFormat::LogMagnitude}));
+
+    ASSERT_NE(domainError(result), nullptr);
+    EXPECT_EQ(
+        domainError(result)->code,
+        domain::DomainErrorCode::MeasurementNotFound);
+    EXPECT_EQ(result.stateRevision, 1U);
+    EXPECT_TRUE(commandBus.snapshot().display.traces.empty());
 }
 
 }  // namespace

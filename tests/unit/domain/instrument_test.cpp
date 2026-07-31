@@ -15,30 +15,6 @@ constexpr SweepSettings validSweep() {
     };
 }
 
-TEST(InstrumentTest, MultipleTracesReuseOneMeasurement) {
-    Instrument instrument;
-
-    const auto channel = instrument.createChannel(validSweep());
-    ASSERT_TRUE(channel.hasValue());
-
-    const auto measurement =
-        instrument.createMeasurement(channel.value(), MeasurementType::S11);
-    ASSERT_TRUE(measurement.hasValue());
-
-    const auto window = instrument.createWindow();
-    const auto logMagnitude = instrument.createTrace(
-        window, measurement.value(), TraceFormat::LogMagnitude);
-    const auto phase = instrument.createTrace(
-        window, measurement.value(), TraceFormat::Phase);
-
-    ASSERT_TRUE(logMagnitude.hasValue());
-    ASSERT_TRUE(phase.hasValue());
-
-    const auto snapshot = instrument.snapshot();
-    EXPECT_EQ(snapshot.measurements.size(), 1U);
-    EXPECT_EQ(snapshot.traces.size(), 2U);
-}
-
 TEST(InstrumentTest, InvalidSweepDoesNotChangeState) {
     Instrument instrument;
     auto sweep = validSweep();
@@ -75,51 +51,17 @@ TEST(InstrumentTest, MeasurementCannotReferenceMissingChannel) {
     EXPECT_TRUE(instrument.snapshot().measurements.empty());
 }
 
-TEST(InstrumentTest, TraceCannotReferenceMissingMeasurement) {
+TEST(InstrumentTest, ReportsMeasurementExistence) {
     Instrument instrument;
-    const auto window = instrument.createWindow();
+    EXPECT_FALSE(instrument.containsMeasurement(MeasurementId{1}));
 
-    const auto trace = instrument.createTrace(
-        window, MeasurementId{42}, TraceFormat::LogMagnitude);
-
-    ASSERT_FALSE(trace.hasValue());
-    EXPECT_EQ(trace.error().code, DomainErrorCode::MeasurementNotFound);
-    EXPECT_TRUE(instrument.snapshot().traces.empty());
-}
-
-TEST(InstrumentTest, TraceCannotReferenceMissingWindow) {
-    Instrument instrument;
     const auto channel = instrument.createChannel(validSweep());
     ASSERT_TRUE(channel.hasValue());
     const auto measurement =
         instrument.createMeasurement(channel.value(), MeasurementType::S11);
     ASSERT_TRUE(measurement.hasValue());
 
-    const auto trace = instrument.createTrace(
-        WindowId{42}, measurement.value(), TraceFormat::LogMagnitude);
-
-    ASSERT_FALSE(trace.hasValue());
-    EXPECT_EQ(trace.error().code, DomainErrorCode::WindowNotFound);
-    EXPECT_TRUE(instrument.snapshot().traces.empty());
-}
-
-TEST(InstrumentTest, RemovingTraceKeepsItsMeasurement) {
-    Instrument instrument;
-    const auto channel = instrument.createChannel(validSweep());
-    ASSERT_TRUE(channel.hasValue());
-    const auto measurement =
-        instrument.createMeasurement(channel.value(), MeasurementType::S11);
-    ASSERT_TRUE(measurement.hasValue());
-    const auto window = instrument.createWindow();
-    const auto trace = instrument.createTrace(
-        window, measurement.value(), TraceFormat::LogMagnitude);
-    ASSERT_TRUE(trace.hasValue());
-
-    EXPECT_TRUE(instrument.removeTrace(trace.value()).hasValue());
-
-    const auto snapshot = instrument.snapshot();
-    EXPECT_TRUE(snapshot.traces.empty());
-    EXPECT_EQ(snapshot.measurements.size(), 1U);
+    EXPECT_TRUE(instrument.containsMeasurement(measurement.value()));
 }
 
 }  // namespace

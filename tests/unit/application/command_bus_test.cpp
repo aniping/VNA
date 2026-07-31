@@ -48,7 +48,7 @@ CommandEnvelope makeCommand(
     };
 }
 
-domain::TraceId createTrace(CommandBus& commandBus) {
+display_model::TraceId createTrace(CommandBus& commandBus) {
     const auto channelResult = commandBus.dispatch(makeCommand(
         "setup-channel",
         0,
@@ -64,7 +64,7 @@ domain::TraceId createTrace(CommandBus& commandBus) {
             std::get<CommandSuccess>(measurementResult.outcome).value);
     const auto windowResult = commandBus.dispatch(
         makeCommand("setup-window", 2, CreateWindowCommand{}));
-    const auto windowId = std::get<domain::WindowId>(
+    const auto windowId = std::get<display_model::WindowId>(
         std::get<CommandSuccess>(windowResult.outcome).value);
     const auto traceResult = commandBus.dispatch(makeCommand(
         "setup-trace",
@@ -72,9 +72,9 @@ domain::TraceId createTrace(CommandBus& commandBus) {
         CreateTraceCommand{
             windowId,
             measurementId,
-            domain::TraceFormat::LogMagnitude,
+            display_model::TraceFormat::LogMagnitude,
         }));
-    return std::get<domain::TraceId>(
+    return std::get<display_model::TraceId>(
         std::get<CommandSuccess>(traceResult.outcome).value);
 }
 
@@ -174,7 +174,7 @@ TEST(CommandBusTest, CreatesMeasurementAndTraceThroughUnifiedEntryPoint) {
     const auto windowResult = commandBus.dispatch(
         makeCommand("command-3", 2, CreateWindowCommand{}));
     ASSERT_TRUE(isSuccess(windowResult));
-    const auto windowId = std::get<domain::WindowId>(
+    const auto windowId = std::get<display_model::WindowId>(
         std::get<CommandSuccess>(windowResult.outcome).value);
 
     const auto traceResult = commandBus.dispatch(makeCommand(
@@ -183,7 +183,7 @@ TEST(CommandBusTest, CreatesMeasurementAndTraceThroughUnifiedEntryPoint) {
         CreateTraceCommand{
             windowId,
             measurementId,
-            domain::TraceFormat::LogMagnitude,
+            display_model::TraceFormat::LogMagnitude,
         }));
     ASSERT_TRUE(isSuccess(traceResult));
 
@@ -191,8 +191,8 @@ TEST(CommandBusTest, CreatesMeasurementAndTraceThroughUnifiedEntryPoint) {
     EXPECT_EQ(snapshot.stateRevision, 4U);
     EXPECT_EQ(snapshot.instrument.channels.size(), 1U);
     EXPECT_EQ(snapshot.instrument.measurements.size(), 1U);
-    EXPECT_EQ(snapshot.instrument.windows.size(), 1U);
-    EXPECT_EQ(snapshot.instrument.traces.size(), 1U);
+    EXPECT_EQ(snapshot.display.windows.size(), 1U);
+    EXPECT_EQ(snapshot.display.traces.size(), 1U);
 }
 
 TEST(CommandBusTest, RemovesTraceThroughUnifiedEntryPoint) {
@@ -208,7 +208,7 @@ TEST(CommandBusTest, RemovesTraceThroughUnifiedEntryPoint) {
         std::get<CommandSuccess>(result.outcome).value));
     const auto snapshot = commandBus.snapshot();
     EXPECT_EQ(snapshot.instrument.measurements.size(), 1U);
-    EXPECT_TRUE(snapshot.instrument.traces.empty());
+    EXPECT_TRUE(snapshot.display.traces.empty());
 }
 
 TEST(CommandBusTest, SerializesCommandsThatExpectTheSameRevision) {

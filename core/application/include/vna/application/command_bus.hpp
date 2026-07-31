@@ -8,6 +8,7 @@
 #include <utility>
 #include <variant>
 
+#include <vna/display_model/display_workspace.hpp>
 #include <vna/domain/instrument.hpp>
 
 namespace vna::application {
@@ -52,18 +53,18 @@ struct CreateMeasurementCommand {
 struct CreateWindowCommand {};
 
 struct CreateTraceCommand {
-    domain::WindowId windowId;
+    display_model::WindowId windowId;
     domain::MeasurementId measurementId;
-    domain::TraceFormat format;
+    display_model::TraceFormat format;
 };
 
 struct UpdateTraceFormatCommand {
-    domain::TraceId traceId;
-    domain::TraceFormat format;
+    display_model::TraceId traceId;
+    display_model::TraceFormat format;
 };
 
 struct RemoveTraceCommand {
-    domain::TraceId traceId;
+    display_model::TraceId traceId;
 };
 
 using CommandPayload = std::variant<
@@ -79,8 +80,8 @@ using CommandValue = std::variant<
     std::monostate,
     domain::ChannelId,
     domain::MeasurementId,
-    domain::WindowId,
-    domain::TraceId>;
+    display_model::WindowId,
+    display_model::TraceId>;
 
 struct CommandEnvelope {
     CommandId commandId;
@@ -110,7 +111,10 @@ struct CommandSuccess {
     CommandValue value{};
 };
 
-using CommandError = std::variant<domain::DomainError, ApplicationError>;
+using CommandError = std::variant<
+    domain::DomainError,
+    display_model::DisplayError,
+    ApplicationError>;
 using CommandOutcome = std::variant<CommandSuccess, CommandError>;
 
 [[nodiscard]] CommandErrorCode commandErrorCode(
@@ -124,6 +128,7 @@ struct CommandResult {
 struct StateSnapshot {
     std::uint64_t stateRevision;
     domain::InstrumentSnapshot instrument;
+    display_model::DisplayWorkspaceSnapshot display;
 };
 
 class CommandBus {
@@ -146,12 +151,15 @@ private:
     [[nodiscard]] CommandResult execute(const RemoveTraceCommand& command);
     [[nodiscard]] CommandResult succeeded(CommandValue value);
     [[nodiscard]] CommandResult domainError(domain::DomainError error) const;
+    [[nodiscard]] CommandResult displayError(
+        display_model::DisplayError error) const;
     [[nodiscard]] CommandResult applicationError(
         CommandErrorCode code) const;
 
     InstrumentId instrumentId_;
     mutable std::mutex mutex_;
     domain::Instrument instrument_;
+    display_model::DisplayWorkspace displayWorkspace_;
     std::uint64_t stateRevision_{0};
 };
 

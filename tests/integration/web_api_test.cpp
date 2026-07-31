@@ -167,12 +167,13 @@ TEST_F(WebApiTest, CreatesAndUpdatesTraceThroughHttp) {
     EXPECT_EQ(nlohmann::json::parse(missing->body)["status"], "validationError");
     EXPECT_EQ(nlohmann::json::parse(missing->body)["stateRevision"], 5);
 
-    const auto snapshot = commandBus_.snapshot();
-    EXPECT_EQ(snapshot.stateRevision, 5U);
-    EXPECT_EQ(snapshot.instrument.measurements.size(), 1U);
-    EXPECT_EQ(snapshot.instrument.windows.size(), 1U);
-    EXPECT_EQ(snapshot.instrument.traces.size(), 1U);
-    EXPECT_EQ(snapshot.instrument.traces[0].format, domain::TraceFormat::Phase);
+    httplib::Client client{"127.0.0.1", port_};
+    const auto state = client.Get("/api/v1/state");
+    ASSERT_TRUE(state);
+    const auto instrument = nlohmann::json::parse(state->body).at("instrument");
+    EXPECT_EQ(instrument.at("windows").size(), 1U);
+    ASSERT_EQ(instrument.at("traces").size(), 1U);
+    EXPECT_EQ(instrument.at("traces").at(0).at("format"), "phase");
 }
 
 TEST_F(WebApiTest, MapsStaleRevisionToConflict) {

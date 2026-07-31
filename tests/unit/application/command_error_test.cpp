@@ -14,6 +14,13 @@ const domain::DomainError* domainError(const CommandResult& result) {
     return error == nullptr ? nullptr : std::get_if<domain::DomainError>(error);
 }
 
+const display_model::DisplayError* displayError(const CommandResult& result) {
+    const auto* error = std::get_if<CommandError>(&result.outcome);
+    return error == nullptr
+        ? nullptr
+        : std::get_if<display_model::DisplayError>(error);
+}
+
 CommandEnvelope traceCommand(std::string commandId, CommandPayload payload) {
     return {
         .commandId = CommandId{std::move(commandId)},
@@ -62,13 +69,13 @@ TEST(CommandErrorTest, ReportsMissingTraceWhenUpdatingFormat) {
     const auto result = commandBus.dispatch(traceCommand(
         "update-missing-trace",
         UpdateTraceFormatCommand{
-            domain::TraceId{99},
-            domain::TraceFormat::Phase}));
+            display_model::TraceId{99},
+            display_model::TraceFormat::Phase}));
 
-    ASSERT_NE(domainError(result), nullptr);
+    ASSERT_NE(displayError(result), nullptr);
     EXPECT_EQ(
-        domainError(result)->code,
-        domain::DomainErrorCode::TraceNotFound);
+        displayError(result)->code,
+        display_model::DisplayErrorCode::TraceNotFound);
     EXPECT_EQ(
         commandErrorCode(std::get<CommandError>(result.outcome)),
         CommandErrorCode::TraceNotFound);
@@ -79,12 +86,12 @@ TEST(CommandErrorTest, ReportsMissingTraceWhenRemoving) {
 
     const auto result = commandBus.dispatch(traceCommand(
         "remove-missing-trace",
-        RemoveTraceCommand{domain::TraceId{99}}));
+        RemoveTraceCommand{display_model::TraceId{99}}));
 
-    ASSERT_NE(domainError(result), nullptr);
+    ASSERT_NE(displayError(result), nullptr);
     EXPECT_EQ(
-        domainError(result)->code,
-        domain::DomainErrorCode::TraceNotFound);
+        displayError(result)->code,
+        display_model::DisplayErrorCode::TraceNotFound);
     EXPECT_EQ(
         commandErrorCode(std::get<CommandError>(result.outcome)),
         CommandErrorCode::TraceNotFound);

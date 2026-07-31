@@ -24,15 +24,11 @@ private:
 
 using ChannelId = EntityId<struct ChannelIdTag>;
 using MeasurementId = EntityId<struct MeasurementIdTag>;
-using TraceId = EntityId<struct TraceIdTag>;
-using WindowId = EntityId<struct WindowIdTag>;
 
 enum class DomainErrorCode {
     InvalidSweepSettings,
     ChannelNotFound,
     MeasurementNotFound,
-    WindowNotFound,
-    TraceNotFound,
 };
 
 struct DomainError {
@@ -74,12 +70,6 @@ enum class MeasurementType {
     S21,
 };
 
-enum class TraceFormat {
-    LogMagnitude,
-    Phase,
-    Smith,
-};
-
 struct ChannelSnapshot {
     ChannelId id;
     SweepSettings sweep;
@@ -91,22 +81,9 @@ struct MeasurementSnapshot {
     MeasurementType type;
 };
 
-struct WindowSnapshot {
-    WindowId id;
-};
-
-struct TraceSnapshot {
-    TraceId id;
-    WindowId windowId;
-    MeasurementId measurementId;
-    TraceFormat format;
-};
-
 struct InstrumentSnapshot {
     std::vector<ChannelSnapshot> channels;
     std::vector<MeasurementSnapshot> measurements;
-    std::vector<WindowSnapshot> windows;
-    std::vector<TraceSnapshot> traces;
 };
 
 class Instrument {
@@ -118,22 +95,12 @@ public:
     [[nodiscard]] Result<MeasurementId> createMeasurement(
         ChannelId channelId,
         MeasurementType type);
-    [[nodiscard]] WindowId createWindow();
-    [[nodiscard]] Result<TraceId> createTrace(
-        WindowId windowId,
-        MeasurementId measurementId,
-        TraceFormat format);
-    [[nodiscard]] Result<TraceId> updateTraceFormat(
-        TraceId traceId,
-        TraceFormat format);
-    [[nodiscard]] Result<TraceId> removeTrace(TraceId traceId);
+    [[nodiscard]] bool containsMeasurement(MeasurementId measurementId) const;
     [[nodiscard]] InstrumentSnapshot snapshot() const;
 
 private:
     std::uint64_t nextChannelId_{1};
     std::uint64_t nextMeasurementId_{1};
-    std::uint64_t nextWindowId_{1};
-    std::uint64_t nextTraceId_{1};
     InstrumentSnapshot state_;
 };
 

@@ -31,16 +31,16 @@ domain::MeasurementType measurementTypeFromJson(const Json& payload) {
     throw std::invalid_argument{"unsupported measurement type"};
 }
 
-domain::TraceFormat traceFormatFromJson(const Json& payload) {
+display_model::TraceFormat traceFormatFromJson(const Json& payload) {
     const auto format = payload.at("format").get<std::string>();
     if (format == "logMagnitude") {
-        return domain::TraceFormat::LogMagnitude;
+        return display_model::TraceFormat::LogMagnitude;
     }
     if (format == "phase") {
-        return domain::TraceFormat::Phase;
+        return display_model::TraceFormat::Phase;
     }
     if (format == "smith") {
-        return domain::TraceFormat::Smith;
+        return display_model::TraceFormat::Smith;
     }
     throw std::invalid_argument{"unsupported trace format"};
 }
@@ -82,14 +82,16 @@ application::CommandPayload commandPayloadFromJson(
     }
     if (type == "createTrace") {
         return application::CreateTraceCommand{
-            domain::WindowId{payload.at("windowId").get<std::uint64_t>()},
+            display_model::WindowId{
+                payload.at("windowId").get<std::uint64_t>()},
             domain::MeasurementId{
                 payload.at("measurementId").get<std::uint64_t>()},
             traceFormatFromJson(payload)};
     }
     if (type == "updateTraceFormat") {
         return application::UpdateTraceFormatCommand{
-            domain::TraceId{payload.at("traceId").get<std::uint64_t>()},
+            display_model::TraceId{
+                payload.at("traceId").get<std::uint64_t>()},
             traceFormatFromJson(payload)};
     }
     throw std::invalid_argument{"unsupported command type"};
