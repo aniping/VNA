@@ -63,7 +63,11 @@ private:
 struct OperationQueued {};
 struct OperationRunning {};
 struct OperationCancelRequested {};
-struct OperationSucceeded {};
+// The terminal success retains the identity committed to the display
+// repository, so protocol adapters never need to reverse-search frame storage.
+struct OperationSucceeded {
+    frames::FrameId frameId;
+};
 
 struct OperationFailed {
     OperationFailure error;

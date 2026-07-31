@@ -45,7 +45,9 @@ TEST(SingleSweepExecutorTest, PublishesFivePointGoldenBeforeSuccess) {
         visibleAtCompletion = repository.latest(display_model::TraceId{3});
     });
 
-    EXPECT_TRUE(std::holds_alternative<OperationSucceeded>(terminal.state));
+    const auto* succeeded = std::get_if<OperationSucceeded>(&terminal.state);
+    ASSERT_NE(succeeded, nullptr);
+    EXPECT_EQ(succeeded->frameId, frames::FrameId{11});
     ASSERT_NE(visibleAtCompletion, nullptr);
     EXPECT_EQ(visibleAtCompletion->frameId, frames::FrameId{11});
     EXPECT_EQ(visibleAtCompletion->traceId, display_model::TraceId{3});

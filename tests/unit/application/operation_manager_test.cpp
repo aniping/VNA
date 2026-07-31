@@ -115,14 +115,17 @@ TEST(OperationManagerTest, CompletesRunningOperationSuccessfully) {
     ASSERT_TRUE(std::holds_alternative<OperationSnapshot>(
         manager.markRunning(created.id)));
 
-    const auto result = manager.complete(created.id, OperationSucceeded{});
+    const auto result = manager.complete(
+        created.id, OperationSucceeded{frames::FrameId{23}});
 
     const auto* snapshot = std::get_if<OperationSnapshot>(&result);
     ASSERT_NE(snapshot, nullptr);
     EXPECT_EQ(snapshot->commandId, CommandId{"command-1"});
     EXPECT_EQ(snapshot->sessionId, SessionId{"session-1"});
     EXPECT_EQ(snapshot->submittedAtStateRevision, 7U);
-    EXPECT_TRUE(std::holds_alternative<OperationSucceeded>(snapshot->state));
+    const auto* succeeded = std::get_if<OperationSucceeded>(&snapshot->state);
+    ASSERT_NE(succeeded, nullptr);
+    EXPECT_EQ(succeeded->frameId, frames::FrameId{23});
     EXPECT_TRUE(std::holds_alternative<OperationSucceeded>(
         std::get<OperationSnapshot>(manager.snapshot(created.id)).state));
 }
@@ -180,7 +183,8 @@ TEST(OperationManagerTest, ReportsNotFoundThroughEveryLookupOperation) {
     EXPECT_EQ(
         errorCode(manager.requestCancel(missing)), OperationErrorCode::NotFound);
     EXPECT_EQ(
-        errorCode(manager.complete(missing, OperationSucceeded{})),
+        errorCode(manager.complete(
+            missing, OperationSucceeded{frames::FrameId{1}})),
         OperationErrorCode::NotFound);
 }
 
@@ -194,7 +198,8 @@ TEST(OperationManagerTest, AcceptsTerminalRaceAfterCancelRequest) {
         manager.requestCancel(failed.id)));
 
     const auto successResult =
-        manager.complete(succeeded.id, OperationSucceeded{});
+        manager.complete(
+            succeeded.id, OperationSucceeded{frames::FrameId{1}});
     const auto failureResult = manager.complete(
         failed.id,
         OperationFailed{OperationFailure{
@@ -211,7 +216,8 @@ TEST(OperationManagerTest, RejectsIllegalTransitionsAndPreservesTerminalState) {
     const auto created = createOperation(manager);
 
     EXPECT_EQ(
-        errorCode(manager.complete(created.id, OperationSucceeded{})),
+        errorCode(manager.complete(
+            created.id, OperationSucceeded{frames::FrameId{1}})),
         OperationErrorCode::InvalidTransition);
     ASSERT_TRUE(std::holds_alternative<OperationSnapshot>(
         manager.markRunning(created.id)));
@@ -230,7 +236,8 @@ TEST(OperationManagerTest, RejectsIllegalTransitionsAndPreservesTerminalState) {
         errorCode(manager.requestCancel(created.id)),
         OperationErrorCode::InvalidTransition);
     EXPECT_EQ(
-        errorCode(manager.complete(created.id, OperationSucceeded{})),
+        errorCode(manager.complete(
+            created.id, OperationSucceeded{frames::FrameId{1}})),
         OperationErrorCode::InvalidTransition);
     EXPECT_TRUE(std::holds_alternative<OperationCanceled>(
         std::get<OperationSnapshot>(manager.snapshot(created.id)).state));

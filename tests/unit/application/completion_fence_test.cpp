@@ -17,7 +17,7 @@ void succeed(OperationManager& manager, OperationId operationId) {
     ASSERT_TRUE(std::holds_alternative<OperationSnapshot>(
         manager.markRunning(operationId)));
     ASSERT_TRUE(std::holds_alternative<OperationSnapshot>(
-        manager.complete(operationId, OperationSucceeded{})));
+        manager.complete(operationId, OperationSucceeded{frames::FrameId{1}})));
 }
 
 TEST(CompletionFenceTest, CapturesOnlyExistingOperationsForSession) {
@@ -93,7 +93,8 @@ TEST(CompletionFenceTest, EveryTerminalOutcomeSatisfiesOutsideManagerLock) {
     });
 
     ASSERT_TRUE(std::holds_alternative<OperationSnapshot>(
-        manager.complete(succeeded.id, OperationSucceeded{})));
+        manager.complete(
+            succeeded.id, OperationSucceeded{frames::FrameId{1}})));
     ASSERT_TRUE(std::holds_alternative<OperationSnapshot>(manager.complete(
         failed.id,
         OperationFailed{OperationFailure{

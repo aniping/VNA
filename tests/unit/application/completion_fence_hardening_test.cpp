@@ -67,7 +67,8 @@ TEST(CompletionFenceHardeningTest, CancelingClaimedSubscriptionPreventsStart) {
     bool completed = false;
     std::jthread completer([&] {
         completed = std::holds_alternative<OperationSnapshot>(
-            manager.complete(operation.id, OperationSucceeded{}));
+            manager.complete(
+                operation.id, OperationSucceeded{frames::FrameId{1}}));
     });
 
     callbackStarted.wait();
@@ -100,7 +101,8 @@ TEST(CompletionFenceHardeningTest, ExternalCancelWaitsForRunningCallback) {
     });
     std::jthread completer([&] {
         static_cast<void>(
-            manager.complete(operation.id, OperationSucceeded{}));
+            manager.complete(
+                operation.id, OperationSucceeded{frames::FrameId{1}}));
     });
     callbackStarted.wait();
     std::promise<void> cancelReturned;
@@ -135,7 +137,7 @@ TEST(CompletionFenceHardeningTest, CallbackCanReleaseItsOwnSubscription) {
         }));
 
     static_cast<void>(manager.complete(
-        canceledOperation.id, OperationSucceeded{}));
+        canceledOperation.id, OperationSucceeded{frames::FrameId{1}}));
     EXPECT_TRUE(cancelReturned);
     EXPECT_FALSE(canceledSubscription->active());
 
@@ -150,7 +152,7 @@ TEST(CompletionFenceHardeningTest, CallbackCanReleaseItsOwnSubscription) {
         }));
 
     static_cast<void>(manager.complete(
-        destroyedOperation.id, OperationSucceeded{}));
+        destroyedOperation.id, OperationSucceeded{frames::FrameId{1}}));
     EXPECT_TRUE(destroyReturned);
     EXPECT_FALSE(destroyedSubscription.has_value());
 }
@@ -164,7 +166,8 @@ TEST(CompletionFenceHardeningTest, CallbackExceptionDoesNotEscapeComplete) {
     std::optional<OperationResult> result;
 
     EXPECT_NO_THROW(result.emplace(
-        manager.complete(operation.id, OperationSucceeded{})));
+        manager.complete(
+            operation.id, OperationSucceeded{frames::FrameId{1}})));
 
     ASSERT_TRUE(result.has_value());
     EXPECT_TRUE(std::holds_alternative<OperationSnapshot>(*result));

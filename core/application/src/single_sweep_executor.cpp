@@ -143,7 +143,9 @@ private:
                      .cause = published.error()});
             return;
         }
-        (void)operations_.complete(pending.operationId, OperationSucceeded{});
+        (void)operations_.complete(
+            pending.operationId,
+            OperationSucceeded{pending.work.frameContext.frameId});
     }
 
     bool cancellationRequested(
