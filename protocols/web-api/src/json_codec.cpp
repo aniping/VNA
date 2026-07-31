@@ -116,10 +116,63 @@ std::optional<std::uint64_t> expectedRevision(const Json& request) {
     return request.at("expectedStateRevision").get<std::uint64_t>();
 }
 
-application::CommandEnvelope commandFromJson(const Json& request) {
-    if (request.at("type").get<std::string>() != "createChannel") {
-        throw std::invalid_argument{"unsupported command type"};
+domain::MeasurementType measurementTypeFromJson(const Json& payload) {
+    const auto type = payload.at("type").get<std::string>();
+    if (type == "S11") {
+        return domain::MeasurementType::S11;
     }
+    if (type == "S21") {
+        return domain::MeasurementType::S21;
+    }
+    throw std::invalid_argument{"unsupported measurement type"};
+}
+
+domain::TraceFormat traceFormatFromJson(const Json& payload) {
+    const auto format = payload.at("format").get<std::string>();
+    if (format == "logMagnitude") {
+        return domain::TraceFormat::LogMagnitude;
+    }
+    if (format == "phase") {
+        return domain::TraceFormat::Phase;
+    }
+    if (format == "smith") {
+        return domain::TraceFormat::Smith;
+    }
+    throw std::invalid_argument{"unsupported trace format"};
+}
+
+application::CommandPayload commandPayloadFromJson(
+    const std::string& type,
+    const Json& payload) {
+    if (type == "createChannel") {
+        return application::CreateChannelCommand{domain::SweepSettings{
+            .startFrequencyHz = payload.at("startFrequencyHz").get<std::uint64_t>(),
+            .stopFrequencyHz = payload.at("stopFrequencyHz").get<std::uint64_t>(),
+            .points = payload.at("points").get<std::uint32_t>(),
+            .ifBandwidthHz = payload.at("ifBandwidthHz").get<std::uint64_t>(),
+            .powerDbm = payload.at("powerDbm").get<double>(),
+        }};
+    }
+    if (type == "createMeasurement") {
+        return application::CreateMeasurementCommand{
+            domain::ChannelId{payload.at("channelId").get<std::uint64_t>()},
+            measurementTypeFromJson(payload)};
+    }
+    if (type == "createWindow") {
+        return application::CreateWindowCommand{};
+    }
+    if (type == "createTrace") {
+        return application::CreateTraceCommand{
+            domain::WindowId{payload.at("windowId").get<std::uint64_t>()},
+            domain::MeasurementId{
+                payload.at("measurementId").get<std::uint64_t>()},
+            traceFormatFromJson(payload)};
+    }
+    throw std::invalid_argument{"unsupported command type"};
+}
+
+application::CommandEnvelope commandFromJson(const Json& request) {
+    const auto type = request.at("type").get<std::string>();
     const auto& payload = request.at("payload");
     return {
         .commandId = application::CommandId{
@@ -131,16 +184,7 @@ application::CommandEnvelope commandFromJson(const Json& request) {
         .expectedStateRevision = expectedRevision(request),
         .timeout = std::chrono::seconds{5},
         .priority = application::CommandPriority::Normal,
-        .payload = application::CreateChannelCommand{domain::SweepSettings{
-            .startFrequencyHz =
-                payload.at("startFrequencyHz").get<std::uint64_t>(),
-            .stopFrequencyHz =
-                payload.at("stopFrequencyHz").get<std::uint64_t>(),
-            .points = payload.at("points").get<std::uint32_t>(),
-            .ifBandwidthHz =
-                payload.at("ifBandwidthHz").get<std::uint64_t>(),
-            .powerDbm = payload.at("powerDbm").get<double>(),
-        }},
+        .payload = commandPayloadFromJson(type, payload),
     };
 }
 
@@ -173,6 +217,16 @@ CommandResponse encodeCommandResult(
     };
     if (const auto* channelId = std::get_if<domain::ChannelId>(&result.value)) {
         body["value"] = {{"channelId", channelId->value()}};
+    }
+    if (const auto* measurementId =
+            std::get_if<domain::MeasurementId>(&result.value)) {
+        body["value"] = {{"measurementId", measurementId->value()}};
+    }
+    if (const auto* windowId = std::get_if<domain::WindowId>(&result.value)) {
+        body["value"] = {{"windowId", windowId->value()}};
+    }
+    if (const auto* traceId = std::get_if<domain::TraceId>(&result.value)) {
+        body["value"] = {{"traceId", traceId->value()}};
     }
     return {info.httpStatus, body.dump()};
 }

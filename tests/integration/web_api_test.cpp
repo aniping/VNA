@@ -4,7 +4,10 @@
 #include <nlohmann/json.hpp>
 
 #include <chrono>
+#include <cstdint>
+#include <string>
 #include <thread>
+#include <utility>
 
 #include <vna/web_api/web_api.hpp>
 
@@ -47,6 +50,21 @@ nlohmann::json createChannelRequest() {
     };
 }
 
+nlohmann::json commandRequest(
+    std::string commandId,
+    std::uint64_t revision,
+    std::string type,
+    nlohmann::json payload) {
+    return {
+        {"commandId", std::move(commandId)},
+        {"sessionId", "session-1"},
+        {"instrumentId", "instrument-1"},
+        {"expectedStateRevision", revision},
+        {"type", std::move(type)},
+        {"payload", std::move(payload)},
+    };
+}
+
 class WebApiTest : public ::testing::Test {
 protected:
     void SetUp() override {
@@ -63,6 +81,12 @@ protected:
         if (serverThread_.joinable()) {
             serverThread_.join();
         }
+    }
+
+    httplib::Result postCommand(const nlohmann::json& request) const {
+        httplib::Client client{"127.0.0.1", port_};
+        return client.Post(
+            "/api/v1/commands", request.dump(), "application/json");
     }
 
     application::CommandBus commandBus_{
@@ -120,6 +144,39 @@ TEST_F(WebApiTest, CreatesChannelThroughUnifiedCommandEndpoint) {
     EXPECT_EQ(body.at("stateRevision"), 1);
     EXPECT_EQ(body.at("value").at("channelId"), 1);
     EXPECT_EQ(commandBus_.snapshot().instrument.channels.size(), 1U);
+}
+
+TEST_F(WebApiTest, CreatesMeasurementWindowAndTraceThroughHttp) {
+    ASSERT_EQ(postCommand(createChannelRequest())->status, 200);
+
+    const auto measurement = postCommand(commandRequest(
+        "command-2", 1, "createMeasurement", {{"channelId", 1}, {"type", "S11"}}));
+    ASSERT_TRUE(measurement);
+    ASSERT_EQ(measurement->status, 200);
+    EXPECT_EQ(
+        nlohmann::json::parse(measurement->body)["value"]["measurementId"],
+        1);
+
+    const auto window = postCommand(commandRequest(
+        "command-3", 2, "createWindow", nlohmann::json::object()));
+    ASSERT_TRUE(window);
+    ASSERT_EQ(window->status, 200);
+    EXPECT_EQ(nlohmann::json::parse(window->body)["value"]["windowId"], 1);
+
+    const auto trace = postCommand(commandRequest(
+        "command-4",
+        3,
+        "createTrace",
+        {{"windowId", 1}, {"measurementId", 1}, {"format", "logMagnitude"}}));
+    ASSERT_TRUE(trace);
+    ASSERT_EQ(trace->status, 200);
+    EXPECT_EQ(nlohmann::json::parse(trace->body)["value"]["traceId"], 1);
+
+    const auto snapshot = commandBus_.snapshot();
+    EXPECT_EQ(snapshot.stateRevision, 4U);
+    EXPECT_EQ(snapshot.instrument.measurements.size(), 1U);
+    EXPECT_EQ(snapshot.instrument.windows.size(), 1U);
+    EXPECT_EQ(snapshot.instrument.traces.size(), 1U);
 }
 
 TEST_F(WebApiTest, MapsStaleRevisionToConflict) {
