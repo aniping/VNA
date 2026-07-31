@@ -64,7 +64,7 @@ protected:
           }),
           commandBus_(application::InstrumentId{"instrument-1"}, handler_),
           query_(commandBus_, repository_),
-          webApi_(commandBus_, query_) {}
+          webApi_(commandBus_, operations_, query_) {}
 
     void SetUp() override {
         port_ = webApi_.bindToAnyPort("127.0.0.1");
@@ -150,14 +150,23 @@ TEST_F(WebApiSingleSweepTest, StartsRealSweepAndPublishesDisplayFrame) {
     EXPECT_EQ(body.at("status"), "succeeded");
     EXPECT_EQ(body.at("stateRevision"), 4);
     ASSERT_TRUE(body.at("value").contains("operationId"));
-    EXPECT_GT(body.at("value").at("operationId").get<std::uint64_t>(), 0U);
+    const auto operationId =
+        body.at("value").at("operationId").get<std::uint64_t>();
+    EXPECT_GT(operationId, 0U);
     EXPECT_EQ(commandBus_.snapshot().stateRevision, 4U);
 
     waitForSessionOperations();
+    const auto operation = get(
+        "/api/v1/operations/" + std::to_string(operationId));
     const auto frame = get("/api/v1/traces/1/display-frame");
+    ASSERT_TRUE(operation);
     ASSERT_TRUE(frame);
+    ASSERT_EQ(operation->status, httplib::StatusCode::OK_200);
     ASSERT_EQ(frame->status, httplib::StatusCode::OK_200);
+    const auto operationBody = Json::parse(operation->body);
     const auto frameBody = Json::parse(frame->body);
+    EXPECT_EQ(operationBody.at("status"), "Succeeded");
+    EXPECT_EQ(operationBody.at("frameId"), frameBody.at("frameId"));
     EXPECT_EQ(frameBody.at("traceId"), 1);
     EXPECT_EQ(frameBody.at("stateRevision"), 4);
     EXPECT_EQ(frameBody.at("frequenciesHz").size(), 5U);

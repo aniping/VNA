@@ -155,6 +155,7 @@ add_executable(
     integration/web_api_display_frame_test.cpp
     integration/web_api_error_test.cpp
     integration/web_api_idempotency_test.cpp
+    integration/web_api_operation_test.cpp
     integration/web_api_scale_test.cpp
     integration/web_api_single_sweep_test.cpp
     integration/web_api_static_files_test.cpp

@@ -6,6 +6,7 @@
 #include <string>
 
 #include <vna/application/command_bus.hpp>
+#include <vna/application/operation_manager.hpp>
 #include <vna/application/trace_display_frame_query.hpp>
 
 namespace vna::web_api {
@@ -15,9 +16,10 @@ public:
     // A configured web root must contain regular index.html and assets entries.
     // Only the two index routes and /assets/ are served; there is no root mount.
     // Its trusted directory tree must remain immutable for this object's life.
-    // Both borrowed application dependencies must outlive this adapter.
+    // All borrowed application dependencies must outlive this adapter.
     explicit WebApi(
         application::CommandBus& commandBus,
+        application::OperationManager& operations,
         const application::TraceDisplayFrameQuery& displayFrames,
         std::optional<std::filesystem::path> webRoot = std::nullopt);
     ~WebApi();

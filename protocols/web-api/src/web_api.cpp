@@ -2,6 +2,7 @@
 
 #include "display_frame_json_codec.hpp"
 #include "json_codec.hpp"
+#include "operation_http_handler.hpp"
 #include "web_asset_path.hpp"
 
 #include <httplib.h>
@@ -67,9 +68,16 @@ void handleDisplayFrame(
     const auto* frame = std::get_if<application::TraceDisplayFrameHandle>(
         &outcome);
     if (frame == nullptr) {
-        // Missing Trace and not-yet-published frame intentionally share one
-        // empty response; the Web adapter does not reconstruct query policy.
-        response.status = httplib::StatusCode::NoContent_204;
+        const auto error = std::get<
+            application::TraceDisplayFrameQueryError>(outcome);
+        if (error.code == application::
+                              TraceDisplayFrameQueryErrorCode::TraceNotFound) {
+            response.status = httplib::StatusCode::NotFound_404;
+            response.set_content(
+                R"({"error":"trace-not-found"})", "application/json");
+        } else {
+            response.status = httplib::StatusCode::NoContent_204;
+        }
         return;
     }
     constexpr std::size_t maximumResponseBytes = 131'072;
@@ -118,9 +126,12 @@ class WebApi::Impl {
 public:
     Impl(
         application::CommandBus& commandBus,
+        application::OperationManager& operations,
         const application::TraceDisplayFrameQuery& displayFrames,
         const std::optional<std::filesystem::path>& webRoot)
-        : commandBus_(commandBus), displayFrames_(displayFrames) {
+        : commandBus_(commandBus),
+          operations_(operations),
+          displayFrames_(displayFrames) {
         installRoutes();
         if (webRoot) {
             installIndexRoutes(*webRoot);
@@ -133,17 +144,20 @@ public:
     void installAssets(const std::filesystem::path& assetsPath);
 
     application::CommandBus& commandBus_;
+    const application::OperationManager& operations_;
     const application::TraceDisplayFrameQuery& displayFrames_;
     httplib::Server server_;
 };
 
 WebApi::WebApi(
     application::CommandBus& commandBus,
+    application::OperationManager& operations,
     const application::TraceDisplayFrameQuery& displayFrames,
     std::optional<std::filesystem::path> webRoot)
     : impl_([&] {
           const auto validated = detail::validateWebRoot(webRoot);
-          return std::make_unique<Impl>(commandBus, displayFrames, validated);
+          return std::make_unique<Impl>(
+              commandBus, operations, displayFrames, validated);
       }()) {}
 
 WebApi::~WebApi() = default;
@@ -165,6 +179,11 @@ void WebApi::Impl::installRoutes() {
         "/api/v1/commands",
         [this](const httplib::Request& request, httplib::Response& response) {
             handleCommand(commandBus_, request, response);
+        });
+    server_.Get(
+        R"(/api/v1/operations/([^/]*))",
+        [this](const httplib::Request& request, httplib::Response& response) {
+            detail::handleOperation(operations_, request, response);
         });
     server_.Get(
         R"(/api/v1/traces/([^/]*)/display-frame)",

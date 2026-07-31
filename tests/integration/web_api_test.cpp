@@ -70,16 +70,16 @@ protected:
         return client.Post(
             "/api/v1/commands", request.dump(), "application/json");
     }
+    application::OperationManager operations_;
     application::CommandBus commandBus_{
         application::InstrumentId{"instrument-1"},
         vna::test::stoppedSingleSweepHandler()};
     application::TraceDisplayFrameRepository repository_{1};
     application::TraceDisplayFrameQuery query_{commandBus_, repository_};
-    WebApi webApi_{commandBus_, query_};
+    WebApi webApi_{commandBus_, operations_, query_};
     int port_{-1};
     std::thread serverThread_;
 };
-
 TEST_F(WebApiTest, ReportsHealthOverHttp) {
     httplib::Client client{"127.0.0.1", port_};
     const auto response = client.Get("/api/v1/health");

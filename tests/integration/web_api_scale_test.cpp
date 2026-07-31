@@ -137,15 +137,15 @@ protected:
         ++revision_;
         return body.at("value").at("traceId").get<std::uint64_t>();
     }
+    application::OperationManager operations_;
     application::CommandBus commandBus_{application::InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     application::TraceDisplayFrameRepository repository_{1};
     application::TraceDisplayFrameQuery query_{commandBus_, repository_};
-    WebApi webApi_{commandBus_, query_};
+    WebApi webApi_{commandBus_, operations_, query_};
     int port_{-1};
     std::thread serverThread_;
     std::uint64_t revision_{0};
 };
-
 TEST_F(WebApiScaleTest, UpdatesScaleAndReturnsTargetIsolatedState) {
     createDisplayBase();
     const auto targetTraceId = createTrace("logMagnitude");

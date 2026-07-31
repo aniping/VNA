@@ -119,17 +119,18 @@ protected:
         return httplib::Client{"127.0.0.1", port_}.Get(path);
     }
 
+    application::OperationManager operations_;
     application::CommandBus commandBus_{
         application::InstrumentId{"instrument-1"},
         vna::test::stoppedSingleSweepHandler()};
     application::TraceDisplayFrameRepository repository_{2};
     application::TraceDisplayFrameQuery query_{commandBus_, repository_};
-    WebApi webApi_{commandBus_, query_};
+    WebApi webApi_{commandBus_, operations_, query_};
     int port_{-1};
     std::thread serverThread_;
 };
 
-TEST_F(WebApiDisplayFrameTest, ReturnsNoContentUntilFrameIsPublished) {
+TEST_F(WebApiDisplayFrameTest, DistinguishesMissingTraceFromMissingFrame) {
     const auto revisionBefore = commandBus_.snapshot().stateRevision;
 
     const auto missingTrace = get("/api/v1/traces/99/display-frame");
@@ -137,11 +138,11 @@ TEST_F(WebApiDisplayFrameTest, ReturnsNoContentUntilFrameIsPublished) {
 
     ASSERT_TRUE(missingTrace);
     ASSERT_TRUE(missingFrame);
-    EXPECT_EQ(missingTrace->status, httplib::StatusCode::NoContent_204);
+    EXPECT_EQ(missingTrace->status, httplib::StatusCode::NotFound_404);
     EXPECT_EQ(missingFrame->status, httplib::StatusCode::NoContent_204);
     EXPECT_EQ(missingTrace->get_header_value("Cache-Control"), "no-store");
     EXPECT_EQ(missingFrame->get_header_value("Cache-Control"), "no-store");
-    EXPECT_TRUE(missingTrace->body.empty());
+    EXPECT_EQ(missingTrace->body, R"({"error":"trace-not-found"})");
     EXPECT_TRUE(missingFrame->body.empty());
     EXPECT_EQ(commandBus_.snapshot().stateRevision, revisionBefore);
 }

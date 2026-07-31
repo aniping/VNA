@@ -89,9 +89,14 @@ Scale/Div，payload 为 `{"traceId": <id>, "scalePerDivision": <number>}`。
 显示比例快照，尚未开放该能力的 Phase 与 Smith 返回 `null`。
 `startSingleSweep` 接受 `{"channelId": <id>}`，成功响应的 `value.operationId`
 标识异步扫频；接受任务本身不增加 `stateRevision`。
+客户端应轮询无缓存的 `GET /api/v1/operations/<operationId>` 直到终态；仅在
+`Succeeded` 后读取一次 display-frame，并核对两者 `frameId`，避免把失败、
+取消或旧帧误认为本次结果。
+`status` 使用 `Queued`、`Running`、`CancelRequested`、`Succeeded`、`Failed`
+或 `Canceled`；成功终态同时返回已发布的 `frameId`。
 `GET /api/v1/traces/<traceId>/display-frame` 返回最新完整 Log Magnitude dB
-帧；尚无可用帧时返回空的 `204`。该接口用于单次扫频完成后读取一次，不作为
-连续曲线轮询通道。
+帧；Trace 存在但尚无可用帧时返回空的 `204`，Trace 不存在时返回 `404`。该
+接口用于单次扫频完成后读取一次，不作为连续曲线轮询通道。
 
 ## 前端开发
 

@@ -35,7 +35,8 @@ int main() {
         vna::application::InstrumentId{"instrument-1"}, sweepHandler};
     vna::application::TraceDisplayFrameQuery displayFrameQuery{
         commandBus, frameRepository};
-    vna::web_api::WebApi webApi{commandBus, displayFrameQuery};
+    vna::web_api::WebApi webApi{
+        commandBus, operationManager, displayFrameQuery};
 
     constexpr auto address = "127.0.0.1";
     constexpr int port = 8080;
