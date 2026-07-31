@@ -141,17 +141,26 @@ domain::TraceFormat traceFormatFromJson(const Json& payload) {
     throw std::invalid_argument{"unsupported trace format"};
 }
 
+domain::SweepSettings sweepSettingsFromJson(const Json& payload) {
+    return {
+        .startFrequencyHz = payload.at("startFrequencyHz").get<std::uint64_t>(),
+        .stopFrequencyHz = payload.at("stopFrequencyHz").get<std::uint64_t>(),
+        .points = payload.at("points").get<std::uint32_t>(),
+        .ifBandwidthHz = payload.at("ifBandwidthHz").get<std::uint64_t>(),
+        .powerDbm = payload.at("powerDbm").get<double>(),
+    };
+}
+
 application::CommandPayload commandPayloadFromJson(
     const std::string& type,
     const Json& payload) {
     if (type == "createChannel") {
-        return application::CreateChannelCommand{domain::SweepSettings{
-            .startFrequencyHz = payload.at("startFrequencyHz").get<std::uint64_t>(),
-            .stopFrequencyHz = payload.at("stopFrequencyHz").get<std::uint64_t>(),
-            .points = payload.at("points").get<std::uint32_t>(),
-            .ifBandwidthHz = payload.at("ifBandwidthHz").get<std::uint64_t>(),
-            .powerDbm = payload.at("powerDbm").get<double>(),
-        }};
+        return application::CreateChannelCommand{sweepSettingsFromJson(payload)};
+    }
+    if (type == "updateChannelSweep") {
+        return application::UpdateChannelSweepCommand{
+            domain::ChannelId{payload.at("channelId").get<std::uint64_t>()},
+            sweepSettingsFromJson(payload)};
     }
     if (type == "createMeasurement") {
         return application::CreateMeasurementCommand{

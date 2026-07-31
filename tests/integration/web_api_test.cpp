@@ -213,6 +213,27 @@ TEST_F(WebApiTest, MapsInvalidSweepToUnprocessableContent) {
     EXPECT_EQ(commandBus_.snapshot().stateRevision, 0U);
 }
 
+TEST_F(WebApiTest, UpdatesChannelSweepThroughHttp) {
+    ASSERT_EQ(postCommand(createChannelRequest())->status, 200);
+    const auto response = postCommand(commandRequest(
+        "command-2",
+        1,
+        "updateChannelSweep",
+        {{"channelId", 1},
+         {"startFrequencyHz", 100'000'000},
+         {"stopFrequencyHz", 6'000'000'000},
+         {"points", 401},
+         {"ifBandwidthHz", 1'000},
+         {"powerDbm", -5.0}}));
+
+    ASSERT_TRUE(response);
+    EXPECT_EQ(response->status, httplib::StatusCode::OK_200);
+    EXPECT_EQ(nlohmann::json::parse(response->body)["stateRevision"], 2);
+    const auto sweep = commandBus_.snapshot().instrument.channels[0].sweep;
+    EXPECT_EQ(sweep.startFrequencyHz, 100'000'000U);
+    EXPECT_EQ(sweep.stopFrequencyHz, 6'000'000'000U);
+}
+
 TEST_F(WebApiTest, RejectsMalformedCommandJson) {
     httplib::Client client{"127.0.0.1", port_};
 
