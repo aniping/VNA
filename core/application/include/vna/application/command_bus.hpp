@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -116,6 +117,8 @@ struct CommandEnvelope {
 
 enum class ApplicationErrorCode {
     CommandIdReuse,
+    ControlDenied,
+    ResourceBusy,
     StateRevisionConflict,
     WrongInstrument,
 };
@@ -129,6 +132,8 @@ enum class CommandErrorCode {
     InvalidScalePerDivision,
     ScaleNotSupportedForFormat,
     CommandIdReuse,
+    ControlDenied,
+    ResourceBusy,
     StateRevisionConflict,
     WrongInstrument,
 };
@@ -136,6 +141,24 @@ enum class CommandErrorCode {
 struct ApplicationError {
     ApplicationErrorCode code;
 };
+
+enum class ControlMode {
+    Local,
+    Remote,
+};
+
+struct ControlSnapshot {
+    ControlMode mode{ControlMode::Local};
+};
+
+using ControlOutcome = std::variant<ControlSnapshot, ApplicationError>;
+
+struct ControlResult {
+    std::uint64_t stateRevision;
+    ControlOutcome outcome;
+};
+
+using ScpiSessionRevoker = std::function<void()>;
 
 struct CommandSuccess {
     CommandValue value{};
@@ -149,6 +172,8 @@ using CommandOutcome = std::variant<CommandSuccess, CommandError>;
 
 [[nodiscard]] CommandErrorCode commandErrorCode(
     const CommandError& error) noexcept;
+[[nodiscard]] CommandErrorCode commandErrorCode(
+    const ApplicationError& error) noexcept;
 
 struct CommandResult {
     std::uint64_t stateRevision;
@@ -157,6 +182,7 @@ struct CommandResult {
 
 struct StateSnapshot {
     std::uint64_t stateRevision;
+    ControlSnapshot control;
     domain::InstrumentSnapshot instrument;
     display_model::DisplayWorkspaceSnapshot display;
 };
@@ -173,11 +199,24 @@ public:
         std::size_t idempotencyCapacity = 1024);
     ~CommandBus();
 
+    // Attached/revoking sessions use SessionIds never reused during this bus life.
+    // The bus outlives them; detach follows isolation and the final dispatch, and
+    // precedes bus destruction. Public calls must not race destruction.
+    // Revokers are lifetime-safe, quick/final, reentrant, and never await takeover.
     [[nodiscard]] CommandResult dispatch(const CommandEnvelope& command);
+    [[nodiscard]] ControlResult tryAttachScpiSession(
+        const SessionId& sessionId,
+        ScpiSessionRevoker revoker);
+    [[nodiscard]] ControlResult activateScpiControl(
+        const SessionId& sessionId);
+    [[nodiscard]] ControlResult detachScpiSession(
+        const SessionId& sessionId);
+    [[nodiscard]] ControlResult takeLocalControl();
     [[nodiscard]] StateSnapshot snapshot() const;
     [[nodiscard]] CommandBusStats stats() const;
 
 private:
+    class ControlAuthority;
     class IdempotencyStore;
 
     [[nodiscard]] CommandResult execute(const CreateChannelCommand& command);
@@ -205,6 +244,7 @@ private:
     display_model::DisplayWorkspace displayWorkspace_;
     std::uint64_t stateRevision_{0};
     std::unique_ptr<IdempotencyStore> idempotency_;
+    std::unique_ptr<ControlAuthority> controlAuthority_;
 };
 
 }  // namespace vna::application

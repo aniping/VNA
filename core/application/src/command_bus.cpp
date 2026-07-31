@@ -1,5 +1,6 @@
 #include <vna/application/command_bus.hpp>
 
+#include "control_authority_internal.hpp"
 #include "command_idempotency_internal.hpp"
 
 #include <exception>
@@ -48,9 +49,17 @@ CommandErrorCode commandErrorCode(const CommandError& error) noexcept {
                 return CommandErrorCode::ScaleNotSupportedForFormat;
         }
     }
-    switch (std::get<ApplicationError>(error).code) {
+    return commandErrorCode(std::get<ApplicationError>(error));
+}
+
+CommandErrorCode commandErrorCode(const ApplicationError& error) noexcept {
+    switch (error.code) {
         case ApplicationErrorCode::CommandIdReuse:
             return CommandErrorCode::CommandIdReuse;
+        case ApplicationErrorCode::ControlDenied:
+            return CommandErrorCode::ControlDenied;
+        case ApplicationErrorCode::ResourceBusy:
+            return CommandErrorCode::ResourceBusy;
         case ApplicationErrorCode::StateRevisionConflict:
             return CommandErrorCode::StateRevisionConflict;
         case ApplicationErrorCode::WrongInstrument:
@@ -64,7 +73,8 @@ CommandBus::CommandBus(
     std::size_t idempotencyCapacity)
     : instrumentId_(std::move(instrumentId)),
       idempotency_(
-          std::make_unique<IdempotencyStore>(idempotencyCapacity)) {}
+          std::make_unique<IdempotencyStore>(idempotencyCapacity)),
+      controlAuthority_(std::make_unique<ControlAuthority>()) {}
 
 CommandBus::~CommandBus() = default;
 
@@ -80,6 +90,10 @@ CommandResult CommandBus::dispatch(const CommandEnvelope& command) {
     }
     if (lookup.keyFound) {
         return applicationError(ApplicationErrorCode::CommandIdReuse);
+    }
+
+    if (!controlAuthority_->authorizes(command.origin, command.sessionId)) {
+        return applicationError(ApplicationErrorCode::ControlDenied);
     }
 
     if (command.expectedStateRevision.has_value() &&
@@ -206,6 +220,7 @@ StateSnapshot CommandBus::snapshot() const {
     const std::scoped_lock lock{mutex_};
     return StateSnapshot{
         .stateRevision = stateRevision_,
+        .control = controlAuthority_->snapshot(),
         .instrument = instrument_.snapshot(),
         .display = displayWorkspace_.snapshot(),
     };

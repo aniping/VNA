@@ -2,6 +2,7 @@ add_library(
     vna_application
     src/command_bus.cpp
     src/command_idempotency.cpp
+    src/control_authority.cpp
     src/completion_fence.cpp
     src/completion_fence_handles.cpp
     src/operation_manager.cpp

@@ -317,6 +317,11 @@ struct CommandEnvelope {
 
 关键语义：
 
+- 每条 SCPI 连接由协议适配器生成 `SessionId`，在同一 `CommandBus` 生命周期内不得复用。
+- `CommandBus` 必须晚于所有已附着或撤销中的 SCPI Session 销毁；会话只在传输已隔离、不会再分派命令后调用 detach，并须在 Bus 析构前完成 detach。任何方法不得与析构并发。
+- 撤销回调只负责发起隔离或关闭，必须持有安全生命周期、快速并最终返回；它可以在同步关闭后重入 owner detach，不得等待只有 `takeLocalControl` 返回后才会发生的动作。
+- Local takeover 先在线性化点进入 Local+Revoking，再在锁外至多调用一次撤销回调；owner detach 确认前新连接保持 busy，回调异常也不得提前开放租约。
+- retained 幂等结果的精确重放和标识复用检查先于控制权授权；只有 cache miss 到达授权门时才返回控制拒绝。
 - `expectedStateRevision` 不匹配时返回明确冲突，禁止静默覆盖。
 - 同步配置命令不公开尚未兑现的超时或优先级字段。
 - 命令成功表示业务状态已提交；涉及长操作时返回 `operationId`，完成由事件或同步 Query 表达。
