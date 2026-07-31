@@ -1,5 +1,7 @@
 #include <vna/application/command_bus.hpp>
 
+#include <exception>
+
 namespace vna::application {
 
 CommandErrorCode commandErrorCode(const CommandError& error) noexcept {
@@ -28,7 +30,13 @@ CommandErrorCode commandErrorCode(const CommandError& error) noexcept {
                 return CommandErrorCode::ScaleNotSupportedForFormat;
         }
     }
-    return std::get<ApplicationError>(error).code;
+    switch (std::get<ApplicationError>(error).code) {
+        case ApplicationErrorCode::StateRevisionConflict:
+            return CommandErrorCode::StateRevisionConflict;
+        case ApplicationErrorCode::WrongInstrument:
+            return CommandErrorCode::WrongInstrument;
+    }
+    std::terminate();
 }
 
 CommandBus::CommandBus(InstrumentId instrumentId)
@@ -37,12 +45,12 @@ CommandBus::CommandBus(InstrumentId instrumentId)
 CommandResult CommandBus::dispatch(const CommandEnvelope& command) {
     const std::scoped_lock lock{mutex_};
     if (command.instrumentId != instrumentId_) {
-        return applicationError(CommandErrorCode::WrongInstrument);
+        return applicationError(ApplicationErrorCode::WrongInstrument);
     }
 
     if (command.expectedStateRevision.has_value() &&
         command.expectedStateRevision.value() != stateRevision_) {
-        return applicationError(CommandErrorCode::StateRevisionConflict);
+        return applicationError(ApplicationErrorCode::StateRevisionConflict);
     }
 
     return std::visit(
@@ -146,7 +154,7 @@ CommandResult CommandBus::displayError(
     };
 }
 
-CommandResult CommandBus::applicationError(CommandErrorCode code) const {
+CommandResult CommandBus::applicationError(ApplicationErrorCode code) const {
     return CommandResult{
         .stateRevision = stateRevision_,
         .outcome = CommandError{ApplicationError{.code = code}},

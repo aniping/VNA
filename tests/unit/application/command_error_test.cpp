@@ -30,6 +30,26 @@ CommandEnvelope traceCommand(std::string commandId, CommandPayload payload) {
     };
 }
 
+TEST(CommandErrorTest, PreservesApplicationCauseDuringClassification) {
+    const CommandError revisionError{ApplicationError{
+        .code = ApplicationErrorCode::StateRevisionConflict}};
+    const CommandError instrumentError{ApplicationError{
+        .code = ApplicationErrorCode::WrongInstrument}};
+
+    EXPECT_EQ(
+        std::get<ApplicationError>(revisionError).code,
+        ApplicationErrorCode::StateRevisionConflict);
+    EXPECT_EQ(
+        commandErrorCode(revisionError),
+        CommandErrorCode::StateRevisionConflict);
+    EXPECT_EQ(
+        std::get<ApplicationError>(instrumentError).code,
+        ApplicationErrorCode::WrongInstrument);
+    EXPECT_EQ(
+        commandErrorCode(instrumentError),
+        CommandErrorCode::WrongInstrument);
+}
+
 TEST(CommandErrorTest, PreservesInvalidSweepDomainError) {
     CommandBus commandBus{InstrumentId{"instrument-1"}};
     const CommandEnvelope command{

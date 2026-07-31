@@ -124,7 +124,7 @@ TEST(CommandBusTest, StaleRevisionIsRejectedWithoutChangingState) {
     ASSERT_NE(applicationError(result), nullptr);
     EXPECT_EQ(
         applicationError(result)->code,
-        CommandErrorCode::StateRevisionConflict);
+        ApplicationErrorCode::StateRevisionConflict);
     EXPECT_EQ(result.stateRevision, 1U);
     const auto snapshot = commandBus.snapshot();
     EXPECT_EQ(snapshot.stateRevision, 1U);
@@ -144,7 +144,7 @@ TEST(CommandBusTest, CommandForAnotherInstrumentIsRejected) {
     ASSERT_NE(applicationError(result), nullptr);
     EXPECT_EQ(
         applicationError(result)->code,
-        CommandErrorCode::WrongInstrument);
+        ApplicationErrorCode::WrongInstrument);
     EXPECT_EQ(result.stateRevision, 0U);
     EXPECT_TRUE(commandBus.snapshot().instrument.channels.empty());
 }

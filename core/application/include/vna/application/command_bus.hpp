@@ -106,6 +106,11 @@ struct CommandEnvelope {
     CommandPayload payload;
 };
 
+enum class ApplicationErrorCode {
+    StateRevisionConflict,
+    WrongInstrument,
+};
+
 enum class CommandErrorCode {
     InvalidSweepSettings,
     ChannelNotFound,
@@ -119,7 +124,7 @@ enum class CommandErrorCode {
 };
 
 struct ApplicationError {
-    CommandErrorCode code;
+    ApplicationErrorCode code;
 };
 
 struct CommandSuccess {
@@ -171,7 +176,7 @@ private:
     [[nodiscard]] CommandResult displayError(
         display_model::DisplayError error) const;
     [[nodiscard]] CommandResult applicationError(
-        CommandErrorCode code) const;
+        ApplicationErrorCode code) const;
 
     InstrumentId instrumentId_;
     mutable std::mutex mutex_;

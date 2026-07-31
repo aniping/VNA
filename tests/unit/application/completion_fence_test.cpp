@@ -97,7 +97,7 @@ TEST(CompletionFenceTest, EveryTerminalOutcomeSatisfiesOutsideManagerLock) {
     ASSERT_TRUE(std::holds_alternative<OperationSnapshot>(manager.complete(
         failed.id,
         OperationFailed{CommandError{ApplicationError{
-            .code = CommandErrorCode::StateRevisionConflict}}})));
+            .code = ApplicationErrorCode::StateRevisionConflict}}})));
     EXPECT_EQ(callbackCount, 0);
     ASSERT_TRUE(std::holds_alternative<OperationSnapshot>(
         manager.complete(canceled.id, OperationCanceled{})));

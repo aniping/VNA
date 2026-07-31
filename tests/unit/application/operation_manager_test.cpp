@@ -198,7 +198,7 @@ TEST(OperationManagerTest, AcceptsTerminalRaceAfterCancelRequest) {
     const auto failureResult = manager.complete(
         failed.id,
         OperationFailed{CommandError{ApplicationError{
-            .code = CommandErrorCode::StateRevisionConflict}}});
+            .code = ApplicationErrorCode::StateRevisionConflict}}});
 
     EXPECT_TRUE(std::holds_alternative<OperationSucceeded>(
         std::get<OperationSnapshot>(successResult).state));
