@@ -25,6 +25,7 @@ const entries = computed(() => [
 ] as const)
 
 const candidateSweep = computed<SweepSettings | null>(() => {
+  if (!Number.isFinite(valueGHz.value) || valueGHz.value < 0) return null
   const valueHz = Math.round(valueGHz.value * 1e9)
   let start = props.channel.sweep.startFrequencyHz
   let stop = props.channel.sweep.stopFrequencyHz
