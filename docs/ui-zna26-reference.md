@@ -109,7 +109,64 @@ M1.5 必须先交付以下可操作内容：
 - 服务连接状态和 `stateRevision`，融入状态栏而非另做 Dashboard 卡片。
 - 所有业务数据来自 `vna-server`，无静态业务 Mock。
 
-## 8. 视觉回归
+## 8. Scale Softtool 基线
+
+本节依据 User Manual 41 的 PDF 页码与印刷页码 547-550；单窗口数值输入规则
+见 PDF/印刷页 58-59。547 页给出入口和作用范围，548 页给出布局、状态与参数
+关系，549-550 页给出各控件行为。不得复制手册截图或品牌素材。
+
+Scale Values 采用左侧主控列、右侧标签列的两列布局，宽度约为 64%:36%。
+主控列中的每个控件占该列全宽并纵向排列；右列顶部为 `Scale Values` 标签。
+这只是 Softtool 内部布局，最右侧 Hard Key 仍遵守第 5 节的两列基线。
+
+控件顺序和行为固定如下：
+
+| 顺序 | 控件 | 行为与可用性 |
+| --- | --- | --- |
+| 1 | Auto Scale Trace | 自动缩放活动 Trace，不改变激励或水平轴 |
+| 2 | Auto Scale Diagram | 独立缩放活动 Diagram 中的全部 Trace |
+| 3 | Auto Scale Diag. (Common Scale) | 对活动 Diagram 中相同 Format 的 Trace 使用共同缩放 |
+| 4 | Ref Value = Marker | 使用活动 Marker 的响应值，Marker 未支持时禁用 |
+| 5 | Scale/Div | 设置相邻网格线的增量；圆图禁用 |
+| 6 | Ref Value | 设置笛卡尔参考线值或圆图外圆值 |
+| 7 | Ref Pos | 设置笛卡尔参考线位置 0-10；圆图禁用 |
+| 8 | Max | 设置笛卡尔图上边界；圆图禁用 |
+| 9 | Min | 设置笛卡尔图下边界；圆图禁用 |
+| 10 | Auto Scale Tr. Cont. | 扫频期间持续自动缩放活动 Trace |
+
+活动 `Scale` Hard Key 和 `Scale Values` 标签使用蓝色；截图中蓝色的
+`Scale/Div` 表示当前焦点行，不表示业务开关。`Ref Value = Marker` 为禁用态，
+`Auto Scale Tr. Cont.` 显示 `Off` 则是有效的关闭状态。手册所称的 recall set
+（召回集合）至少包含两条 Trace，且活动 Trace 不是 reference trace（参考迹线）
+时，Scale Coupling 才可用；这两个概念尚未进入项目领域模型，因此当前禁用。
+
+单位由 Trace Format 决定：dB Mag 使用 dB，Phase 和 Unwr Phase 使用 degree，
+Delay 使用 ns，其他无量纲 Format 使用 U；圆图的 Ref Value 使用 U，Ref Pos
+无单位。手册截图中的 `1 ns`、`0 s`、`5`、`5 ns`、`-5 ns` 和 `Off` 是 Delay
+示例当前值，不是项目默认值。单窗口允许外接键盘就地编辑数值；原机 Numeric
+Editor、单位键和 Step Size 面板在项目支持前不得伪造。
+
+能力范围分为三类：
+
+- 当前真实状态：Scale Hard Key 保持禁用；前端仅可复用活动 Trace、Softtool
+  路由、命令生命周期与刷新机制，不保存 Scale 业务状态。
+- 等待后端契约：Scale/Div、Ref Value、Ref Pos、Max、Min、自动缩放、持续自动
+  缩放、Format 切换后的默认值和 Diagram 级成员关系均来自 display-model 与
+  `StateSnapshot`。
+- 暂不支持并禁用：Marker 派生缩放、Scale Coupling、未进入 TraceFormat 的格式，
+  以及原机 Numeric Editor。
+
+缩放参数相互耦合：`Max - Min = Scale/Div × 网格分格数`，Ref Pos 为 10 时
+`Max = Ref Value`，Ref Pos 为 0 时 `Min = Ref Value`。这些关系由 display-model
+后端维护，前端不得自行计算或用组件状态补齐。
+
+`DiagramPane` 当前显示的笛卡尔 `10 dB/-90 dB` 与 Smith `1/0` 仅为占位视觉，
+不得作为 Scale 真值、默认值或命令输入。真实标签必须来自 `StateSnapshot`。
+
+第一条建议切片只覆盖活动笛卡尔 Trace 的 Scale/Div，并仍须等待后端状态与
+HTTP 契约明确批准。其他控件按上述顺序显示为禁用，不得先在客户端模拟成功。
+
+## 9. 视觉回归
 
 每个前端提交至少验证：
 
