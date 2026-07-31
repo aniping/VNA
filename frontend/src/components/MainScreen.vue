@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import type { StateSnapshot, SweepSettings, TraceSetup as TraceSetupModel } from '../api/vnaApi'
 import ChannelSetup from './ChannelSetup.vue'
 import DiagramGrid from './DiagramGrid.vue'
+import HardkeyPanel from './HardkeyPanel.vue'
 import TraceSetup from './TraceSetup.vue'
 
 const props = defineProps<{
@@ -18,7 +19,6 @@ const emit = defineEmits<{
 }>()
 
 const toolbar = ['↶', '↷', 'Zoom', 'Max', '+ Trace', '+ Marker', 'Delete', 'Print', 'Save', 'Recall']
-const hardkeys = ['Meas', 'Format', 'Scale', 'Trace Config', 'Marker', 'Stimulus', 'Channel', 'Cal']
 const softkeys = ['S-Parameters', 'Wave Quantities', 'Ratios', 'Receivers', 'More…']
 const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
 const channel = computed(() => props.state?.instrument.channels[0])
@@ -43,20 +43,6 @@ const entityCounts = computed(() => {
 
     <div class="measurement-workspace" :class="{ 'softtool-visible': activeSofttool }">
       <DiagramGrid :state="state" />
-
-      <nav class="hardkey-panel" aria-label="Virtual hard keys">
-        <h2>HARD KEY</h2>
-        <button
-          v-for="item in hardkeys"
-          :key="item"
-          type="button"
-          :class="{ active: item === 'Meas' && activeSofttool }"
-          :disabled="item !== 'Meas'"
-          @click="activeSofttool = 'measurement'; softtoolPage = 'measurement'"
-        >
-          {{ item }}
-        </button>
-      </nav>
 
       <aside v-if="activeSofttool" class="softtool" aria-label="Softtool panel">
         <div class="softtool-tabs">
@@ -91,6 +77,11 @@ const entityCounts = computed(() => {
         <div class="softtool-fill" />
         <button type="button" class="softkey close-key" @click="activeSofttool = null">Close</button>
       </aside>
+
+      <HardkeyPanel
+        :active-key="activeSofttool ? 'Meas' : null"
+        @select="activeSofttool = 'measurement'; softtoolPage = 'measurement'"
+      />
     </div>
 
     <nav class="menu-bar" aria-label="Application menu">
