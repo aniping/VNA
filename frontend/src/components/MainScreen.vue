@@ -4,6 +4,9 @@ import type { StateSnapshot, SweepSettings, TraceSetup as TraceSetupModel } from
 import DiagramGrid from './DiagramGrid.vue'
 import HardkeyPanel from './HardkeyPanel.vue'
 import MeasurementSofttool from './MeasurementSofttool.vue'
+import StimulusSofttool from './StimulusSofttool.vue'
+
+type StimulusKey = 'Start' | 'Stop' | 'Center' | 'Span'
 
 const props = defineProps<{
   state: StateSnapshot | null
@@ -15,12 +18,19 @@ const props = defineProps<{
 const emit = defineEmits<{
   createChannel: [sweep: SweepSettings]
   createTrace: [setup: TraceSetupModel]
+  updateSweep: [channelId: number, sweep: SweepSettings]
 }>()
 
 const toolbar = ['↶', '↷', 'Zoom', 'Max', '+ Trace', '+ Marker', 'Delete', 'Print', 'Save', 'Recall']
 const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
 const channel = computed(() => props.state?.instrument.channels[0])
-const activeSofttool = ref<'measurement' | null>('measurement')
+const activeSofttool = ref<'measurement' | 'stimulus' | null>('measurement')
+const stimulusKey = ref<StimulusKey>('Start')
+const activeKey = computed(() => {
+  if (activeSofttool.value === 'measurement') return 'Meas'
+  if (activeSofttool.value === 'stimulus') return stimulusKey.value
+  return null
+})
 const entityCounts = computed(() => {
   const instrument = props.state?.instrument
   if (!instrument) return 'Ch — · Meas — · Trc — · Win —'
@@ -29,8 +39,17 @@ const entityCounts = computed(() => {
 })
 
 function selectHardkey(key: string): void {
-  if (key !== 'Meas') return
-  activeSofttool.value = activeSofttool.value ? null : 'measurement'
+  if (key === 'Meas') {
+    activeSofttool.value = activeSofttool.value === 'measurement' ? null : 'measurement'
+    return
+  }
+  if (!['Start', 'Stop', 'Center', 'Span'].includes(key)) return
+  stimulusKey.value = key as StimulusKey
+  activeSofttool.value = 'stimulus'
+}
+
+function forwardSweepUpdate(channelId: number, sweep: SweepSettings): void {
+  emit('updateSweep', channelId, sweep)
 }
 </script>
 
@@ -47,16 +66,24 @@ function selectHardkey(key: string): void {
       </div>
 
       <MeasurementSofttool
-        v-if="activeSofttool"
+        v-if="activeSofttool === 'measurement'"
         :has-channel="Boolean(channel)"
         :disabled="disabled"
         :busy="busy"
         @create-channel="emit('createChannel', $event)"
         @create-trace="emit('createTrace', $event)"
       />
+      <StimulusSofttool
+        v-else-if="activeSofttool === 'stimulus' && channel"
+        :channel="channel"
+        :focus="stimulusKey"
+        :disabled="disabled"
+        :busy="busy"
+        @update-sweep="forwardSweepUpdate"
+      />
 
       <HardkeyPanel
-        :active-key="activeSofttool ? 'Meas' : null"
+        :active-key="activeKey"
         @select="selectHardkey"
       />
     </div>

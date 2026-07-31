@@ -22,10 +22,10 @@ const groups: HardkeyGroup[] = [
   {
     title: 'Stimulus',
     keys: [
-      { label: 'Start' },
-      { label: 'Stop' },
-      { label: 'Center' },
-      { label: 'Span' },
+      { label: 'Start', enabled: true },
+      { label: 'Stop', enabled: true },
+      { label: 'Center', enabled: true },
+      { label: 'Span', enabled: true },
     ],
   },
   {
