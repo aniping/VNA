@@ -81,6 +81,14 @@ export async function createChannel(
   return sendCommand(stateRevision, 'createChannel', sweep)
 }
 
+export async function updateChannelSweep(
+  stateRevision: number,
+  channelId: number,
+  sweep: SweepSettings,
+): Promise<CommandResult<{ channelId: number }>> {
+  return sendCommand(stateRevision, 'updateChannelSweep', { channelId, ...sweep })
+}
+
 export async function createMeasurement(
   stateRevision: number,
   channelId: number,
