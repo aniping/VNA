@@ -70,8 +70,10 @@ CommandErrorCode commandErrorCode(const ApplicationError& error) noexcept {
 
 CommandBus::CommandBus(
     InstrumentId instrumentId,
+    SingleSweepCommandHandler& singleSweepHandler,
     std::size_t idempotencyCapacity)
     : instrumentId_(std::move(instrumentId)),
+      singleSweepHandler_(singleSweepHandler),
       idempotency_(
           std::make_unique<IdempotencyStore>(idempotencyCapacity)),
       controlAuthority_(std::make_unique<ControlAuthority>()) {}

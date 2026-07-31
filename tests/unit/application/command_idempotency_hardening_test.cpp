@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-#include <vna/application/command_bus.hpp>
+#include <vna/test/stopped_single_sweep_handler.hpp>
 
 namespace vna::application {
 namespace {
@@ -68,7 +68,7 @@ const ApplicationError* applicationError(const CommandResult& result) {
 
 TEST(CommandIdempotencyHardeningTest, ConcurrentSameKeyExecutesOnce) {
     constexpr std::size_t requestCount = 8;
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     const auto command = windowCommand("shared-command");
     StartGate gate{requestCount};
     std::vector<std::optional<CommandResult>> results(requestCount);
@@ -145,7 +145,7 @@ protected:
             UpdateTraceScalePerDivisionCommand{traceId_, scale});
     }
 
-    CommandBus commandBus_{InstrumentId{"instrument-1"}};
+    CommandBus commandBus_{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     display_model::TraceId traceId_{0};
 };
 
@@ -201,7 +201,7 @@ TEST_F(ScaleIdempotencyHardeningTest, DistinguishesZeroSignAndReplaysNan) {
 }
 
 TEST(CommandIdempotencyHardeningTest, TransientPathsDoNotRefreshFullFifo) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}, 2};
+    CommandBus commandBus{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler(), 2};
     const auto oldest = windowCommand("oldest", 0);
     const auto newest = windowCommand("newest", 1);
     ASSERT_NE(success(commandBus.dispatch(oldest)), nullptr);

@@ -2,7 +2,7 @@
 
 #include <utility>
 
-#include <vna/application/command_bus.hpp>
+#include <vna/test/stopped_single_sweep_handler.hpp>
 
 namespace vna::application {
 namespace {
@@ -26,7 +26,8 @@ CommandEnvelope command(
 }
 
 TEST(ChannelCommandTest, UpdatesExistingChannelSweep) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     const domain::SweepSettings initial{
         .startFrequencyHz = 10'000'000,
         .stopFrequencyHz = 26'500'000'000,
@@ -62,7 +63,8 @@ TEST(ChannelCommandTest, UpdatesExistingChannelSweep) {
 }
 
 TEST(ChannelCommandTest, InvalidUpdateKeepsChannelAndRevisionUnchanged) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     const domain::SweepSettings initial{
         .startFrequencyHz = 10'000'000,
         .stopFrequencyHz = 26'500'000'000,
@@ -88,7 +90,8 @@ TEST(ChannelCommandTest, InvalidUpdateKeepsChannelAndRevisionUnchanged) {
 }
 
 TEST(ChannelCommandTest, RejectsUpdateForMissingChannel) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     const domain::SweepSettings sweep{
         .startFrequencyHz = 10'000'000,
         .stopFrequencyHz = 26'500'000'000,

@@ -2,14 +2,20 @@
 
 #include <functional>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include <vna/application/command_bus.hpp>
 #include <vna/application/single_sweep_command_handler.hpp>
 
 namespace vna::application {
 namespace {
+
+static_assert(!std::is_constructible_v<CommandBus, InstrumentId>);
+static_assert(std::is_constructible_v<
+              CommandBus, InstrumentId, SingleSweepCommandHandler&>);
 
 CapturedSingleSweep capturedSweep(
     domain::ChannelId channelId = domain::ChannelId{2},

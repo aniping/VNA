@@ -5,7 +5,7 @@
 #include <stdexcept>
 #include <string>
 
-#include <vna/application/command_bus.hpp>
+#include <vna/test/stopped_single_sweep_handler.hpp>
 
 namespace vna::application {
 namespace {
@@ -39,7 +39,8 @@ CommandEnvelope windowCommand(
 }
 
 TEST(ControlAuthorityTest, AttachesOnlyOneSessionWhileRemainingLocal) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     EXPECT_EQ(commandBus.snapshot().control.mode, ControlMode::Local);
 
     const auto attached = commandBus.tryAttachScpiSession(
@@ -63,7 +64,8 @@ TEST(ControlAuthorityTest, AttachesOnlyOneSessionWhileRemainingLocal) {
 }
 
 TEST(ControlAuthorityTest, ActivatesAndDetachesOnlyTheOwningSession) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     int revocations = 0;
     ASSERT_NE(controlSuccess(commandBus.tryAttachScpiSession(
         SessionId{"session-1"}, [&] { ++revocations; })), nullptr);
@@ -91,7 +93,8 @@ TEST(ControlAuthorityTest, ActivatesAndDetachesOnlyTheOwningSession) {
 }
 
 TEST(ControlAuthorityTest, AuthorizesMutationsByModeAndOwningSession) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     ASSERT_NE(controlSuccess(commandBus.tryAttachScpiSession(
         SessionId{"session-1"}, [] {})), nullptr);
     const auto localWeb = commandBus.dispatch(windowCommand(
@@ -120,7 +123,8 @@ TEST(ControlAuthorityTest, AuthorizesMutationsByModeAndOwningSession) {
 }
 
 TEST(ControlAuthorityTest, TakeoverCallbackCanReenterAndConfirmDetach) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     int revocations = 0;
     std::optional<StateSnapshot> callbackSnapshot;
     std::optional<ControlResult> callbackDetach;
@@ -152,7 +156,8 @@ TEST(ControlAuthorityTest, TakeoverCallbackCanReenterAndConfirmDetach) {
 }
 
 TEST(ControlAuthorityTest, RevokerFailureStaysClosedUntilOwnerDetaches) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     int revocations = 0;
     ASSERT_NE(controlSuccess(commandBus.tryAttachScpiSession(
         SessionId{"session-1"},

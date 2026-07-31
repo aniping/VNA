@@ -2,7 +2,7 @@
 
 #include <utility>
 
-#include <vna/application/command_bus.hpp>
+#include <vna/test/stopped_single_sweep_handler.hpp>
 #include <vna/display_model/display_workspace.hpp>
 
 namespace vna::application {
@@ -59,7 +59,8 @@ void createTrace(CommandBus& commandBus) {
 }
 
 TEST(TraceCommandTest, UpdatesTraceFormatAndIncrementsRevisionOnce) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     createTrace(commandBus);
 
     const auto result = commandBus.dispatch(command(
@@ -84,7 +85,8 @@ TEST(TraceCommandTest, UpdatesTraceFormatAndIncrementsRevisionOnce) {
 }
 
 TEST(TraceCommandTest, RejectsTraceForMissingMeasurement) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     ASSERT_TRUE(isSuccess(commandBus.dispatch(
         command("create-window", 0, CreateWindowCommand{}))));
 

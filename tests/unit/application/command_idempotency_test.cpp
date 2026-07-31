@@ -5,7 +5,7 @@
 #include <string>
 #include <utility>
 
-#include <vna/application/command_bus.hpp>
+#include <vna/test/stopped_single_sweep_handler.hpp>
 
 namespace vna::application {
 namespace {
@@ -50,12 +50,15 @@ const ApplicationError* applicationError(const CommandResult& result) {
 
 TEST(CommandIdempotencyTest, RejectsZeroCapacity) {
     EXPECT_THROW(
-        static_cast<void>(CommandBus{InstrumentId{"instrument-1"}, 0}),
+        static_cast<void>(CommandBus{
+            InstrumentId{"instrument-1"},
+            vna::test::stoppedSingleSweepHandler(), 0}),
         std::invalid_argument);
 }
 
 TEST(CommandIdempotencyTest, ReplaysFirstCompleteSuccessfulResult) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     const auto command = windowCommand("command-1");
 
     const auto first = commandBus.dispatch(command);
@@ -71,7 +74,8 @@ TEST(CommandIdempotencyTest, ReplaysFirstCompleteSuccessfulResult) {
 }
 
 TEST(CommandIdempotencyTest, RejectsReuseWithoutReplacingFirstResult) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     const auto command = windowCommand("command-1");
     const auto first = commandBus.dispatch(command);
 
@@ -95,7 +99,8 @@ TEST(CommandIdempotencyTest, RejectsReuseWithoutReplacingFirstResult) {
 }
 
 TEST(CommandIdempotencyTest, RejectsSameCommandKeyWhenOriginChanges) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     const auto webCommand = windowCommand("command-1");
     const auto first = commandBus.dispatch(webCommand);
     ASSERT_NE(
@@ -120,7 +125,8 @@ TEST(CommandIdempotencyTest, RejectsSameCommandKeyWhenOriginChanges) {
 }
 
 TEST(CommandIdempotencyTest, EvictsOldestWithoutRefreshingReplay) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}, 2};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler(), 2};
     const auto first = windowCommand("command-1");
     ASSERT_NE(success(commandBus.dispatch(first)), nullptr);
     ASSERT_NE(
@@ -145,7 +151,8 @@ TEST(CommandIdempotencyTest, EvictsOldestWithoutRefreshingReplay) {
 }
 
 TEST(CommandIdempotencyTest, SeparatesSessionsWithTheSameCommandId) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
 
     const auto first = commandBus.dispatch(
         windowCommand("shared-command", 0, "session-1"));
@@ -160,7 +167,8 @@ TEST(CommandIdempotencyTest, SeparatesSessionsWithTheSameCommandId) {
 }
 
 TEST(CommandIdempotencyTest, RejectsWrongInstrumentBeforeCacheLookup) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     auto wrong = windowCommand("command-1");
     wrong.instrumentId = InstrumentId{"instrument-2"};
 
@@ -175,7 +183,8 @@ TEST(CommandIdempotencyTest, RejectsWrongInstrumentBeforeCacheLookup) {
 }
 
 TEST(CommandIdempotencyTest, ReplaysDomainAndDisplayFailures) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     const auto domainCommand = command(
         "domain-error",
         0,
@@ -205,7 +214,8 @@ TEST(CommandIdempotencyTest, ReplaysDomainAndDisplayFailures) {
 }
 
 TEST(CommandIdempotencyTest, ReplaysRevisionConflictAtOriginalRevision) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     const auto conflict = windowCommand("conflict", 9);
     const auto first = commandBus.dispatch(conflict);
     ASSERT_NE(success(commandBus.dispatch(windowCommand("advance"))), nullptr);

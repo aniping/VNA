@@ -9,6 +9,7 @@
 #include <thread>
 #include <utility>
 
+#include <vna/test/stopped_single_sweep_handler.hpp>
 #include <vna/web_api/web_api.hpp>
 
 namespace vna::web_api {
@@ -136,7 +137,7 @@ protected:
         ++revision_;
         return body.at("value").at("traceId").get<std::uint64_t>();
     }
-    application::CommandBus commandBus_{application::InstrumentId{"instrument-1"}};
+    application::CommandBus commandBus_{application::InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     application::TraceDisplayFrameRepository repository_{1};
     application::TraceDisplayFrameQuery query_{commandBus_, repository_};
     WebApi webApi_{commandBus_, query_};
@@ -245,6 +246,5 @@ TEST_F(WebApiScaleTest, RejectsMalformedMissingAndNonNumberPayloads) {
     }
     EXPECT_EQ(getState().at("stateRevision"), 0);
 }
-
 }  // namespace
 }  // namespace vna::web_api

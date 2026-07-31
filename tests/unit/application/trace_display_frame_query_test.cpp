@@ -5,6 +5,7 @@
 #include <variant>
 
 #include <vna/application/trace_display_frame_query.hpp>
+#include <vna/test/stopped_single_sweep_handler.hpp>
 
 namespace vna::application {
 namespace {
@@ -78,7 +79,8 @@ protected:
         ASSERT_TRUE(isSuccess(trace));
     }
 
-    CommandBus commandBus_{InstrumentId{"instrument-1"}};
+    CommandBus commandBus_{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     TraceDisplayFrameRepository repository_{1};
     TraceDisplayFrameQuery query_{commandBus_, repository_};
 };

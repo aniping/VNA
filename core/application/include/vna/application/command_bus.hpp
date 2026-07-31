@@ -90,10 +90,13 @@ struct CommandBusStats {
     std::uint64_t idempotencyEvictions{};
 };
 
+class SingleSweepCommandHandler;
+
 class CommandBus {
 public:
     explicit CommandBus(
         InstrumentId instrumentId,
+        SingleSweepCommandHandler& singleSweepHandler,
         std::size_t idempotencyCapacity = 1024);
     ~CommandBus();
 
@@ -137,6 +140,8 @@ private:
         ApplicationErrorCode code) const;
 
     InstrumentId instrumentId_;
+    // Non-owning; the composition root keeps the handler alive past this bus.
+    SingleSweepCommandHandler& singleSweepHandler_;
     mutable std::mutex mutex_;
     domain::Instrument instrument_;
     display_model::DisplayWorkspace displayWorkspace_;

@@ -8,6 +8,7 @@
 #include <thread>
 #include <utility>
 
+#include <vna/test/stopped_single_sweep_handler.hpp>
 #include <vna/web_api/web_api.hpp>
 
 namespace vna::web_api {
@@ -70,7 +71,8 @@ protected:
             "/api/v1/commands", request.dump(), "application/json");
     }
     application::CommandBus commandBus_{
-        application::InstrumentId{"instrument-1"}};
+        application::InstrumentId{"instrument-1"},
+        vna::test::stoppedSingleSweepHandler()};
     application::TraceDisplayFrameRepository repository_{1};
     application::TraceDisplayFrameQuery query_{commandBus_, repository_};
     WebApi webApi_{commandBus_, query_};
@@ -80,9 +82,7 @@ protected:
 
 TEST_F(WebApiTest, ReportsHealthOverHttp) {
     httplib::Client client{"127.0.0.1", port_};
-
     const auto response = client.Get("/api/v1/health");
-
     ASSERT_TRUE(response);
     EXPECT_EQ(response->status, httplib::StatusCode::OK_200);
     EXPECT_EQ(response->get_header_value("Content-Type"), "application/json");

@@ -96,6 +96,9 @@ target_link_libraries(
         vna::simulation
         GTest::gtest_main
 )
+target_include_directories(
+    vna_application_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support/include
+)
 gtest_discover_tests(vna_application_tests)
 
 add_executable(
@@ -160,5 +163,8 @@ target_link_libraries(
         httplib::httplib
         nlohmann_json::nlohmann_json
         GTest::gtest_main
+)
+target_include_directories(
+    vna_web_api_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support/include
 )
 gtest_discover_tests(vna_web_api_tests PROPERTIES TIMEOUT 10)

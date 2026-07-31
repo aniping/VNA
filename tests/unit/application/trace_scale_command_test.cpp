@@ -4,7 +4,7 @@
 #include <string>
 #include <utility>
 
-#include <vna/application/command_bus.hpp>
+#include <vna/test/stopped_single_sweep_handler.hpp>
 
 namespace vna::application {
 namespace {
@@ -90,7 +90,7 @@ protected:
                 scalePerDivision}));
     }
 
-    CommandBus commandBus_{InstrumentId{"instrument-1"}};
+    CommandBus commandBus_{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     std::uint64_t revision_{0};
 };
 

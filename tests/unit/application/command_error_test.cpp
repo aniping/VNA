@@ -3,7 +3,7 @@
 #include <string>
 #include <utility>
 
-#include <vna/application/command_bus.hpp>
+#include <vna/test/stopped_single_sweep_handler.hpp>
 
 namespace vna::application {
 namespace {
@@ -52,7 +52,8 @@ TEST(CommandErrorTest, PreservesApplicationCauseDuringClassification) {
 }
 
 TEST(CommandErrorTest, PreservesInvalidSweepDomainError) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
     const CommandEnvelope command{
         .commandId = CommandId{"invalid-sweep"},
         .sessionId = SessionId{"session-1"},
@@ -81,7 +82,8 @@ TEST(CommandErrorTest, PreservesInvalidSweepDomainError) {
 }
 
 TEST(CommandErrorTest, ReportsMissingTraceWhenUpdatingFormat) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
 
     const auto result = commandBus.dispatch(traceCommand(
         "update-missing-trace",
@@ -99,7 +101,8 @@ TEST(CommandErrorTest, ReportsMissingTraceWhenUpdatingFormat) {
 }
 
 TEST(CommandErrorTest, ReportsMissingTraceWhenRemoving) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    CommandBus commandBus{
+        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
 
     const auto result = commandBus.dispatch(traceCommand(
         "remove-missing-trace",
