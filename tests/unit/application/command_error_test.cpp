@@ -97,5 +97,20 @@ TEST(CommandErrorTest, ReportsMissingTraceWhenRemoving) {
         CommandErrorCode::TraceNotFound);
 }
 
+TEST(CommandErrorTest, ClassifiesScaleDisplayErrors) {
+    const CommandError invalidScale = display_model::DisplayError{
+        .code = display_model::DisplayErrorCode::InvalidScalePerDivision};
+    const CommandError unsupportedFormat = display_model::DisplayError{
+        .code =
+            display_model::DisplayErrorCode::ScaleNotSupportedForFormat};
+
+    EXPECT_EQ(
+        commandErrorCode(invalidScale),
+        CommandErrorCode::InvalidScalePerDivision);
+    EXPECT_EQ(
+        commandErrorCode(unsupportedFormat),
+        CommandErrorCode::ScaleNotSupportedForFormat);
+}
+
 }  // namespace
 }  // namespace vna::application

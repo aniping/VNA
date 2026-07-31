@@ -22,6 +22,10 @@ CommandErrorCode commandErrorCode(const CommandError& error) noexcept {
                 return CommandErrorCode::WindowNotFound;
             case display_model::DisplayErrorCode::TraceNotFound:
                 return CommandErrorCode::TraceNotFound;
+            case display_model::DisplayErrorCode::InvalidScalePerDivision:
+                return CommandErrorCode::InvalidScalePerDivision;
+            case display_model::DisplayErrorCode::ScaleNotSupportedForFormat:
+                return CommandErrorCode::ScaleNotSupportedForFormat;
         }
     }
     return std::get<ApplicationError>(error).code;

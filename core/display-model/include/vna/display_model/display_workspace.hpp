@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -33,9 +34,24 @@ enum class TraceFormat {
     Smith,
 };
 
+enum class ScaleUnit {
+    Decibel,
+};
+
+struct CartesianScaleSnapshot {
+    double scalePerDivision;
+    double referenceValue;
+    double referencePosition;
+    double minimum;
+    double maximum;
+    ScaleUnit unit;
+};
+
 enum class DisplayErrorCode {
     WindowNotFound,
     TraceNotFound,
+    InvalidScalePerDivision,
+    ScaleNotSupportedForFormat,
 };
 
 struct DisplayError {
@@ -73,6 +89,7 @@ struct TraceSnapshot {
     WindowId windowId;
     domain::MeasurementId measurementId;
     TraceFormat format;
+    std::optional<CartesianScaleSnapshot> scale;
 };
 
 struct DisplayWorkspaceSnapshot {
@@ -90,13 +107,36 @@ public:
     [[nodiscard]] Result<TraceId> updateTraceFormat(
         TraceId traceId,
         TraceFormat format);
+    [[nodiscard]] Result<TraceId> updateTraceScalePerDivision(
+        TraceId traceId,
+        double scalePerDivision);
     [[nodiscard]] Result<TraceId> removeTrace(TraceId traceId);
     [[nodiscard]] DisplayWorkspaceSnapshot snapshot() const;
 
 private:
+    struct CartesianScaleState {
+        double scalePerDivision;
+        double referenceValue;
+        double referencePosition;
+    };
+
+    struct TraceState {
+        TraceId id;
+        WindowId windowId;
+        domain::MeasurementId measurementId;
+        TraceFormat format;
+        std::optional<CartesianScaleState> scale;
+    };
+
+    [[nodiscard]] static std::optional<CartesianScaleState> defaultScaleFor(
+        TraceFormat format);
+    [[nodiscard]] static CartesianScaleSnapshot scaleSnapshot(
+        const CartesianScaleState& scale);
+
     std::uint64_t nextWindowId_{1};
     std::uint64_t nextTraceId_{1};
-    DisplayWorkspaceSnapshot state_;
+    std::vector<WindowSnapshot> windows_;
+    std::vector<TraceState> traces_;
 };
 
 }  // namespace vna::display_model

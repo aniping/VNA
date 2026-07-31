@@ -99,6 +99,8 @@ enum class CommandErrorCode {
     MeasurementNotFound,
     WindowNotFound,
     TraceNotFound,
+    InvalidScalePerDivision,
+    ScaleNotSupportedForFormat,
     StateRevisionConflict,
     WrongInstrument,
 };

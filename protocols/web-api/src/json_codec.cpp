@@ -112,6 +112,12 @@ CommandOutcomeInfo commandOutcomeInfo(
             return {"validationError", 422, "window-not-found"};
         case application::CommandErrorCode::TraceNotFound:
             return {"validationError", 422, "trace-not-found"};
+        case application::CommandErrorCode::InvalidScalePerDivision:
+            return {
+                "validationError", 422, "invalid-scale-per-division"};
+        case application::CommandErrorCode::ScaleNotSupportedForFormat:
+            return {
+                "validationError", 422, "scale-not-supported-for-format"};
         case application::CommandErrorCode::StateRevisionConflict:
             return {"conflict", 409, "state-revision-conflict"};
         case application::CommandErrorCode::WrongInstrument:

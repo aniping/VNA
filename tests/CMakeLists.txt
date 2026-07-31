@@ -9,6 +9,7 @@ gtest_discover_tests(vna_domain_tests)
 
 add_executable(
     vna_display_model_tests
+    unit/display_model/display_scale_test.cpp
     unit/display_model/display_workspace_test.cpp
 )
 target_link_libraries(
