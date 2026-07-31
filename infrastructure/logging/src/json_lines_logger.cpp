@@ -1,6 +1,7 @@
 #include <vna/logging/json_lines_logger.hpp>
 
 #include "json_line_formatter.hpp"
+#include "logger_state.hpp"
 
 #include <algorithm>
 #include <atomic>
@@ -8,12 +9,8 @@
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
-#include <filesystem>
-#include <fstream>
-#include <future>
 #include <memory>
 #include <mutex>
-#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -22,26 +19,11 @@
 namespace vna::logging {
 namespace {
 
-struct WorkItem {
-    std::uint64_t sequence;
-    std::string line;
-    std::shared_ptr<std::promise<bool>> completion;
-};
-
 class JsonLinesLogger final : public observability::Logger {
 public:
     explicit JsonLinesLogger(const JsonLinesLoggerOptions& options)
-        : console_(options.console) {
-        if (options.logDirectory.empty() || console_ == nullptr) {
-            throw std::invalid_argument("invalid JSON Lines logger options");
-        }
-        std::filesystem::create_directories(options.logDirectory);
-        file_.open(
-            options.logDirectory / "vna.log.jsonl",
-            std::ios::binary | std::ios::app);
-        if (!file_) {
-            throw std::runtime_error("failed to open JSON Lines log file");
-        }
+        : sinks_(options.logDirectory, options.console),
+          queueCapacity_(options.queueCapacity) {
         writer_ = std::thread{[this] { writeLoop(); }};
     }
 
@@ -57,18 +39,34 @@ public:
 
     observability::SubmitResult submit(
         observability::LogEvent event) override {
+        const bool lowSeverity = isLowSeverity(event.level);
         auto line = formatJsonLine(event, std::chrono::system_clock::now());
         {
             const std::scoped_lock lock{stateMutex_};
             if (terminal_ || stopping_) {
                 return observability::SubmitResult::Stopped;
             }
-            const auto sequence = lastAcceptedSequence_ + 1;
-            work_.push_back({sequence, std::move(line), {}});
-            lastAcceptedSequence_ = sequence;
+            if (line.size() > kMaxEncodedLineBytes) {
+                counters_.rejectOversized();
+                return observability::SubmitResult::RejectedOversized;
+            }
+            if (queuedEvents_ < queueCapacity_) {
+                return acceptLocked(std::move(line), lowSeverity);
+            }
+            if (lowSeverity) {
+                counters_.dropLowSeverity();
+                return observability::SubmitResult::DroppedLowSeverity;
+            }
+            const auto oldestLow = findOldestLowSeverity();
+            if (oldestLow != work_.end()) {
+                recordLoss(oldestLow->sequence);
+                work_.erase(oldestLow);
+                --queuedEvents_;
+                counters_.dropLowSeverity();
+                return acceptLocked(std::move(line), false);
+            }
         }
-        stateChanged_.notify_all();
-        return observability::SubmitResult::Accepted;
+        return emergencyFallback(line);
     }
 
     bool flush(std::chrono::milliseconds timeout) override {
@@ -88,41 +86,80 @@ public:
             std::chrono::steady_clock::now() > deadline || terminal_ || stopping_) {
             return false;
         }
-        auto completion = std::make_shared<std::promise<bool>>();
-        auto completed = completion->get_future();
-        work_.push_back({lastAcceptedSequence_, {}, std::move(completion)});
+        auto completion = pendingBarrier_;
+        const bool needsBarrier = !completion ||
+            completion->consumed.load(std::memory_order_relaxed) ||
+            completion->targetSequence < lastAcceptedSequence_;
+        if (needsBarrier) {
+            auto signal = std::make_unique<std::promise<bool>>();
+            completion = std::make_shared<BarrierCompletion>(
+                lastAcceptedSequence_, lossGeneration_,
+                signal->get_future().share());
+            work_.push_back({completion->targetSequence, {}, completion,
+                             std::move(signal), false});
+            pendingBarrier_ = completion;
+        }
         state.unlock();
         stateChanged_.notify_all();
-        if (completed.wait_until(deadline) != std::future_status::ready) {
+        if (completion->future.wait_until(deadline) !=
+            std::future_status::ready) {
             return false;
         }
         try {
-            return completed.get();
+            const bool result = completion->future.get();
+            acknowledgedLossGeneration_.store(
+                completion->lossGeneration,
+                std::memory_order_relaxed);
+            completion->consumed.store(true, std::memory_order_relaxed);
+            return result;
         } catch (...) {
             return false;
         }
     }
 
     observability::LoggerStatistics statistics() const noexcept override {
-        return {sinkFailures_.load(std::memory_order_relaxed)};
+        return counters_.snapshot();
     }
 
 private:
-    bool write(std::ostream& sink, const std::string& line) noexcept {
-        try {
-            sink.write(line.data(), static_cast<std::streamsize>(line.size()));
-            return sink.good();
-        } catch (...) {
-            return false;
-        }
+    static bool isLowSeverity(observability::LogLevel level) noexcept {
+        return level == observability::LogLevel::Debug ||
+               level == observability::LogLevel::Info;
     }
 
-    bool flush(std::ostream& sink) noexcept {
-        try {
-            sink.flush();
-            return sink.good();
-        } catch (...) {
-            return false;
+    observability::SubmitResult acceptLocked(std::string line, bool lowSeverity) {
+        const auto sequence = ++lastAcceptedSequence_;
+        work_.push_back({sequence, std::move(line), {}, {}, lowSeverity});
+        ++queuedEvents_;
+        stateChanged_.notify_all();
+        return observability::SubmitResult::Accepted;
+    }
+
+    std::deque<WorkItem>::iterator findOldestLowSeverity() {
+        return std::find_if(
+            work_.begin(),
+            work_.end(),
+            [](const WorkItem& item) {
+                return !item.completion && item.lowSeverity;
+            });
+    }
+
+    observability::SubmitResult emergencyFallback(const std::string& line) {
+        if (sinks_.writeEmergency(line)) {
+            counters_.emergencyFallback();
+            return observability::SubmitResult::EmergencyFallback;
+        }
+        counters_.rejectHighSeverity();
+        enterTerminalFailure();
+        return observability::SubmitResult::RejectedHighSeverity;
+    }
+
+    void recordLoss(std::uint64_t sequence) {
+        ++lossGeneration_;
+        for (auto& item : work_) {
+            if (item.completion && item.sequence >= sequence) {
+                item.completion->lossGeneration = lossGeneration_;
+            }
         }
     }
 
@@ -131,19 +168,21 @@ private:
             const std::scoped_lock lock{stateMutex_};
             if (terminal_) return;
             terminal_ = true;
-            sinkFailures_.fetch_add(1, std::memory_order_relaxed);
+            counters_.sinkFailure();
             work_.clear();
         }
         stateChanged_.notify_all();
     }
 
     void completeBarrier(const WorkItem& item) {
-        const bool allWritten = writtenSequence_ >= item.sequence;
-        const bool sinksOk = allWritten && flush(*console_) && flush(file_);
-        if (allWritten && !sinksOk) {
+        const bool lost = item.completion->lossGeneration >
+            acknowledgedLossGeneration_.load(std::memory_order_relaxed);
+        const bool allTerminal = writtenSequence_ >= item.sequence || lost;
+        const bool sinksOk = allTerminal && sinks_.flushBoth();
+        if (allTerminal && !sinksOk) {
             enterTerminalFailure();
         }
-        item.completion->set_value(sinksOk);
+        item.signal->set_value(sinksOk && !lost);
     }
 
     void process(const WorkItem& item) {
@@ -151,7 +190,7 @@ private:
             completeBarrier(item);
             return;
         }
-        if (!write(*console_, item.line) || !write(file_, item.line)) {
+        if (!sinks_.writeBoth(item.line)) {
             enterTerminalFailure();
             return;
         }
@@ -171,19 +210,24 @@ private:
                 }
                 item = std::move(work_.front());
                 work_.pop_front();
+                if (!item.completion) --queuedEvents_;
             }
             process(item);
         }
     }
 
-    std::ostream* console_;
-    std::ofstream file_;
+    LogSinks sinks_;
     std::timed_mutex stateMutex_;
     std::timed_mutex flushMutex_;
     std::condition_variable_any stateChanged_;
     std::deque<WorkItem> work_;
     std::thread writer_;
-    std::atomic<std::uint64_t> sinkFailures_{0};
+    LoggerCounters counters_;
+    const std::size_t queueCapacity_;
+    std::size_t queuedEvents_{0};
+    std::shared_ptr<BarrierCompletion> pendingBarrier_;
+    std::atomic<std::uint64_t> acknowledgedLossGeneration_{0};
+    std::uint64_t lossGeneration_{0};
     std::uint64_t lastAcceptedSequence_{0};
     std::uint64_t writtenSequence_{0};
     bool terminal_{false};
@@ -194,6 +238,9 @@ private:
 
 std::unique_ptr<observability::Logger> makeJsonLinesLogger(
     JsonLinesLoggerOptions options) {
+    if (options.queueCapacity == 0) {
+        throw std::invalid_argument("invalid JSON Lines logger options");
+    }
     return std::make_unique<JsonLinesLogger>(options);
 }
 

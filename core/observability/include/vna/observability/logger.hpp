@@ -27,11 +27,19 @@ struct LogEvent {
 
 enum class SubmitResult {
     Accepted,
+    DroppedLowSeverity,
+    EmergencyFallback,
+    RejectedHighSeverity,
+    RejectedOversized,
     // The logger stopped accepting events after a terminal sink failure.
     Stopped,
 };
 
 struct LoggerStatistics {
+    std::uint64_t droppedLowSeverity{0};
+    std::uint64_t emergencyFallbacks{0};
+    std::uint64_t rejectedHighSeverity{0};
+    std::uint64_t rejectedOversized{0};
     std::uint64_t sinkFailures{0};
 };
 

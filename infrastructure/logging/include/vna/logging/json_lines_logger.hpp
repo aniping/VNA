@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
 #include <iostream>
 #include <memory>
@@ -12,6 +13,8 @@ struct JsonLinesLoggerOptions {
     std::filesystem::path logDirectory;
     // Non-owning/non-null; must outlive Logger. Its write/flush must return.
     std::ostream* console{&std::cout};
+    // Must be > 0; internal flush barriers are coalesced separately.
+    std::size_t queueCapacity{1024};
 };
 
 // For reliable delivery, the owner must flush after its final submit and get true;
