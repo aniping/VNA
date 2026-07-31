@@ -73,6 +73,37 @@ flowchart LR
 
 本地页面也通过 `localhost` 上的 HTTP/WebSocket 访问服务端，不提供另一套进程内页面接口。
 
+### 3.1 Windows 与 Linux 兼容边界
+
+`vna-server`、VNA Core、算法、Simulation/Replay Backend、协议模块、CLI 和自动化测试必须在 Windows 与 Linux 上原生构建和运行，不以 WSL 或 Wine 作为兼容方案。浏览器客户端不包含操作系统专属业务逻辑。
+
+Driver Host 遵守相同的 IPC 和 Measurement Backend 契约，但允许 Windows 与 Linux 使用不同的厂商 SDK、驱动加载和设备访问实现。某个硬件驱动只支持一个平台时，不能降低核心和协议层的双平台要求。
+
+平台依赖只能存在于明确的适配器边界：
+
+```text
+infrastructure/platform/
+├── windows/
+└── linux/
+
+drivers/platform/
+├── windows/
+└── linux/
+```
+
+跨平台规则：
+
+- 使用 CMake 描述构建，不提交只适用于单一 IDE 的工程作为唯一构建入口。
+- 核心模块不得直接包含 Win32 或 POSIX 系统头；进程、动态库、套接字、共享内存和文件原子替换通过平台接口访问。
+- 进程间契约使用显式版本、定长整数和确定的字节序；不得传输原生结构体内存、指针、文件描述符或 Windows Handle。
+- 路径在进程内使用 `std::filesystem::path`，协议与持久化边界使用 UTF-8；代码不得依赖盘符、路径分隔符或文件系统大小写行为。
+- 持续时间和超时使用单调时钟，墙上时间只用于用户时间戳和持久化元数据。
+- 共享内存是可选的大数据传输优化；必须保留可测试的普通 IPC 传输，并分别实现 Windows 与 Linux 适配器。
+- 第三方依赖必须能被支持的 Windows 和 Linux 工具链构建；平台专属依赖不得泄漏到公开领域契约。
+- CI 至少使用 MSVC 和一个 Linux 工具链（GCC 或 Clang）执行 configure、build 和 test。
+
+具体操作系统版本、CPU 架构和编译器最低版本在工程基线建立时写入支持矩阵；在此之前不得无依据地承诺所有 Windows 或 Linux 版本。
+
 ## 4. 运行维度
 
 “本地、远程、调试、仿真”不是四个互斥模式，而是三个正交维度：
@@ -125,6 +156,16 @@ flowchart LR
 | HTTP 文件流 | 上传、下载和大文件传输 |
 | 本地 IPC | VNA Core 与 Driver Host 的控制消息 |
 | 共享内存 | 可选的大体量原始数据跨进程通道 |
+
+第一阶段采用 [`yhirose/cpp-httplib`](https://github.com/yhirose/cpp-httplib) 实现 HTTP/HTTPS、REST、文件流和 WebSocket/WSS。依赖版本必须由工程清单固定，且只允许出现在 `protocols/web-api`、`protocols/websocket` 等交互层适配器中，内部 Command、Query、Event 和 Frame 契约不得暴露 `httplib` 类型。
+
+`cpp-httplib` 使用阻塞式套接字 I/O，WebSocket 连接会长期占用线程。因此：
+
+- HTTP 与 WebSocket Handler 只做解析、校验、入队和编码，不执行扫频、算法或磁盘重任务。
+- 长操作立即返回 `operationId`，进度和完成结果通过事件发送。
+- WebSocket 发送必须使用有界队列并执行显示帧背压策略。
+- 线程池大小、活跃连接数、请求排队和慢客户端必须纳入指标与压力测试。
+- 如果目标并发超出该线程模型的适用范围，只替换协议适配器，不改变业务核心与内部契约。
 
 文件传输层只搬运字节。文件合法性、项目版本迁移、CalSet 激活兼容性和覆盖规则属于业务或存储模块。
 
@@ -194,6 +235,7 @@ flowchart TD
 - Backend 实现依赖 HAL API；HAL API 不依赖任何具体 Backend。
 - 驱动宿主只暴露硬件能力和执行契约，不暴露厂商 SDK 类型。
 - 模块的公开接口位于模块根部，内部实现不得被跨模块直接引用。
+- VNA Core、算法和公共契约不得依赖 Win32、POSIX 或任一平台专属驱动类型。
 
 ## 7. 核心领域关系
 
@@ -556,7 +598,14 @@ vna-platform/
 │   ├── resource-arbiter/
 │   └── backends/
 ├── drivers/
+│   └── platform/
+│       ├── windows/
+│       └── linux/
 ├── infrastructure/
+│   ├── platform/
+│   │   ├── windows/
+│   │   └── linux/
+│   └── ...
 └── tests/
     ├── unit/
     ├── contract/
@@ -581,6 +630,7 @@ vna-platform/
 - **Replay 回归测试**：固定命令日志和原始数据重现问题。
 - **故障注入测试**：超时、丢帧、断连、过载和取消恢复。
 - **性能测试**：扫频吞吐、处理延迟、内存上限和慢客户端背压。
+- **平台矩阵测试**：Windows/MSVC 与 Linux/GCC 或 Clang 均执行配置、编译和测试；平台适配器运行各自的契约测试。
 
 真实硬件接入前，Hardware Backend 和 Simulation Backend 必须通过相同契约测试；硬件专属测试只补充电气和时序验证。
 
@@ -604,5 +654,6 @@ vna-platform/
 - [ADR-0001：采用模块化单体业务内核](adr/0001-modular-monolith-core.md)
 - [ADR-0002：所有外部入口映射到统一内部契约](adr/0002-unified-internal-contracts.md)
 - [ADR-0003：仿真后端输出原始接收机帧](adr/0003-simulate-raw-receiver-frames.md)
+- [ADR-0004：核心软件原生支持 Windows 与 Linux](adr/0004-native-windows-linux-support.md)
 
 第一阶段的具体范围和验收标准见 [第一阶段实施范围](phase-1.md)。

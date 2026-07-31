@@ -15,6 +15,8 @@
 
 - 前端：Vue 3 + TypeScript
 - 后端核心：C++20 模块化单体
+- 目标平台：Windows 与 Linux 原生构建和运行
+- HTTP/WebSocket：`yhirose/cpp-httplib`
 - 外部交互：REST、WebSocket、SCPI、HTTP 文件流
 - 测量后端：Simulation、Replay、Hardware、Proxy 可替换
 - 核心模型：Instrument、Channel、Measurement、Trace、Window

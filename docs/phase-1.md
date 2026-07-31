@@ -46,6 +46,7 @@
 **交互与呈现**
 
 - Vue 3 + TypeScript 工作台骨架。
+- 使用固定版本的 `yhirose/cpp-httplib` 提供 HTTP/HTTPS 与 WebSocket/WSS。
 - REST：快照、配置命令、查询和操作创建。
 - WebSocket：状态补丁、事件、进度和二进制测量帧。
 - 最小 SCPI 垂直切片，用于验证统一入口：
@@ -62,6 +63,9 @@
 
 **工程质量**
 
+- 基于 CMake 的 Windows/Linux 统一构建入口。
+- Windows/MSVC 与 Linux/GCC 或 Clang 的持续集成构建矩阵。
+- `cpp-httplib` 在两个平台上的协议适配器集成测试。
 - 结构化日志和统一关联标识。
 - 核心领域单元测试。
 - Backend 契约测试。
@@ -93,6 +97,7 @@
 
 验证：
 
+- Windows 和 Linux 均能 configure、build 并运行领域单元测试。
 - 创建 S11 Measurement 和两个不同格式 Trace。
 - 删除 Trace 不删除仍被引用的 Measurement。
 - 非法频率范围、点数和悬空引用被领域规则拒绝。
@@ -121,13 +126,14 @@
 
 ### M4：Web 控制与实时显示
 
-交付：REST、WebSocket、Vue 工作台和二进制帧协议。
+交付：基于 `cpp-httplib` 的 REST/WebSocket 适配器、Vue 工作台和二进制帧协议。
 
 验证：
 
 - 页面设置频率后收到对应 revision 的状态补丁。
 - 扫频帧的 `stateRevision` 与产生它的配置一致。
 - 慢客户端在连续扫频中只丢弃过时显示帧，不影响服务端完整帧。
+- HTTP/WebSocket Handler 不执行扫频或数据处理，长操作只负责入队并返回 `operationId`。
 - 断线重连恢复一致状态，无需页面重建业务真值。
 
 ### M5：操作语义与最小 SCPI
@@ -173,6 +179,7 @@
 | 断线重连 | 收到若干更新后断开并重连 | 通过差量或完整快照恢复一致状态 |
 | 确定性仿真 | 使用相同模型、配置和 Seed 重复运行 | 原始数据和处理结果一致 |
 | 回放 | 录制后切换 Replay Backend | 在不运行 Simulation Backend 的情况下重现结果 |
+| 双平台构建 | 在 Windows 与 Linux CI 运行工程流水线 | 两个平台均完成 configure、build 和 test |
 
 ## 5. 非功能基线
 
@@ -201,7 +208,7 @@
 - 数据帧和状态 revision 能端到端关联。
 - 无固定 sleep 参与业务同步。
 - 文档包含构建、运行、协议和故障排查说明。
-- 全新环境能够按 README 完成构建和测试。
+- 全新 Windows 与 Linux 环境都能够按 README 完成构建和测试。
 - 性能基线、已知限制和下一阶段风险已记录。
 
 ## 7. 第一阶段之后
