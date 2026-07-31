@@ -9,23 +9,36 @@
 namespace vna::application {
 namespace {
 
-TEST(CommandBusTest, SuccessfulCommandIncrementsRevisionOnce) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}};
-    const CommandEnvelope command{
-        .commandId = CommandId{"command-1"},
+constexpr domain::SweepSettings validSweep() {
+    return {
+        .startFrequencyHz = 1'000'000'000,
+        .stopFrequencyHz = 2'000'000'000,
+        .points = 201,
+        .ifBandwidthHz = 1'000,
+        .powerDbm = -10.0,
+    };
+}
+
+CommandEnvelope makeCommand(
+    std::string commandId,
+    std::uint64_t revision,
+    CommandPayload payload,
+    InstrumentId instrumentId = InstrumentId{"instrument-1"}) {
+    return {
+        .commandId = CommandId{std::move(commandId)},
         .sessionId = SessionId{"session-1"},
-        .instrumentId = InstrumentId{"instrument-1"},
-        .expectedStateRevision = 0,
+        .instrumentId = std::move(instrumentId),
+        .expectedStateRevision = revision,
         .timeout = std::chrono::seconds{5},
         .priority = CommandPriority::Normal,
-        .payload = CreateChannelCommand{domain::SweepSettings{
-            .startFrequencyHz = 1'000'000'000,
-            .stopFrequencyHz = 2'000'000'000,
-            .points = 201,
-            .ifBandwidthHz = 1'000,
-            .powerDbm = -10.0,
-        }},
+        .payload = std::move(payload),
     };
+}
+
+TEST(CommandBusTest, SuccessfulCommandIncrementsRevisionOnce) {
+    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    const auto command =
+        makeCommand("command-1", 0, CreateChannelCommand{validSweep()});
 
     const auto result = commandBus.dispatch(command);
 
@@ -38,21 +51,16 @@ TEST(CommandBusTest, SuccessfulCommandIncrementsRevisionOnce) {
 
 TEST(CommandBusTest, InvalidCommandDoesNotChangeStateOrRevision) {
     CommandBus commandBus{InstrumentId{"instrument-1"}};
-    const CommandEnvelope command{
-        .commandId = CommandId{"command-1"},
-        .sessionId = SessionId{"session-1"},
-        .instrumentId = InstrumentId{"instrument-1"},
-        .expectedStateRevision = 0,
-        .timeout = std::chrono::seconds{5},
-        .priority = CommandPriority::Normal,
-        .payload = CreateChannelCommand{domain::SweepSettings{
+    const auto command = makeCommand(
+        "command-1",
+        0,
+        CreateChannelCommand{domain::SweepSettings{
             .startFrequencyHz = 2'000'000'000,
             .stopFrequencyHz = 1'000'000'000,
             .points = 201,
             .ifBandwidthHz = 1'000,
             .powerDbm = -10.0,
-        }},
-    };
+        }});
 
     const auto result = commandBus.dispatch(command);
 
@@ -65,34 +73,13 @@ TEST(CommandBusTest, InvalidCommandDoesNotChangeStateOrRevision) {
 
 TEST(CommandBusTest, StaleRevisionIsRejectedWithoutChangingState) {
     CommandBus commandBus{InstrumentId{"instrument-1"}};
-    const auto sweep = domain::SweepSettings{
-        .startFrequencyHz = 1'000'000'000,
-        .stopFrequencyHz = 2'000'000'000,
-        .points = 201,
-        .ifBandwidthHz = 1'000,
-        .powerDbm = -10.0,
-    };
-    const CommandEnvelope firstCommand{
-        .commandId = CommandId{"command-1"},
-        .sessionId = SessionId{"session-1"},
-        .instrumentId = InstrumentId{"instrument-1"},
-        .expectedStateRevision = 0,
-        .timeout = std::chrono::seconds{5},
-        .priority = CommandPriority::Normal,
-        .payload = CreateChannelCommand{sweep},
-    };
+    const auto firstCommand =
+        makeCommand("command-1", 0, CreateChannelCommand{validSweep()});
     ASSERT_EQ(
         commandBus.dispatch(firstCommand).status,
         CommandStatus::Succeeded);
-    const CommandEnvelope staleCommand{
-        .commandId = CommandId{"command-2"},
-        .sessionId = SessionId{"session-2"},
-        .instrumentId = InstrumentId{"instrument-1"},
-        .expectedStateRevision = 0,
-        .timeout = std::chrono::seconds{5},
-        .priority = CommandPriority::Normal,
-        .payload = CreateChannelCommand{sweep},
-    };
+    const auto staleCommand =
+        makeCommand("command-2", 0, CreateChannelCommand{validSweep()});
 
     const auto result = commandBus.dispatch(staleCommand);
 
@@ -105,21 +92,11 @@ TEST(CommandBusTest, StaleRevisionIsRejectedWithoutChangingState) {
 
 TEST(CommandBusTest, CommandForAnotherInstrumentIsRejected) {
     CommandBus commandBus{InstrumentId{"instrument-1"}};
-    const CommandEnvelope command{
-        .commandId = CommandId{"command-1"},
-        .sessionId = SessionId{"session-1"},
-        .instrumentId = InstrumentId{"instrument-2"},
-        .expectedStateRevision = 0,
-        .timeout = std::chrono::seconds{5},
-        .priority = CommandPriority::Normal,
-        .payload = CreateChannelCommand{domain::SweepSettings{
-            .startFrequencyHz = 1'000'000'000,
-            .stopFrequencyHz = 2'000'000'000,
-            .points = 201,
-            .ifBandwidthHz = 1'000,
-            .powerDbm = -10.0,
-        }},
-    };
+    const auto command = makeCommand(
+        "command-1",
+        0,
+        CreateChannelCommand{validSweep()},
+        InstrumentId{"instrument-2"});
 
     const auto result = commandBus.dispatch(command);
 
@@ -130,34 +107,14 @@ TEST(CommandBusTest, CommandForAnotherInstrumentIsRejected) {
 
 TEST(CommandBusTest, CreatesMeasurementAndTraceThroughUnifiedEntryPoint) {
     CommandBus commandBus{InstrumentId{"instrument-1"}};
-    const auto makeEnvelope = [](std::string commandId,
-                                 std::uint64_t revision,
-                                 CommandPayload payload) {
-        return CommandEnvelope{
-            .commandId = CommandId{std::move(commandId)},
-            .sessionId = SessionId{"session-1"},
-            .instrumentId = InstrumentId{"instrument-1"},
-            .expectedStateRevision = revision,
-            .timeout = std::chrono::seconds{5},
-            .priority = CommandPriority::Normal,
-            .payload = std::move(payload),
-        };
-    };
-
-    const auto channelResult = commandBus.dispatch(makeEnvelope(
+    const auto channelResult = commandBus.dispatch(makeCommand(
         "command-1",
         0,
-        CreateChannelCommand{domain::SweepSettings{
-            .startFrequencyHz = 1'000'000'000,
-            .stopFrequencyHz = 2'000'000'000,
-            .points = 201,
-            .ifBandwidthHz = 1'000,
-            .powerDbm = -10.0,
-        }}));
+        CreateChannelCommand{validSweep()}));
     ASSERT_EQ(channelResult.status, CommandStatus::Succeeded);
     const auto channelId = std::get<domain::ChannelId>(channelResult.value);
 
-    const auto measurementResult = commandBus.dispatch(makeEnvelope(
+    const auto measurementResult = commandBus.dispatch(makeCommand(
         "command-2",
         1,
         CreateMeasurementCommand{channelId, domain::MeasurementType::S11}));
@@ -166,11 +123,11 @@ TEST(CommandBusTest, CreatesMeasurementAndTraceThroughUnifiedEntryPoint) {
         std::get<domain::MeasurementId>(measurementResult.value);
 
     const auto windowResult = commandBus.dispatch(
-        makeEnvelope("command-3", 2, CreateWindowCommand{}));
+        makeCommand("command-3", 2, CreateWindowCommand{}));
     ASSERT_EQ(windowResult.status, CommandStatus::Succeeded);
     const auto windowId = std::get<domain::WindowId>(windowResult.value);
 
-    const auto traceResult = commandBus.dispatch(makeEnvelope(
+    const auto traceResult = commandBus.dispatch(makeCommand(
         "command-4",
         3,
         CreateTraceCommand{
