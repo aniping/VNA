@@ -12,6 +12,7 @@
 #include <variant>
 
 #include <vna/application/trace_display_frame_query.hpp>
+#include <vna/test/stopped_single_sweep_handler.hpp>
 #include <vna/web_api/web_api.hpp>
 
 namespace vna::web_api {
@@ -119,7 +120,8 @@ protected:
     }
 
     application::CommandBus commandBus_{
-        application::InstrumentId{"instrument-1"}};
+        application::InstrumentId{"instrument-1"},
+        vna::test::stoppedSingleSweepHandler()};
     application::TraceDisplayFrameRepository repository_{2};
     application::TraceDisplayFrameQuery query_{commandBus_, repository_};
     WebApi webApi_{commandBus_, query_};
