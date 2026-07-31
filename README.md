@@ -10,6 +10,7 @@
 - [领域语言](CONTEXT.md)
 - [第一阶段实施范围](docs/phase-1.md)
 - [平台支持矩阵](docs/support-matrix.md)
+- [ZNA26 界面复刻基线](docs/ui-zna26-reference.md)
 - [架构决策记录](docs/adr/)
 
 ## 当前基线
