@@ -43,21 +43,38 @@ struct SingleSweepSubmitError {
 using SingleSweepSubmitResult =
     std::variant<OperationId, SingleSweepSubmitError>;
 
-class SingleSweepExecutor {
+class SingleSweepExecution {
+public:
+    virtual ~SingleSweepExecution() = default;
+    [[nodiscard]] virtual SingleSweepSubmitResult submit(
+        SingleSweepWorkItem work) = 0;
+    virtual void discardTrace(display_model::TraceId traceId) noexcept = 0;
+};
+
+class SingleSweepExecutor final : public SingleSweepExecution {
 public:
     SingleSweepExecutor(
         std::size_t queueCapacity,
         RawSweepSource source,
         OperationManager& operations,
-        TraceDisplayFrameRepository& frames);
+        TraceDisplayFrameRepository& frames,
+        TraceDisplayPublisher publish);
     // The narrow publisher seam lets adapters and tests expose allocation
     // failure at the repository boundary without weakening repository types.
     SingleSweepExecutor(
         std::size_t queueCapacity,
         RawSweepSource source,
         OperationManager& operations,
-        TraceDisplayPublisher publish);
-    ~SingleSweepExecutor();
+        TraceDisplayFrameRepository& frames)
+        : SingleSweepExecutor(
+              queueCapacity,
+              std::move(source),
+              operations,
+              frames,
+              [&frames](TraceDisplayFrame frame) {
+                  return frames.publish(std::move(frame));
+              }) {}
+    ~SingleSweepExecutor() override;
 
     SingleSweepExecutor(const SingleSweepExecutor&) = delete;
     SingleSweepExecutor& operator=(const SingleSweepExecutor&) = delete;
@@ -66,7 +83,13 @@ public:
 
     // Admission and Operation creation share one executor lock. A rejected item
     // therefore never leaves an Operation that no worker can own.
-    [[nodiscard]] SingleSweepSubmitResult submit(SingleSweepWorkItem work);
+    [[nodiscard]] SingleSweepSubmitResult submit(
+        SingleSweepWorkItem work) override;
+
+    // The CommandBus calls this after deleting the Trace while its own lock
+    // still prevents later admission. It only requests cancellation; terminal
+    // fence delivery stays on the worker, outside application transaction locks.
+    void discardTrace(display_model::TraceId traceId) noexcept override;
 
     // stop is idempotent and joins the worker. Dependencies must outlive this
     // executor, and source implementations must release promptly on stop.

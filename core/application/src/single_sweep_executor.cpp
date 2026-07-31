@@ -8,7 +8,7 @@
 #include <utility>
 
 #include "single_sweep_pipeline_internal.hpp"
-#include "single_sweep_publisher_internal.hpp"
+#include "single_sweep_trace_registry_internal.hpp"
 
 namespace vna::application {
 
@@ -18,11 +18,13 @@ public:
         std::size_t capacity,
         RawSweepSource source,
         OperationManager& operations,
-        TraceDisplayPublisher publish)
+        TraceDisplayPublisher publish,
+        TraceDisplayFrameRepository& frames)
         : capacity_(capacity),
           source_(std::move(source)),
           operations_(operations),
           publish_(std::move(publish)),
+          traceRegistry_(capacity, operations, frames),
           worker_([this](std::stop_token token) { workerLoop(token); }) {}
 
     SingleSweepSubmitResult submit(SingleSweepWorkItem work) {
@@ -47,6 +49,7 @@ public:
                 queued.sessionId,
                 queued.frameContext.stateRevision});
             queue_.back().operationId = operation.id;
+            traceRegistry_.registerWork(operation.id, queued.traceId);
             condition_.notify_one();
             return operation.id;
         } catch (...) {
@@ -79,6 +82,10 @@ public:
         }
     }
 
+    void discardTrace(display_model::TraceId traceId) noexcept {
+        traceRegistry_.discardTrace(traceId);
+    }
+
 private:
     struct Pending {
         SingleSweepWorkItem work;
@@ -101,6 +108,7 @@ private:
                 running_ = pending->operationId;
             }
             runGuarded(std::move(*pending), token);
+            traceRegistry_.finish(pending->operationId);
             std::lock_guard lock{mutex_};
             running_.reset();
         }
@@ -142,18 +150,20 @@ private:
             fail(pending.operationId, *error);
             return;
         }
-        // Publish is the commit point. Completion comes afterward so every
-        // terminal observer can retrieve the immutable frame.
-        const auto failure = internal::publishTraceDisplayFrame(
+        const auto publication = traceRegistry_.publish(
+            pending.operationId,
             publish_,
             std::move(std::get<TraceDisplayFrame>(result)));
-        if (failure) {
+        if (std::holds_alternative<internal::SweepTraceRetired>(publication)) {
+            (void)finishCancellation(pending.operationId, token);
+            return;
+        }
+        if (const auto* failure = std::get_if<OperationFailure>(&publication)) {
             fail(pending.operationId, *failure);
             return;
         }
-        // Operation snapshots and terminal outcomes have statically enforced
-        // no-throw value semantics, so no allocation window remains after the
-        // frame has become visible.
+        // No-throw Operation values leave no allocation window after the frame
+        // has become visible.
         (void)operations_.complete(
             pending.operationId,
             OperationSucceeded{pending.work.frameContext.frameId});
@@ -197,6 +207,7 @@ private:
     RawSweepSource source_;
     OperationManager& operations_;
     TraceDisplayPublisher publish_;
+    internal::SingleSweepTraceRegistry traceRegistry_;
     std::mutex mutex_;
     std::condition_variable condition_;
     std::deque<Pending> queue_;
@@ -209,26 +220,15 @@ SingleSweepExecutor::SingleSweepExecutor(
     std::size_t queueCapacity,
     RawSweepSource source,
     OperationManager& operations,
-    TraceDisplayFrameRepository& frames)
-    : SingleSweepExecutor(
-          queueCapacity,
-          std::move(source),
-          operations,
-          [&frames](TraceDisplayFrame frame) {
-              return frames.publish(std::move(frame));
-          }) {}
-
-SingleSweepExecutor::SingleSweepExecutor(
-    std::size_t queueCapacity,
-    RawSweepSource source,
-    OperationManager& operations,
+    TraceDisplayFrameRepository& frames,
     TraceDisplayPublisher publish) {
     if (queueCapacity == 0 || !source || !publish) {
         throw std::invalid_argument{
-            "single sweep executor requires capacity, source, and publisher"};
+            "single sweep executor requires capacity and lifecycle ports"};
     }
     impl_ = std::make_unique<Impl>(
-        queueCapacity, std::move(source), operations, std::move(publish));
+        queueCapacity, std::move(source), operations,
+        std::move(publish), frames);
 }
 
 SingleSweepExecutor::~SingleSweepExecutor() {
@@ -238,6 +238,11 @@ SingleSweepExecutor::~SingleSweepExecutor() {
 SingleSweepSubmitResult SingleSweepExecutor::submit(
     SingleSweepWorkItem work) {
     return impl_->submit(std::move(work));
+}
+
+void SingleSweepExecutor::discardTrace(
+    display_model::TraceId traceId) noexcept {
+    impl_->discardTrace(traceId);
 }
 
 void SingleSweepExecutor::stop() {

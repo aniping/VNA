@@ -179,7 +179,7 @@ TEST(SingleSweepExecutorFailureTest, PublisherExceptionDoesNotStopWorker) {
         return repository.publish(std::move(frame));
     };
     SingleSweepExecutor executor{
-        1, simulationSource(), manager, std::move(publisher)};
+        1, simulationSource(), manager, repository, std::move(publisher)};
 
     const auto first =
         acceptedOperation(manager, executor.submit(validWorkItem()));

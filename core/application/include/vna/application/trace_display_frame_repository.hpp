@@ -54,6 +54,9 @@ public:
     [[nodiscard]] TraceDisplayFrameResult publish(TraceDisplayFrame frame);
     [[nodiscard]] TraceDisplayFrameHandle latest(
         display_model::TraceId traceId) const;
+    // Erasing the repository's ownership releases one capacity slot. Readers
+    // already holding the immutable shared frame remain valid independently.
+    void discard(display_model::TraceId traceId) noexcept;
 
 private:
     const std::size_t capacity_;

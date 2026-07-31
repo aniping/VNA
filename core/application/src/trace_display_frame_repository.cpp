@@ -149,4 +149,10 @@ TraceDisplayFrameHandle TraceDisplayFrameRepository::latest(
     return found->second;
 }
 
+void TraceDisplayFrameRepository::discard(
+    display_model::TraceId traceId) noexcept {
+    std::lock_guard lock{mutex_};
+    latestByTrace_.erase(traceId.value());
+}
+
 }  // namespace vna::application

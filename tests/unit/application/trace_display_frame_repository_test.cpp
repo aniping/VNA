@@ -10,6 +10,10 @@
 namespace vna::application {
 namespace {
 
+static_assert(noexcept(
+    std::declval<TraceDisplayFrameRepository&>().discard(
+        display_model::TraceId{1})));
+
 TraceDisplayFrame validFrame(
     display_model::TraceId traceId = display_model::TraceId{3},
     frames::FrameId frameId = frames::FrameId{11},
@@ -213,6 +217,23 @@ TEST(TraceDisplayFrameRepositoryTest, KeepsMaximumFramesIndependentPerTrace) {
     EXPECT_EQ(repository.latest(display_model::TraceId{3}), replacement.value());
     EXPECT_EQ(repository.latest(display_model::TraceId{4}), second.value());
     EXPECT_EQ(first.value()->frequenciesHz.size(), 2048U);
+}
+
+TEST(TraceDisplayFrameRepositoryTest, DiscardReleasesCapacityAndKeepsReaders) {
+    TraceDisplayFrameRepository repository{1};
+    const auto first = repository.publish(validFrame());
+    ASSERT_TRUE(first.hasValue());
+    const auto reader = first.value();
+
+    repository.discard(display_model::TraceId{3});
+    repository.discard(display_model::TraceId{3});
+
+    EXPECT_EQ(repository.latest(display_model::TraceId{3}), nullptr);
+    EXPECT_EQ(reader->traceId, display_model::TraceId{3});
+    EXPECT_DOUBLE_EQ(reader->values[0], -6.020599913);
+    const auto replacement = repository.publish(
+        validFrame(display_model::TraceId{4}, frames::FrameId{21}, 1));
+    EXPECT_TRUE(replacement.hasValue());
 }
 
 }  // namespace

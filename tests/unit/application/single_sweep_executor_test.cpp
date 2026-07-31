@@ -87,7 +87,7 @@ TEST(SingleSweepExecutorTest, RejectsInvalidConstruction) {
     TraceDisplayPublisher emptyPublisher;
     EXPECT_THROW(
         SingleSweepExecutor(
-            1, source, manager, std::move(emptyPublisher)),
+            1, source, manager, repository, std::move(emptyPublisher)),
         std::invalid_argument);
     EXPECT_THROW(
         SingleSweepExecutor(0, std::move(source), manager, repository),

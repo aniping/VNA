@@ -86,6 +86,7 @@ add_executable(
     unit/application/start_single_sweep_command_test.cpp
     unit/application/start_single_sweep_validation_test.cpp
     unit/application/single_sweep_executor_test.cpp
+    unit/application/single_sweep_trace_retirement_test.cpp
     unit/application/text_id_test.cpp
     unit/application/trace_display_frame_query_test.cpp
     unit/application/trace_display_frame_repository_test.cpp
