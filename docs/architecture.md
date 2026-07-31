@@ -100,7 +100,8 @@ drivers/platform/
 - 持续时间和超时使用单调时钟，墙上时间只用于用户时间戳和持久化元数据。
 - 共享内存是可选的大数据传输优化；必须保留可测试的普通 IPC 传输，并分别实现 Windows 与 Linux 适配器。
 - 第三方依赖必须能被支持的 Windows 和 Linux 工具链构建；平台专属依赖不得泄漏到公开领域契约。
-- CI 至少使用 MSVC 和一个 Linux 工具链（GCC 或 Clang）执行 configure、build 和 test。
+- 所有第三方源码统一固定在 `third-part/`，业务代码不得自行下载或引用目录外的未声明依赖。
+- CI 使用 Windows/MinGW GCC 与 Linux/GCC 执行 configure、build 和 test，不配置 MSVC 专属构建。
 
 具体操作系统版本、CPU 架构和编译器最低版本在工程基线建立时写入支持矩阵；在此之前不得无依据地承诺所有 Windows 或 Linux 版本。
 
@@ -158,6 +159,8 @@ drivers/platform/
 | 共享内存 | 可选的大体量原始数据跨进程通道 |
 
 第一阶段采用 [`yhirose/cpp-httplib`](https://github.com/yhirose/cpp-httplib) 实现 HTTP/HTTPS、REST、文件流和 WebSocket/WSS。依赖版本必须由工程清单固定，且只允许出现在 `protocols/web-api`、`protocols/websocket` 等交互层适配器中，内部 Command、Query、Event 和 Frame 契约不得暴露 `httplib` 类型。
+
+`cpp-httplib` 官方当前未支持或测试 MinGW，因此该组合必须先通过 Windows/MinGW 与 Linux/GCC 的 HTTP、WebSocket 和 TLS 兼容性测试。验证通过的版本必须固定；若无法满足要求，则只替换协议适配器，不改变内部契约。
 
 `cpp-httplib` 使用阻塞式套接字 I/O，WebSocket 连接会长期占用线程。因此：
 
@@ -630,7 +633,7 @@ vna-platform/
 - **Replay 回归测试**：固定命令日志和原始数据重现问题。
 - **故障注入测试**：超时、丢帧、断连、过载和取消恢复。
 - **性能测试**：扫频吞吐、处理延迟、内存上限和慢客户端背压。
-- **平台矩阵测试**：Windows/MSVC 与 Linux/GCC 或 Clang 均执行配置、编译和测试；平台适配器运行各自的契约测试。
+- **平台矩阵测试**：Windows/MinGW GCC 与 Linux/GCC 均执行配置、编译和测试；平台适配器运行各自的契约测试。
 
 真实硬件接入前，Hardware Backend 和 Simulation Backend 必须通过相同契约测试；硬件专属测试只补充电气和时序验证。
 

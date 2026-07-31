@@ -64,8 +64,9 @@
 **工程质量**
 
 - 基于 CMake 的 Windows/Linux 统一构建入口。
-- Windows/MSVC 与 Linux/GCC 或 Clang 的持续集成构建矩阵。
+- Windows/MinGW GCC 与 Linux/GCC 的持续集成构建矩阵。
 - `cpp-httplib` 在两个平台上的协议适配器集成测试。
+- `cpp-httplib` 的 HTTP、WebSocket 和 TLS 兼容性冒烟测试。
 - 结构化日志和统一关联标识。
 - 核心领域单元测试。
 - Backend 契约测试。
