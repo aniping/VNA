@@ -49,9 +49,11 @@ function selectTrace(): void {
     class="diagram-pane"
     :class="{ active }"
     :aria-label="`Diagram ${paneNumber}`"
+    :role="trace ? 'button' : undefined"
     :tabindex="trace ? 0 : undefined"
     @click="selectTrace"
     @keydown.enter="selectTrace"
+    @keydown.space.prevent="selectTrace"
   >
     <header class="trace-strip">
       <span class="trace-index">{{ trace ? `Trc${trace.id}` : 'Trc —' }}</span>
