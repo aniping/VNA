@@ -674,5 +674,6 @@ vna-platform/
 - [ADR-0002：所有外部入口映射到统一内部契约](adr/0002-unified-internal-contracts.md)
 - [ADR-0003：仿真后端输出原始接收机帧](adr/0003-simulate-raw-receiver-frames.md)
 - [ADR-0004：核心软件原生支持 Windows 与 Linux](adr/0004-native-windows-linux-support.md)
+- [ADR-0005：采用结构化可观测性接口与双日志输出](adr/0005-structured-observability.md)
 
 第一阶段的具体范围和验收标准见 [第一阶段实施范围](phase-1.md)。
