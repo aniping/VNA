@@ -20,6 +20,7 @@ namespace vna::application {
 namespace {
 
 using namespace std::chrono_literals;
+using test_support::acceptedOperation;
 using test_support::awaitTerminal;
 using test_support::validWorkItem;
 
@@ -34,14 +35,15 @@ TEST(SingleSweepExecutorTest, PublishesFivePointGoldenBeforeSuccess) {
 
     const auto submitted = executor.submit(validWorkItem());
 
-    const auto* accepted = std::get_if<OperationSnapshot>(&submitted);
-    ASSERT_NE(accepted, nullptr);
-    EXPECT_TRUE(std::holds_alternative<OperationQueued>(accepted->state));
-    EXPECT_EQ(accepted->commandId, CommandId{"sweep-1"});
-    EXPECT_EQ(accepted->sessionId, SessionId{"session-1"});
-    EXPECT_EQ(accepted->submittedAtStateRevision, 7U);
+    const auto* operationId = std::get_if<OperationId>(&submitted);
+    ASSERT_NE(operationId, nullptr);
+    const auto accepted = std::get<OperationSnapshot>(manager.snapshot(*operationId));
+    EXPECT_TRUE(std::holds_alternative<OperationQueued>(accepted.state));
+    EXPECT_EQ(accepted.commandId, CommandId{"sweep-1"});
+    EXPECT_EQ(accepted.sessionId, SessionId{"session-1"});
+    EXPECT_EQ(accepted.submittedAtStateRevision, 7U);
     TraceDisplayFrameHandle visibleAtCompletion;
-    const auto terminal = awaitTerminal(manager, *accepted, [&] {
+    const auto terminal = awaitTerminal(manager, accepted, [&] {
         visibleAtCompletion = repository.latest(display_model::TraceId{3});
     });
 
@@ -105,11 +107,11 @@ TEST(SingleSweepExecutorTest, RejectsFullQueueWithoutCreatingOperation) {
     };
     SingleSweepExecutor executor{1, std::move(source), manager, repository};
 
-    const auto first = std::get<OperationSnapshot>(
-        executor.submit(validWorkItem(CommandId{"sweep-1"})));
+    const auto first = acceptedOperation(
+        manager, executor.submit(validWorkItem(CommandId{"sweep-1"})));
     ASSERT_EQ(enteredFuture.wait_for(2s), std::future_status::ready);
-    const auto second = std::get<OperationSnapshot>(
-        executor.submit(validWorkItem(CommandId{"sweep-2"})));
+    const auto second = acceptedOperation(
+        manager, executor.submit(validWorkItem(CommandId{"sweep-2"})));
     const auto rejected = executor.submit(
         validWorkItem(CommandId{"sweep-rejected"}));
 
@@ -122,8 +124,8 @@ TEST(SingleSweepExecutorTest, RejectsFullQueueWithoutCreatingOperation) {
         awaitTerminal(manager, first).state));
     EXPECT_TRUE(std::holds_alternative<OperationSucceeded>(
         awaitTerminal(manager, second).state));
-    const auto after = std::get<OperationSnapshot>(
-        executor.submit(validWorkItem(CommandId{"sweep-3"})));
+    const auto after = acceptedOperation(
+        manager, executor.submit(validWorkItem(CommandId{"sweep-3"})));
     EXPECT_EQ(after.id, OperationId{3});
     (void)awaitTerminal(manager, after);
 }
@@ -163,7 +165,7 @@ TEST(SingleSweepExecutorTest, CancelsOnlyAfterSourceReleases) {
     };
     SingleSweepExecutor executor{1, std::move(source), manager, repository};
     const auto submitted =
-        std::get<OperationSnapshot>(executor.submit(validWorkItem()));
+        acceptedOperation(manager, executor.submit(validWorkItem()));
     ASSERT_EQ(enteredFuture.wait_for(2s), std::future_status::ready);
 
     const auto requested = manager.requestCancel(submitted.id);
@@ -200,11 +202,12 @@ TEST(SingleSweepExecutorTest, DestructorStopsSourceAndJoinsBeforeReturning) {
             return simulation::simulateSweep(axis);
         };
         SingleSweepExecutor executor{1, std::move(source), manager, repository};
-        running = std::get<OperationSnapshot>(
-            executor.submit(validWorkItem()));
+        running = acceptedOperation(
+            manager, executor.submit(validWorkItem()));
         ASSERT_EQ(enteredFuture.wait_for(2s), std::future_status::ready);
-        queued = std::get<OperationSnapshot>(executor.submit(
-            validWorkItem(CommandId{"sweep-queued"})));
+        queued = acceptedOperation(
+            manager,
+            executor.submit(validWorkItem(CommandId{"sweep-queued"})));
     }
 
     const auto runningTerminal = std::get<OperationSnapshot>(

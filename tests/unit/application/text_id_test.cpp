@@ -7,6 +7,7 @@
 
 #include <vna/application/command_bus.hpp>
 #include <vna/application/operation_manager.hpp>
+#include <vna/application/single_sweep_executor.hpp>
 
 namespace vna::application {
 namespace {
@@ -18,6 +19,10 @@ static_assert(std::is_nothrow_copy_constructible_v<CommandEnvelope>);
 static_assert(std::is_nothrow_move_constructible_v<CommandResult>);
 static_assert(std::is_nothrow_move_constructible_v<OperationSnapshot>);
 static_assert(std::is_nothrow_move_constructible_v<OperationResult>);
+static_assert(std::is_same_v<
+              std::variant_alternative_t<0, SingleSweepSubmitResult>,
+              OperationId>);
+static_assert(std::is_nothrow_move_constructible_v<SingleSweepSubmitResult>);
 
 std::string textWithByte(unsigned char byte) {
     std::string value{"a"};

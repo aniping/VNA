@@ -42,6 +42,13 @@ inline SingleSweepWorkItem validWorkItem(
     };
 }
 
+inline OperationSnapshot acceptedOperation(
+    OperationManager& manager,
+    SingleSweepSubmitResult result) {
+    const auto operationId = std::get<OperationId>(result);
+    return std::get<OperationSnapshot>(manager.snapshot(operationId));
+}
+
 inline OperationSnapshot awaitTerminal(
     OperationManager& manager,
     const OperationSnapshot& submitted,

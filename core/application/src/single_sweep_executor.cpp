@@ -34,27 +34,22 @@ public:
             return SingleSweepSubmitError{
                 .code = SingleSweepSubmitErrorCode::QueueFull};
         }
-        // Queue allocation happens first, but the worker cannot observe it
-        // before unlock/notify. Rollback closes OperationManager::create's
-        // exceptional boundary without leaving an id-zero Pending behind.
+        // Queue allocation happens before Operation creation, but the worker
+        // cannot observe Pending before unlock/notify. create either rolls its
+        // own state back or returns a complete Snapshot; after that boundary,
+        // assigning and returning OperationId are both non-throwing.
         queue_.push_back(Pending{.work = std::move(work)});
-        std::optional<OperationId> created;
         try {
             const auto& queued = queue_.back().work;
             auto operation = operations_.create(OperationSubmission{
                 queued.commandId,
                 queued.sessionId,
                 queued.frameContext.stateRevision});
-            created = operation.id;
             queue_.back().operationId = operation.id;
             condition_.notify_one();
-            return operation;
+            return operation.id;
         } catch (...) {
             queue_.pop_back();
-            lock.unlock();
-            if (created) {
-                abandon(*created);
-            }
             throw;
         }
     }
@@ -174,15 +169,6 @@ private:
     void cancel(OperationId operationId) {
         (void)operations_.requestCancel(operationId);
         (void)operations_.complete(operationId, OperationCanceled{});
-    }
-
-    void abandon(OperationId operationId) noexcept {
-        // The Pending never reached the worker, so no backend resource needs
-        // release. The manager owns the no-snapshot terminal/fence transition.
-        try {
-            operations_.abandonQueued(operationId);
-        } catch (...) {
-        }
     }
 
     void fail(OperationId operationId, OperationFailure failure) {

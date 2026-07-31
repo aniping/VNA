@@ -130,9 +130,6 @@ public:
     [[nodiscard]] OperationResult complete(
         OperationId operationId,
         OperationTerminalOutcome outcome);
-    // Admission rollback owns no backend resource, so a still-queued Operation
-    // can become Canceled directly while preserving fence notification.
-    void abandonQueued(OperationId operationId);
     [[nodiscard]] OperationResult snapshot(OperationId operationId) const;
     [[nodiscard]] CompletionFence captureFence(const SessionId& sessionId);
     [[nodiscard]] FenceSubscription subscribe(

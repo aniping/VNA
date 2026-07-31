@@ -38,7 +38,7 @@ struct SingleSweepSubmitError {
 };
 
 using SingleSweepSubmitResult =
-    std::variant<OperationSnapshot, SingleSweepSubmitError>;
+    std::variant<OperationId, SingleSweepSubmitError>;
 
 class SingleSweepExecutor {
 public:

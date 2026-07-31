@@ -37,12 +37,12 @@ SingleSweepCommandResult SingleSweepCommandHandler::submit(
         .traceId = capture.trace.id,
     };
     auto submitted = submit_(std::move(work));
-    if (const auto* accepted = std::get_if<OperationSnapshot>(&submitted)) {
+    if (const auto* accepted = std::get_if<OperationId>(&submitted)) {
         ++nextFrameId_;
         ++nextSweepId_;
         ++nextFrequencyAxisId_;
         ++sequence;
-        return accepted->id;
+        return *accepted;
     }
     return std::get<SingleSweepSubmitError>(submitted);
 }

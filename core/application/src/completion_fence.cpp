@@ -192,18 +192,4 @@ OperationResult OperationManager::complete(
     return *completed;
 }
 
-void OperationManager::abandonQueued(OperationId operationId) {
-    {
-        const std::scoped_lock lock{mutex_};
-        const auto operation = operations_.find(operationId.value());
-        if (operation == operations_.end() ||
-            !std::holds_alternative<OperationQueued>(
-                operation->second.state)) {
-            return;
-        }
-        operation->second.state = OperationCanceled{};
-    }
-    deliverTerminal(fenceCoordinator_, operationId.value());
-}
-
 }  // namespace vna::application

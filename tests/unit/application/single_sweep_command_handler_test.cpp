@@ -48,18 +48,6 @@ CapturedSingleSweep capturedSweep(
     };
 }
 
-OperationSnapshot acceptedOperation(
-    OperationId id,
-    const SingleSweepWorkItem& work) {
-    return OperationSnapshot{
-        .id = id,
-        .commandId = work.commandId,
-        .sessionId = work.sessionId,
-        .submittedAtStateRevision = work.frameContext.stateRevision,
-        .state = OperationQueued{},
-    };
-}
-
 TEST(SingleSweepCommandHandlerTest, RejectsAnEmptySubmitPort) {
     EXPECT_THROW(
         static_cast<void>(SingleSweepCommandHandler{SingleSweepSubmit{}}),
@@ -71,8 +59,7 @@ TEST(SingleSweepCommandHandlerTest, AssignsCorrelationAndChannelSequences) {
     std::uint64_t nextOperationId = 41;
     SingleSweepCommandHandler handler{[&](SingleSweepWorkItem work) {
         submitted.push_back(work);
-        return SingleSweepSubmitResult{
-            acceptedOperation(OperationId{nextOperationId++}, work)};
+        return SingleSweepSubmitResult{OperationId{nextOperationId++}};
     }};
 
     const auto first = handler.submit(capturedSweep());
@@ -113,8 +100,7 @@ TEST(SingleSweepCommandHandlerTest, RejectionsDoNotConsumeCandidates) {
             return SingleSweepSubmitResult{SingleSweepSubmitError{
                 .code = SingleSweepSubmitErrorCode::Stopped}};
         }
-        return SingleSweepSubmitResult{
-            acceptedOperation(OperationId{51}, work)};
+        return SingleSweepSubmitResult{OperationId{51}};
     }};
 
     const auto full = handler.submit(capturedSweep());

@@ -95,13 +95,7 @@ private:
             rejections_.pop_front();
             return SingleSweepSubmitError{.code = code};
         }
-        return OperationSnapshot{
-            .id = OperationId{71},
-            .commandId = work.commandId,
-            .sessionId = work.sessionId,
-            .submittedAtStateRevision = work.frameContext.stateRevision,
-            .state = OperationQueued{},
-        };
+        return OperationId{71};
     }
 
     CommandEnvelope envelope(const char* commandId, CommandPayload payload) {

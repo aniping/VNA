@@ -18,6 +18,7 @@ namespace vna::application {
 namespace {
 
 using test_support::awaitTerminal;
+using test_support::acceptedOperation;
 using test_support::validWorkItem;
 
 RawSweepSource simulationSource() {
@@ -38,7 +39,7 @@ void expectFailure(
         1, std::move(source), manager, repository};
 
     const auto submitted =
-        std::get<OperationSnapshot>(executor.submit(std::move(work)));
+        acceptedOperation(manager, executor.submit(std::move(work)));
     const auto terminal = awaitTerminal(manager, submitted);
 
     const auto* failed = std::get_if<OperationFailed>(&terminal.state);
@@ -150,8 +151,8 @@ TEST(SingleSweepExecutorFailureTest, PublishFailureKeepsExistingFrame) {
     SingleSweepExecutor executor{
         1, simulationSource(), manager, repository};
 
-    const auto submitted = std::get<OperationSnapshot>(
-        executor.submit(validWorkItem()));
+    const auto submitted =
+        acceptedOperation(manager, executor.submit(validWorkItem()));
     const auto terminal = awaitTerminal(manager, submitted);
 
     const auto* failed = std::get_if<OperationFailed>(&terminal.state);

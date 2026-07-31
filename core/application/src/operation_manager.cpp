@@ -9,7 +9,7 @@ OperationSnapshot OperationManager::create(OperationSubmission submission) {
     std::unique_lock lock{mutex_};
     std::optional<OperationId> committed;
     try {
-        const OperationSnapshot snapshot{
+        OperationSnapshot snapshot{
             .id = OperationId{nextOperationId_++},
             .commandId = std::move(submission.commandId),
             .sessionId = std::move(submission.sessionId),

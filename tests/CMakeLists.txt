@@ -81,7 +81,6 @@ add_executable(
     unit/application/control_authority_test.cpp
     unit/application/control_authority_concurrency_test.cpp
     unit/application/operation_manager_test.cpp
-    unit/application/operation_abandonment_test.cpp
     unit/application/single_sweep_command_handler_test.cpp
     unit/application/single_sweep_executor_failure_test.cpp
     unit/application/start_single_sweep_command_test.cpp
