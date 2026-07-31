@@ -33,11 +33,11 @@ Value successValue(const CommandResult& result) {
 
 class StartSingleSweepHarness {
 public:
-    StartSingleSweepHarness()
+    explicit StartSingleSweepHarness(std::size_t idempotencyCapacity = 1024)
         : handler_([this](SingleSweepWorkItem work) {
               return submitWork(std::move(work));
           }),
-          bus_(InstrumentId{"instrument-1"}, handler_) {}
+          bus_(InstrumentId{"instrument-1"}, handler_, idempotencyCapacity) {}
 
     CommandResult createChannel() {
         return bus_.dispatch(envelope(
@@ -158,7 +158,7 @@ TEST(StartSingleSweepCommandTest, AcceptsOneS11LogMagnitudeSweep) {
 }
 
 TEST(StartSingleSweepCommandTest, DoesNotCacheOrConsumeRejectedAdmission) {
-    StartSingleSweepHarness harness;
+    StartSingleSweepHarness harness{4};
     const auto channel = harness.configureSupportedSweep();
     harness.rejectNext(SingleSweepSubmitErrorCode::QueueFull);
     harness.rejectNext(SingleSweepSubmitErrorCode::Stopped);
@@ -166,6 +166,7 @@ TEST(StartSingleSweepCommandTest, DoesNotCacheOrConsumeRejectedAdmission) {
     const auto full = harness.start(channel);
     const auto stopped = harness.start(channel);
     EXPECT_EQ(harness.bus().stats().idempotencyEntries, 4U);
+    EXPECT_EQ(harness.bus().stats().idempotencyEvictions, 0U);
     const auto accepted = harness.start(channel);
 
     ASSERT_NE(applicationError(full), nullptr);
@@ -177,7 +178,8 @@ TEST(StartSingleSweepCommandTest, DoesNotCacheOrConsumeRejectedAdmission) {
     EXPECT_EQ(stopped.stateRevision, 4U);
     EXPECT_EQ(successValue<OperationId>(accepted), OperationId{71});
     EXPECT_EQ(accepted.stateRevision, 4U);
-    EXPECT_EQ(harness.bus().stats().idempotencyEntries, 5U);
+    EXPECT_EQ(harness.bus().stats().idempotencyEntries, 4U);
+    EXPECT_EQ(harness.bus().stats().idempotencyEvictions, 1U);
     ASSERT_EQ(harness.submitted().size(), 3U);
     EXPECT_EQ(harness.submitted()[0].frameContext.frameId, frames::FrameId{1});
     EXPECT_EQ(harness.submitted()[1].frameContext.frameId, frames::FrameId{1});

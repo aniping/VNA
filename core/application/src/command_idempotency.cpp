@@ -120,7 +120,7 @@ bool sameKey(
 }  // namespace
 
 CommandBus::IdempotencyStore::IdempotencyStore(std::size_t capacity)
-    : capacity_(capacity) {
+    : entries_(capacity) {
     if (capacity == 0) {
         throw std::invalid_argument{"idempotency capacity must be positive"};
     }
@@ -129,11 +129,11 @@ CommandBus::IdempotencyStore::IdempotencyStore(std::size_t capacity)
 CommandBus::IdempotencyStore::Lookup CommandBus::IdempotencyStore::lookup(
     const CommandEnvelope& command) const {
     for (const auto& entry : entries_) {
-        if (sameKey(entry.command, command)) {
+        if (entry && sameKey(*entry->command, command)) {
             return {
                 .keyFound = true,
-                .replay = sameSignature(entry.command, command)
-                    ? &entry.result
+                .replay = sameSignature(*entry->command, command)
+                    ? &entry->result
                     : nullptr,
             };
         }
@@ -141,19 +141,47 @@ CommandBus::IdempotencyStore::Lookup CommandBus::IdempotencyStore::lookup(
     return {.keyFound = false, .replay = nullptr};
 }
 
-void CommandBus::IdempotencyStore::remember(
-    const CommandEnvelope& command,
-    const CommandResult& result) {
-    if (entries_.size() == capacity_) {
-        entries_.pop_front();
-        ++evictions_;
+bool CommandBus::IdempotencyStore::isCacheable(
+    const CommandResult& result) noexcept {
+    if (std::holds_alternative<CommandSuccess>(result.outcome)) {
+        return true;
     }
-    entries_.push_back(Entry{command, result});
+    const auto& error = std::get<CommandError>(result.outcome);
+    if (std::holds_alternative<domain::DomainError>(error) ||
+        std::holds_alternative<display_model::DisplayError>(error)) {
+        return true;
+    }
+    const auto code = std::get<ApplicationError>(error).code;
+    return code == ApplicationErrorCode::StateRevisionConflict ||
+        code == ApplicationErrorCode::UnsupportedSweepConfiguration;
+}
+
+CommandBus::IdempotencyStore::Prepared
+CommandBus::IdempotencyStore::prepare(const CommandEnvelope& command) const {
+    // All allocation and Command copying occurs before dispatch mutates state
+    // or admits an Operation. Discarding Prepared is therefore side-effect free.
+    return Prepared{std::make_shared<const CommandEnvelope>(command)};
+}
+
+void CommandBus::IdempotencyStore::commit(
+    Prepared prepared,
+    CommandResult result) noexcept {
+    static_assert(std::is_nothrow_move_constructible_v<Entry>);
+    static_assert(std::is_nothrow_move_constructible_v<CommandResult>);
+    static_assert(std::is_nothrow_move_assignable_v<CommandResult>);
+    const bool evicting = entries_[next_].has_value();
+    entries_[next_].emplace(std::move(prepared.command), std::move(result));
+    next_ = (next_ + 1) % entries_.size();
+    if (evicting) {
+        ++evictions_;
+    } else {
+        ++size_;
+    }
 }
 
 CommandBusStats CommandBus::IdempotencyStore::stats() const noexcept {
     return {
-        .idempotencyEntries = entries_.size(),
+        .idempotencyEntries = size_,
         .idempotencyEvictions = evictions_,
     };
 }

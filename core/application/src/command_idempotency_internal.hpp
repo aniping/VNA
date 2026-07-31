@@ -2,7 +2,10 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <deque>
+#include <memory>
+#include <optional>
+#include <utility>
+#include <vector>
 
 #include <vna/application/command_bus.hpp>
 
@@ -15,23 +18,35 @@ public:
         const CommandResult* replay;
     };
 
+    struct Prepared {
+        std::shared_ptr<const CommandEnvelope> command;
+    };
+
     explicit IdempotencyStore(std::size_t capacity);
 
     [[nodiscard]] Lookup lookup(
         const CommandEnvelope& command) const;
-    void remember(
-        const CommandEnvelope& command,
-        const CommandResult& result);
+    [[nodiscard]] static bool isCacheable(
+        const CommandResult& result) noexcept;
+    [[nodiscard]] Prepared prepare(const CommandEnvelope& command) const;
+    void commit(Prepared prepared, CommandResult result) noexcept;
     [[nodiscard]] CommandBusStats stats() const noexcept;
 
 private:
     struct Entry {
-        CommandEnvelope command;
+        Entry(
+            std::shared_ptr<const CommandEnvelope> preparedCommand,
+            CommandResult preparedResult) noexcept
+            : command(std::move(preparedCommand)),
+              result(std::move(preparedResult)) {}
+
+        std::shared_ptr<const CommandEnvelope> command;
         CommandResult result;
     };
 
-    std::size_t capacity_;
-    std::deque<Entry> entries_;
+    std::vector<std::optional<Entry>> entries_;
+    std::size_t size_{0};
+    std::size_t next_{0};
     std::uint64_t evictions_{0};
 };
 
