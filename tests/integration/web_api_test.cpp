@@ -3,7 +3,6 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
-#include <chrono>
 #include <cstdint>
 #include <string>
 #include <thread>
@@ -13,24 +12,6 @@
 
 namespace vna::web_api {
 namespace {
-
-application::CommandEnvelope createChannelCommand() {
-    return {
-        .commandId = application::CommandId{"command-1"},
-        .sessionId = application::SessionId{"session-1"},
-        .instrumentId = application::InstrumentId{"instrument-1"},
-        .expectedStateRevision = 0,
-        .timeout = std::chrono::seconds{5},
-        .priority = application::CommandPriority::Normal,
-        .payload = application::CreateChannelCommand{domain::SweepSettings{
-            .startFrequencyHz = 10'000'000,
-            .stopFrequencyHz = 26'500'000'000,
-            .points = 201,
-            .ifBandwidthHz = 10'000,
-            .powerDbm = -10.0,
-        }},
-    };
-}
 
 nlohmann::json createChannelRequest() {
     return {
@@ -108,9 +89,7 @@ TEST_F(WebApiTest, ReportsHealthOverHttp) {
 }
 
 TEST_F(WebApiTest, ReturnsCurrentStateSnapshot) {
-    ASSERT_EQ(
-        commandBus_.dispatch(createChannelCommand()).status,
-        application::CommandStatus::Succeeded);
+    ASSERT_EQ(postCommand(createChannelRequest())->status, 200);
     httplib::Client client{"127.0.0.1", port_};
 
     const auto response = client.Get("/api/v1/state");
@@ -215,7 +194,7 @@ TEST_F(WebApiTest, MapsInvalidSweepToUnprocessableContent) {
 
 TEST_F(WebApiTest, UpdatesChannelSweepThroughHttp) {
     ASSERT_EQ(postCommand(createChannelRequest())->status, 200);
-    const auto response = postCommand(commandRequest(
+    auto request = commandRequest(
         "command-2",
         1,
         "updateChannelSweep",
@@ -224,8 +203,12 @@ TEST_F(WebApiTest, UpdatesChannelSweepThroughHttp) {
          {"stopFrequencyHz", 6'000'000'000},
          {"points", 401},
          {"ifBandwidthHz", 1'000},
-         {"powerDbm", -5.0}}));
-
+         {"powerDbm", -5.0}});
+    request["payload"]["startFrequencyHz"] = -2;
+    EXPECT_EQ(postCommand(request)->status, httplib::StatusCode::BadRequest_400);
+    EXPECT_EQ(commandBus_.snapshot().stateRevision, 1U);
+    request["payload"]["startFrequencyHz"] = 100'000'000;
+    const auto response = postCommand(request);
     ASSERT_TRUE(response);
     EXPECT_EQ(response->status, httplib::StatusCode::OK_200);
     EXPECT_EQ(nlohmann::json::parse(response->body)["stateRevision"], 2);
@@ -233,7 +216,6 @@ TEST_F(WebApiTest, UpdatesChannelSweepThroughHttp) {
     EXPECT_EQ(sweep.startFrequencyHz, 100'000'000U);
     EXPECT_EQ(sweep.stopFrequencyHz, 6'000'000'000U);
 }
-
 TEST_F(WebApiTest, RejectsMalformedCommandJson) {
     httplib::Client client{"127.0.0.1", port_};
 

@@ -1,4 +1,5 @@
 #include "json_codec.hpp"
+#include "json_value.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -143,10 +144,10 @@ domain::TraceFormat traceFormatFromJson(const Json& payload) {
 
 domain::SweepSettings sweepSettingsFromJson(const Json& payload) {
     return {
-        .startFrequencyHz = payload.at("startFrequencyHz").get<std::uint64_t>(),
-        .stopFrequencyHz = payload.at("stopFrequencyHz").get<std::uint64_t>(),
-        .points = payload.at("points").get<std::uint32_t>(),
-        .ifBandwidthHz = payload.at("ifBandwidthHz").get<std::uint64_t>(),
+        .startFrequencyHz = unsignedInteger<std::uint64_t>(payload, "startFrequencyHz"),
+        .stopFrequencyHz = unsignedInteger<std::uint64_t>(payload, "stopFrequencyHz"),
+        .points = unsignedInteger<std::uint32_t>(payload, "points"),
+        .ifBandwidthHz = unsignedInteger<std::uint64_t>(payload, "ifBandwidthHz"),
         .powerDbm = payload.at("powerDbm").get<double>(),
     };
 }
