@@ -1,0 +1,12 @@
+add_library(vna_logging src/json_line_formatter.cpp src/json_lines_logger.cpp)
+add_library(vna::logging ALIAS vna_logging)
+
+target_compile_features(vna_logging PUBLIC cxx_std_20)
+target_include_directories(
+    vna_logging
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+)
+target_link_libraries(vna_logging PUBLIC vna::observability
+                      PRIVATE nlohmann_json::nlohmann_json)
+target_compile_options(vna_logging PRIVATE -Wall -Wextra -Wpedantic)

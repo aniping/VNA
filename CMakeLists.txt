@@ -13,6 +13,7 @@ add_subdirectory(core/domain)
 add_subdirectory(core/observability)
 add_subdirectory(core/application)
 add_subdirectory(infrastructure/platform)
+add_subdirectory(infrastructure/logging)
 add_subdirectory(protocols/web-api)
 add_subdirectory(apps/vna-server)
 
