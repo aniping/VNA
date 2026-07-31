@@ -676,5 +676,6 @@ vna-platform/
 - [ADR-0004：核心软件原生支持 Windows 与 Linux](adr/0004-native-windows-linux-support.md)
 - [ADR-0005：采用结构化可观测性接口与双日志输出](adr/0005-structured-observability.md)
 - [ADR-0006：采用乐观并发控制、幂等命令与结构化错误](adr/0006-optimistic-control-and-command-reliability.md)
+- [ADR-0007：在 Scale 和 Marker 前拆分显示模型](adr/0007-separate-display-model.md)
 
 第一阶段的具体范围和验收标准见 [第一阶段实施范围](phase-1.md)。
