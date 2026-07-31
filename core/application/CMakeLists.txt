@@ -6,6 +6,7 @@ add_library(
     src/completion_fence.cpp
     src/completion_fence_handles.cpp
     src/operation_manager.cpp
+    src/trace_display_frame_repository.cpp
 )
 add_library(vna::application ALIAS vna_application)
 
@@ -15,5 +16,8 @@ target_include_directories(
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-target_link_libraries(vna_application PUBLIC vna::display_model vna::domain)
+target_link_libraries(
+    vna_application
+    PUBLIC vna::display_model vna::domain vna::frame_contracts
+)
 target_compile_options(vna_application PRIVATE -Wall -Wextra -Wpedantic)

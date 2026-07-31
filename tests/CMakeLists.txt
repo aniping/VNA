@@ -82,6 +82,7 @@ add_executable(
     unit/application/control_authority_concurrency_test.cpp
     unit/application/operation_manager_test.cpp
     unit/application/text_id_test.cpp
+    unit/application/trace_display_frame_repository_test.cpp
     unit/application/trace_command_test.cpp
     unit/application/trace_scale_command_test.cpp
 )
