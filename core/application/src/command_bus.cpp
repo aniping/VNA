@@ -6,6 +6,7 @@ CommandBus::CommandBus(InstrumentId instrumentId)
     : instrumentId_(std::move(instrumentId)) {}
 
 CommandResult CommandBus::dispatch(const CommandEnvelope& command) {
+    const std::scoped_lock lock{mutex_};
     if (command.instrumentId != instrumentId_) {
         return CommandResult{
             .status = CommandStatus::WrongInstrument,
@@ -82,6 +83,7 @@ CommandResult CommandBus::validationError() const {
 }
 
 StateSnapshot CommandBus::snapshot() const {
+    const std::scoped_lock lock{mutex_};
     return StateSnapshot{
         .stateRevision = stateRevision_,
         .instrument = instrument_.snapshot(),

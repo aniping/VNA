@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <utility>
@@ -115,6 +116,7 @@ private:
     [[nodiscard]] CommandResult validationError() const;
 
     InstrumentId instrumentId_;
+    mutable std::mutex mutex_;
     domain::Instrument instrument_;
     std::uint64_t stateRevision_{0};
 };

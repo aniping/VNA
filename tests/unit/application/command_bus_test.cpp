@@ -1,8 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
+#include <future>
 #include <string>
+#include <thread>
 #include <utility>
+#include <vector>
 
 #include <vna/application/command_bus.hpp>
 
@@ -184,6 +188,39 @@ TEST(CommandBusTest, RemovesTraceThroughUnifiedEntryPoint) {
     const auto snapshot = commandBus.snapshot();
     EXPECT_EQ(snapshot.instrument.measurements.size(), 1U);
     EXPECT_TRUE(snapshot.instrument.traces.empty());
+}
+
+TEST(CommandBusTest, SerializesCommandsThatExpectTheSameRevision) {
+    constexpr int commandCount = 16;
+    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    std::atomic<int> ready{0};
+    std::promise<void> startPromise;
+    const auto startSignal = startPromise.get_future().share();
+    std::vector<std::future<CommandResult>> pending;
+
+    for (int index = 0; index < commandCount; ++index) {
+        pending.push_back(std::async(std::launch::async, [&, index] {
+            ready.fetch_add(1);
+            startSignal.wait();
+            return commandBus.dispatch(makeCommand(
+                "concurrent-" + std::to_string(index),
+                0,
+                CreateChannelCommand{validSweep()}));
+        }));
+    }
+    while (ready.load() != commandCount) {
+        std::this_thread::yield();
+    }
+    startPromise.set_value();
+
+    std::size_t succeeded = 0;
+    for (auto& result : pending) {
+        succeeded += result.get().status == CommandStatus::Succeeded;
+    }
+    EXPECT_EQ(succeeded, 1U);
+    const auto snapshot = commandBus.snapshot();
+    EXPECT_EQ(snapshot.stateRevision, 1U);
+    EXPECT_EQ(snapshot.instrument.channels.size(), 1U);
 }
 
 }  // namespace
