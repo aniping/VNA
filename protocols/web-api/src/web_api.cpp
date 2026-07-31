@@ -3,6 +3,10 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
+#include <chrono>
+#include <optional>
+#include <stdexcept>
+#include <string>
 #include <utility>
 
 namespace vna::web_api {
@@ -95,6 +99,100 @@ Json stateToJson(const application::StateSnapshot& state) {
     };
 }
 
+const char* commandStatusName(application::CommandStatus status) {
+    switch (status) {
+        case application::CommandStatus::Succeeded:
+            return "succeeded";
+        case application::CommandStatus::ValidationError:
+            return "validationError";
+        case application::CommandStatus::Conflict:
+            return "conflict";
+        case application::CommandStatus::WrongInstrument:
+            return "wrongInstrument";
+    }
+    return "unknown";
+}
+
+int commandHttpStatus(application::CommandStatus status) {
+    switch (status) {
+        case application::CommandStatus::Succeeded:
+            return httplib::StatusCode::OK_200;
+        case application::CommandStatus::ValidationError:
+            return httplib::StatusCode::UnprocessableContent_422;
+        case application::CommandStatus::Conflict:
+            return httplib::StatusCode::Conflict_409;
+        case application::CommandStatus::WrongInstrument:
+            return httplib::StatusCode::NotFound_404;
+    }
+    return httplib::StatusCode::InternalServerError_500;
+}
+
+Json commandResultToJson(const application::CommandResult& result) {
+    Json body{
+        {"status", commandStatusName(result.status)},
+        {"stateRevision", result.stateRevision},
+    };
+    if (const auto* channelId =
+            std::get_if<domain::ChannelId>(&result.value)) {
+        body["value"] = {{"channelId", channelId->value()}};
+    }
+    return body;
+}
+
+std::optional<std::uint64_t> expectedRevision(const Json& request) {
+    if (!request.contains("expectedStateRevision") ||
+        request.at("expectedStateRevision").is_null()) {
+        return std::nullopt;
+    }
+    return request.at("expectedStateRevision").get<std::uint64_t>();
+}
+
+application::CommandEnvelope commandFromJson(const Json& request) {
+    if (request.at("type").get<std::string>() != "createChannel") {
+        throw std::invalid_argument{"unsupported command type"};
+    }
+    const auto& payload = request.at("payload");
+    return {
+        .commandId = application::CommandId{
+            request.at("commandId").get<std::string>()},
+        .sessionId = application::SessionId{
+            request.at("sessionId").get<std::string>()},
+        .instrumentId = application::InstrumentId{
+            request.at("instrumentId").get<std::string>()},
+        .expectedStateRevision = expectedRevision(request),
+        .timeout = std::chrono::seconds{5},
+        .priority = application::CommandPriority::Normal,
+        .payload = application::CreateChannelCommand{domain::SweepSettings{
+            .startFrequencyHz =
+                payload.at("startFrequencyHz").get<std::uint64_t>(),
+            .stopFrequencyHz =
+                payload.at("stopFrequencyHz").get<std::uint64_t>(),
+            .points = payload.at("points").get<std::uint32_t>(),
+            .ifBandwidthHz =
+                payload.at("ifBandwidthHz").get<std::uint64_t>(),
+            .powerDbm = payload.at("powerDbm").get<double>(),
+        }},
+    };
+}
+
+void handleCommand(
+    application::CommandBus& commandBus,
+    const httplib::Request& request,
+    httplib::Response& response) {
+    try {
+        const auto command = commandFromJson(Json::parse(request.body));
+        const auto result = commandBus.dispatch(command);
+        response.status = commandHttpStatus(result.status);
+        response.set_content(commandResultToJson(result).dump(), "application/json");
+    } catch (const Json::exception&) {
+        response.status = httplib::StatusCode::BadRequest_400;
+        response.set_content(R"({"error":"invalidCommand"})", "application/json");
+    } catch (const std::invalid_argument&) {
+        response.status = httplib::StatusCode::BadRequest_400;
+        response.set_content(R"({"error":"invalidCommand"})", "application/json");
+    }
+}
+
 }  // namespace
 
 WebApi::WebApi(application::CommandBus& commandBus)
@@ -112,6 +210,11 @@ void WebApi::install(httplib::Server& server) {
             response.set_content(
                 stateToJson(commandBus_.snapshot()).dump(),
                 "application/json");
+        });
+    server.Post(
+        "/api/v1/commands",
+        [this](const httplib::Request& request, httplib::Response& response) {
+            handleCommand(commandBus_, request, response);
         });
 }
 
