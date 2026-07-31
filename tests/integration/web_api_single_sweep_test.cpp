@@ -59,9 +59,7 @@ protected:
               },
               operations_,
               repository_),
-          handler_([this](application::SingleSweepWorkItem work) {
-              return executor_.submit(std::move(work));
-          }),
+          handler_(executor_),
           commandBus_(application::InstrumentId{"instrument-1"}, handler_),
           query_(commandBus_, repository_),
           webApi_(commandBus_, operations_, query_) {}

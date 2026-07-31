@@ -136,6 +136,8 @@ TEST_F(WebApiOperationTest, SerializesStableFailureCategory) {
         FailureCase{
             application::SingleSweepFailureCode::TraceDisplayPublishFailed,
             "trace-display-publish-failed"},
+        FailureCase{application::SingleSweepFailureCode::UnexpectedFailure,
+                    "unexpected-failure"},
     };
     for (std::size_t index = 0; index < cases.size(); ++index) {
         const auto operation = createOperation(

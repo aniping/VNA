@@ -70,6 +70,8 @@ const char* failureCategory(application::SingleSweepFailureCode code) {
             return "frequency-materialization-failed";
         case application::SingleSweepFailureCode::TraceDisplayPublishFailed:
             return "trace-display-publish-failed";
+        case application::SingleSweepFailureCode::UnexpectedFailure:
+            return "unexpected-failure";
     }
     std::terminate();
 }
