@@ -26,6 +26,7 @@ add_executable(
     unit/application/command_bus_test.cpp
     unit/application/command_error_test.cpp
     unit/application/completion_fence_test.cpp
+    unit/application/completion_fence_hardening_test.cpp
     unit/application/operation_manager_test.cpp
     unit/application/trace_command_test.cpp
     unit/application/trace_scale_command_test.cpp

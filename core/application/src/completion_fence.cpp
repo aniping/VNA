@@ -1,77 +1,23 @@
 #include <vna/application/operation_manager.hpp>
+#include "completion_fence_internal.hpp"
 #include <algorithm>
 #include <iterator>
 #include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
-namespace vna::application::detail {
-enum class DeliveryPhase { Pending, Claimed, Running, Finished, Canceled };
-
-struct FenceSubscriptionState;
-struct FenceCoordinator {
-    std::mutex mutex;
-    std::vector<std::weak_ptr<FenceSubscriptionState>> subscriptions;
-};
-
-struct CompletionFenceState {
-    std::shared_ptr<FenceCoordinator> coordinator;
-    std::vector<std::uint64_t> capturedIds;
-};
-
-struct FenceSubscriptionState {
-    FenceSubscriptionState(
-        std::shared_ptr<FenceCoordinator> owner,
-        std::vector<std::uint64_t> outstanding,
-        FenceCallback completion)
-        : coordinator(std::move(owner)),
-          outstandingIds(std::move(outstanding)),
-          callback(std::move(completion)) {}
-
-    std::shared_ptr<FenceCoordinator> coordinator;
-    std::mutex mutex;
-    DeliveryPhase phase{DeliveryPhase::Pending};
-    std::vector<std::uint64_t> outstandingIds;
-    FenceCallback callback;
-};
-
-}  // namespace vna::application::detail
 namespace vna::application {
 namespace {
 
 using detail::DeliveryPhase;
 using detail::FenceCoordinator;
 using detail::FenceSubscriptionState;
+using internal::removeSubscription;
 
 bool isTerminal(const OperationState& state) {
     return std::holds_alternative<OperationSucceeded>(state) ||
            std::holds_alternative<OperationFailed>(state) ||
            std::holds_alternative<OperationCanceled>(state);
-}
-
-void removeSubscription(
-    const std::shared_ptr<FenceSubscriptionState>& subscription) {
-    const auto coordinator = subscription->coordinator;
-    const std::scoped_lock lock{coordinator->mutex};
-    std::erase_if(coordinator->subscriptions, [&](const auto& candidate) {
-        const auto current = candidate.lock();
-        return !current || current == subscription;
-    });
-}
-
-void cancelSubscription(
-    const std::shared_ptr<FenceSubscriptionState>& subscription) noexcept {
-    if (!subscription) {
-        return;
-    }
-    {
-        const std::scoped_lock lock{subscription->mutex};
-        if (subscription->phase == DeliveryPhase::Pending ||
-            subscription->phase == DeliveryPhase::Claimed) {
-            subscription->phase = DeliveryPhase::Canceled;
-        }
-    }
-    removeSubscription(subscription);
 }
 
 void deliver(const std::shared_ptr<FenceSubscriptionState>& subscription) {
@@ -82,13 +28,20 @@ void deliver(const std::shared_ptr<FenceSubscriptionState>& subscription) {
             return;
         }
         subscription->phase = DeliveryPhase::Running;
+        subscription->callbackThread = std::this_thread::get_id();
         callback = std::move(subscription->callback);
     }
-    callback();
+    try {
+        callback();
+    } catch (...) {
+        // Callback failures do not change operation completion.
+    }
     {
         const std::scoped_lock lock{subscription->mutex};
         subscription->phase = DeliveryPhase::Finished;
+        subscription->callbackThread = {};
     }
+    subscription->condition.notify_all();
     removeSubscription(subscription);
 }
 
@@ -120,52 +73,32 @@ std::vector<std::shared_ptr<FenceSubscriptionState>> claimTerminal(
 
 }  // namespace
 
-CompletionFence::CompletionFence(
-    std::shared_ptr<detail::CompletionFenceState> state)
-    : state_(std::move(state)) {}
-
-bool CompletionFence::active() const noexcept {
-    return state_ != nullptr;
-}
-
-FenceSubscription::FenceSubscription(
-    std::shared_ptr<FenceSubscriptionState> state)
-    : state_(std::move(state)) {}
-
-FenceSubscription::FenceSubscription(FenceSubscription&& other) noexcept
-    : state_(std::move(other.state_)) {}
-
-FenceSubscription& FenceSubscription::operator=(
-    FenceSubscription&& other) noexcept {
-    if (this != &other) {
-        cancel();
-        state_ = std::move(other.state_);
-    }
-    return *this;
-}
-
-FenceSubscription::~FenceSubscription() {
-    cancel();
-}
-
-void FenceSubscription::cancel() noexcept {
-    cancelSubscription(std::exchange(state_, {}));
-}
-
-bool FenceSubscription::active() const noexcept {
-    if (!state_) {
-        return false;
-    }
-    const std::scoped_lock lock{state_->mutex};
-    return state_->phase == DeliveryPhase::Pending ||
-           state_->phase == DeliveryPhase::Claimed ||
-           state_->phase == DeliveryPhase::Running;
-}
-
 OperationManager::OperationManager()
     : fenceCoordinator_(std::make_shared<FenceCoordinator>()) {}
 
-OperationManager::~OperationManager() = default;
+OperationManager::~OperationManager() {
+    std::vector<std::shared_ptr<FenceSubscriptionState>> subscriptions;
+    {
+        const std::scoped_lock lock{fenceCoordinator_->mutex};
+        fenceCoordinator_->shutdown = true;
+        for (const auto& candidate : fenceCoordinator_->subscriptions) {
+            if (const auto subscription = candidate.lock()) {
+                subscriptions.push_back(subscription);
+            }
+        }
+        fenceCoordinator_->subscriptions.clear();
+    }
+    for (const auto& subscription : subscriptions) {
+        {
+            const std::scoped_lock lock{subscription->mutex};
+            if (subscription->phase == DeliveryPhase::Pending ||
+                subscription->phase == DeliveryPhase::Claimed) {
+                subscription->phase = DeliveryPhase::Canceled;
+            }
+        }
+        subscription->condition.notify_all();
+    }
+}
 
 CompletionFence OperationManager::captureFence(const SessionId& sessionId) {
     std::vector<std::uint64_t> capturedIds;
