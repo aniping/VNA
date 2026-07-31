@@ -52,7 +52,7 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
 }
 
 .toolbar button:active, .menu-bar button:active, .softkey:active,
-.hardkey-column button:active, .entry-panel button:active { background: #168db7; }
+.hardkey-panel button:active { background: #168db7; }
 .toolbar-spacer, .menu-spacer { flex: 1; }
 .instrument-title { align-self: center; padding: 0 10px; font-size: 13px; color: #c8d1d4; }
 
