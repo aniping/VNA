@@ -3,9 +3,13 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   checkHealth,
   createChannel,
+  createMeasurement,
+  createTrace,
+  createWindow,
   fetchState,
   type StateSnapshot,
   type SweepSettings,
+  type TraceSetup,
 } from './api/vnaApi'
 import MainScreen from './components/MainScreen.vue'
 
@@ -44,6 +48,31 @@ async function handleCreateChannel(sweep: SweepSettings): Promise<void> {
   }
 }
 
+async function handleCreateTrace(setup: TraceSetup): Promise<void> {
+  const channel = state.value?.instrument.channels[0]
+  if (!state.value || !channel) return
+  commandBusy.value = true
+  try {
+    const measurement = await createMeasurement(
+      state.value.stateRevision,
+      channel.id,
+      setup.measurementType,
+    )
+    const windowResult = await createWindow(measurement.stateRevision)
+    await createTrace(
+      windowResult.stateRevision,
+      windowResult.value.windowId,
+      measurement.value.measurementId,
+      setup.format,
+    )
+    await refreshState()
+  } catch (error) {
+    serviceError.value = error instanceof Error ? error.message : 'Command failed'
+  } finally {
+    commandBusy.value = false
+  }
+}
+
 onMounted(() => {
   resizeInstrument()
   window.addEventListener('resize', resizeInstrument)
@@ -63,6 +92,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', resizeInstrument))
         :disabled="connection !== 'online'"
         :busy="commandBusy"
         @create-channel="handleCreateChannel"
+        @create-trace="handleCreateTrace"
       />
     </div>
   </main>

@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { StateSnapshot } from '../api/vnaApi'
-import type { SweepSettings } from '../api/vnaApi'
+import type { StateSnapshot, SweepSettings, TraceSetup as TraceSetupModel } from '../api/vnaApi'
 import ChannelSetup from './ChannelSetup.vue'
+import DiagramGrid from './DiagramGrid.vue'
+import TraceSetup from './TraceSetup.vue'
 
 const props = defineProps<{
   state: StateSnapshot | null
@@ -11,7 +12,10 @@ const props = defineProps<{
   disabled: boolean
   busy: boolean
 }>()
-const emit = defineEmits<{ createChannel: [sweep: SweepSettings] }>()
+const emit = defineEmits<{
+  createChannel: [sweep: SweepSettings]
+  createTrace: [setup: TraceSetupModel]
+}>()
 
 const toolbar = ['↶', '↷', 'Zoom', 'Max', '+ Trace', '+ Marker', 'Delete', 'Print', 'Save', 'Recall']
 const hardkeys = ['Meas', 'Format', 'Scale', 'Trace Config', 'Marker', 'Stimulus', 'Channel', 'Cal']
@@ -19,17 +23,7 @@ const softkeys = ['S-Parameters', 'Wave Quantities', 'Ratios', 'Receivers', 'Mor
 const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
 const channel = computed(() => props.state?.instrument.channels[0])
 const activeSofttool = ref<'measurement' | null>('measurement')
-const trace = computed(() => props.state?.instrument.traces[0])
-const windowState = computed(() => props.state?.instrument.windows[0])
-const measurement = computed(() => props.state?.instrument.measurements.find(
-  (item) => item.id === trace.value?.measurementId,
-))
-
-const traceName = computed(() => {
-  if (!trace.value) return 'No active trace'
-  return `${measurement.value?.type ?? 'Unknown'} · ${trace.value.format}`
-})
-
+const softtoolPage = ref<'measurement' | 'sParameters'>('measurement')
 const entityCounts = computed(() => {
   const instrument = props.state?.instrument
   if (!instrument) return 'Ch — · Meas — · Trc — · Win —'
@@ -37,12 +31,6 @@ const entityCounts = computed(() => {
     + ` · Trc ${instrument.traces.length} · Win ${instrument.windows.length}`
 })
 
-function frequency(value: number | undefined): string {
-  if (value === undefined) return '—'
-  if (value >= 1e9) return `${(value / 1e9).toFixed(3)} GHz`
-  if (value >= 1e6) return `${(value / 1e6).toFixed(3)} MHz`
-  return `${value} Hz`
-}
 </script>
 
 <template>
@@ -54,24 +42,7 @@ function frequency(value: number | undefined): string {
     </header>
 
     <div class="measurement-workspace" :class="{ 'softtool-visible': activeSofttool }">
-      <section class="diagram" aria-label="Cartesian measurement diagram">
-        <header class="trace-strip">
-          <span class="trace-index">{{ trace ? `Trc${trace.id}` : 'Trc —' }}</span>
-          <span class="trace-name">{{ traceName }}</span>
-        </header>
-        <div class="plot-area">
-          <span class="plot-reference">{{ windowState?.id ?? '—' }}</span>
-          <span class="plot-empty">No measurement data</span>
-        </div>
-        <footer class="channel-row">
-          <span>{{ channel ? `Ch${channel.id}` : 'No Ch' }}</span>
-          <span>Start {{ frequency(channel?.sweep.startFrequencyHz) }}</span>
-          <span>Stop {{ frequency(channel?.sweep.stopFrequencyHz) }}</span>
-          <span>Points {{ channel?.sweep.points ?? '—' }}</span>
-          <span>IFBW {{ frequency(channel?.sweep.ifBandwidthHz) }}</span>
-          <span>Power {{ channel ? `${channel.sweep.powerDbm} dBm` : '—' }}</span>
-        </footer>
-      </section>
+      <DiagramGrid :state="state" />
 
       <nav class="hardkey-panel" aria-label="Virtual hard keys">
         <h2>HARD KEY</h2>
@@ -81,7 +52,7 @@ function frequency(value: number | undefined): string {
           type="button"
           :class="{ active: item === 'Meas' && activeSofttool }"
           :disabled="item !== 'Meas'"
-          @click="activeSofttool = 'measurement'"
+          @click="activeSofttool = 'measurement'; softtoolPage = 'measurement'"
         >
           {{ item }}
         </button>
@@ -89,20 +60,33 @@ function frequency(value: number | undefined): string {
 
       <aside v-if="activeSofttool" class="softtool" aria-label="Softtool panel">
         <div class="softtool-tabs">
-          <button class="active" type="button">Meas</button>
+          <button class="active" type="button" @click="softtoolPage = 'measurement'">Meas</button>
           <button type="button">Favorites</button>
         </div>
-        <h2>Measurement</h2>
-        <template v-if="channel">
-          <button v-for="item in softkeys" :key="item" type="button" class="softkey">
+        <h2>{{ softtoolPage === 'measurement' ? 'Measurement' : 'S-Parameters' }}</h2>
+        <template v-if="channel && softtoolPage === 'measurement'">
+          <button
+            v-for="item in softkeys"
+            :key="item"
+            type="button"
+            class="softkey"
+            :disabled="item !== 'S-Parameters'"
+            @click="softtoolPage = 'sParameters'"
+          >
             <span>{{ item }}</span><span aria-hidden="true">›</span>
           </button>
         </template>
         <ChannelSetup
-          v-else
+          v-else-if="!channel"
           :disabled="disabled"
           :busy="busy"
           @create-channel="emit('createChannel', $event)"
+        />
+        <TraceSetup
+          v-else
+          :disabled="disabled"
+          :busy="busy"
+          @create-trace="emit('createTrace', $event)"
         />
         <div class="softtool-fill" />
         <button type="button" class="softkey close-key" @click="activeSofttool = null">Close</button>
