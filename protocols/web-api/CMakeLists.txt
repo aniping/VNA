@@ -1,6 +1,7 @@
 add_library(
     vna_web_api
     src/command_json_decoder.cpp
+    src/display_frame_json_codec.cpp
     src/json_codec.cpp
     src/web_asset_path.cpp
     src/web_api.cpp

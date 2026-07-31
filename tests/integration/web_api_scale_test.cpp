@@ -127,7 +127,6 @@ protected:
         postSucceeded("create-window", 2, "createWindow", Json::object());
         revision_ = 3;
     }
-
     std::uint64_t createTrace(const std::string& format) {
         const auto body = postSucceeded(
             "create-trace-" + std::to_string(revision_),
@@ -137,9 +136,10 @@ protected:
         ++revision_;
         return body.at("value").at("traceId").get<std::uint64_t>();
     }
-
     application::CommandBus commandBus_{application::InstrumentId{"instrument-1"}};
-    WebApi webApi_{commandBus_};
+    application::TraceDisplayFrameRepository repository_{1};
+    application::TraceDisplayFrameQuery query_{commandBus_, repository_};
+    WebApi webApi_{commandBus_, query_};
     int port_{-1};
     std::thread serverThread_;
     std::uint64_t revision_{0};

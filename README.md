@@ -87,6 +87,9 @@ ASCII 控制字节 `00..1F` 或 `7F`；非法 ID 返回 `400 invalidCommand`。
 Scale/Div，payload 为 `{"traceId": <id>, "scalePerDivision": <number>}`。
 `/api/v1/state` 会在每条 Trace 上返回 `scale`；Log Magnitude 包含完整 dB
 显示比例快照，尚未开放该能力的 Phase 与 Smith 返回 `null`。
+`GET /api/v1/traces/<traceId>/display-frame` 返回最新完整 Log Magnitude dB
+帧；尚无可用帧时返回空的 `204`。该接口用于单次扫频完成后读取一次，不作为
+连续曲线轮询通道。
 
 ## 前端开发
 

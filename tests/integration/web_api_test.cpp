@@ -69,10 +69,11 @@ protected:
         return client.Post(
             "/api/v1/commands", request.dump(), "application/json");
     }
-
     application::CommandBus commandBus_{
         application::InstrumentId{"instrument-1"}};
-    WebApi webApi_{commandBus_};
+    application::TraceDisplayFrameRepository repository_{1};
+    application::TraceDisplayFrameQuery query_{commandBus_, repository_};
+    WebApi webApi_{commandBus_, query_};
     int port_{-1};
     std::thread serverThread_;
 };

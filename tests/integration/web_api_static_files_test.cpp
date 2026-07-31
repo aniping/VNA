@@ -71,7 +71,7 @@ protected:
     }
 
     void startServer(const std::filesystem::path& root) {
-        webApi_ = std::make_unique<WebApi>(commandBus_, root);
+        webApi_ = std::make_unique<WebApi>(commandBus_, query_, root);
         port_ = webApi_->bindToAnyPort("127.0.0.1");
         ASSERT_GT(port_, 0);
         serverThread_ = std::thread([this] {
@@ -85,7 +85,7 @@ protected:
     }
 
     void expectInvalidRoot(const std::filesystem::path& root) {
-        EXPECT_THROW(WebApi(commandBus_, root), std::invalid_argument);
+        EXPECT_THROW(WebApi(commandBus_, query_, root), std::invalid_argument);
     }
 
     void expectNotFound(const httplib::Result& response) {
@@ -105,6 +105,8 @@ protected:
 
     application::CommandBus commandBus_{
         application::InstrumentId{"instrument-1"}};
+    application::TraceDisplayFrameRepository repository_{1};
+    application::TraceDisplayFrameQuery query_{commandBus_, repository_};
     std::filesystem::path directory_;
     std::filesystem::path webRoot_;
     std::unique_ptr<WebApi> webApi_;
