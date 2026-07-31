@@ -1,4 +1,8 @@
-add_library(vna_application src/command_bus.cpp)
+add_library(
+    vna_application
+    src/command_bus.cpp
+    src/operation_manager.cpp
+)
 add_library(vna::application ALIAS vna_application)
 
 target_compile_features(vna_application PUBLIC cxx_std_20)
