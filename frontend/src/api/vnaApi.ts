@@ -28,6 +28,14 @@ export interface TraceSnapshot {
   format: string
 }
 
+export type MeasurementType = 'S11' | 'S21'
+export type TraceFormat = 'logMagnitude' | 'phase' | 'smith'
+
+export interface TraceSetup {
+  measurementType: MeasurementType
+  format: TraceFormat
+}
+
 export interface StateSnapshot {
   stateRevision: number
   instrument: {
@@ -42,9 +50,10 @@ interface HealthResponse {
   status: string
 }
 
-interface CommandResult {
+interface CommandResult<T> {
   status: string
   stateRevision: number
+  value: T
 }
 
 async function readJson<T>(response: Response): Promise<T> {
@@ -68,7 +77,38 @@ export async function fetchState(): Promise<StateSnapshot> {
 export async function createChannel(
   stateRevision: number,
   sweep: SweepSettings,
-): Promise<CommandResult> {
+): Promise<CommandResult<{ channelId: number }>> {
+  return sendCommand(stateRevision, 'createChannel', sweep)
+}
+
+export async function createMeasurement(
+  stateRevision: number,
+  channelId: number,
+  type: MeasurementType,
+): Promise<CommandResult<{ measurementId: number }>> {
+  return sendCommand(stateRevision, 'createMeasurement', { channelId, type })
+}
+
+export async function createWindow(
+  stateRevision: number,
+): Promise<CommandResult<{ windowId: number }>> {
+  return sendCommand(stateRevision, 'createWindow', {})
+}
+
+export async function createTrace(
+  stateRevision: number,
+  windowId: number,
+  measurementId: number,
+  format: TraceFormat,
+): Promise<CommandResult<{ traceId: number }>> {
+  return sendCommand(stateRevision, 'createTrace', { windowId, measurementId, format })
+}
+
+async function sendCommand<T>(
+  stateRevision: number,
+  type: string,
+  payload: unknown,
+): Promise<CommandResult<T>> {
   const response = await fetch('/api/v1/commands', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -77,9 +117,9 @@ export async function createChannel(
       sessionId: 'browser-session',
       instrumentId: 'instrument-1',
       expectedStateRevision: stateRevision,
-      type: 'createChannel',
-      payload: sweep,
+      type,
+      payload,
     }),
   })
-  return readJson<CommandResult>(response)
+  return readJson<CommandResult<T>>(response)
 }
