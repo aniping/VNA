@@ -37,11 +37,15 @@ TEST(ExecutablePathContractTest, DoesNotDependOnWorkingDirectory) {
     const auto before = currentExecutablePath();
     const auto originalDirectory = std::filesystem::current_path();
     const auto temporary = std::filesystem::temp_directory_path();
+    const auto changedDirectory = temporary != originalDirectory
+        ? temporary
+        : before.parent_path();
+    ASSERT_NE(changedDirectory, originalDirectory);
 
     {
         // Release lookup must remain anchored to bin/vna-server even when a
         // launcher or user starts the process from an unrelated directory.
-        const ScopedCurrentPath changedDirectory{temporary};
+        const ScopedCurrentPath changedPath{changedDirectory};
         EXPECT_EQ(currentExecutablePath(), before);
     }
 
