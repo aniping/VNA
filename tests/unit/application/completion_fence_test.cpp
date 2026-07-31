@@ -124,5 +124,38 @@ TEST(CompletionFenceTest, PendingCancelPreventsCallback) {
     EXPECT_EQ(callbackCount, 0);
 }
 
+TEST(CompletionFenceTest, MovesHandlesAndRejectsInvalidFences) {
+    OperationManager manager;
+    static_cast<void>(createOperation(manager, "pending", "session-1"));
+    auto originalFence = manager.captureFence(SessionId{"session-1"});
+    auto movedFence = std::move(originalFence);
+    EXPECT_FALSE(originalFence.active());
+    EXPECT_TRUE(movedFence.active());
+    auto assignedFence = manager.captureFence(SessionId{"session-1"});
+    assignedFence = std::move(movedFence);
+    EXPECT_FALSE(movedFence.active());
+    EXPECT_TRUE(assignedFence.active());
+    OperationManager foreignManager;
+    EXPECT_THROW(foreignManager.subscribe(
+        std::move(assignedFence), [] {}), std::invalid_argument);
+
+    auto emptyCallbackFence = manager.captureFence(SessionId{"session-1"});
+    EXPECT_THROW(manager.subscribe(
+        std::move(emptyCallbackFence), {}), std::invalid_argument);
+    EXPECT_THROW(manager.subscribe(
+        std::move(emptyCallbackFence), [] {}), std::invalid_argument);
+
+    auto original = manager.subscribe(
+        manager.captureFence(SessionId{"session-1"}), [] {});
+    auto moved = std::move(original);
+    EXPECT_FALSE(original.active());
+    EXPECT_TRUE(moved.active());
+    auto assigned = manager.subscribe(
+        manager.captureFence(SessionId{"session-1"}), [] {});
+    assigned = std::move(moved);
+    EXPECT_FALSE(moved.active());
+    EXPECT_TRUE(assigned.active());
+}
+
 }  // namespace
 }  // namespace vna::application
