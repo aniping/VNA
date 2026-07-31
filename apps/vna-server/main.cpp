@@ -27,10 +27,7 @@ int main() {
         std::move(sweepSource),
         operationManager,
         frameRepository};
-    vna::application::SingleSweepCommandHandler sweepHandler{
-        [&sweepExecutor](vna::application::SingleSweepWorkItem work) {
-            return sweepExecutor.submit(std::move(work));
-        }};
+    vna::application::SingleSweepCommandHandler sweepHandler{sweepExecutor};
     vna::application::CommandBus commandBus{
         vna::application::InstrumentId{"instrument-1"}, sweepHandler};
     vna::application::TraceDisplayFrameQuery displayFrameQuery{

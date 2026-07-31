@@ -31,12 +31,10 @@ Value successValue(const CommandResult& result) {
     return std::get<Value>(std::get<CommandSuccess>(result.outcome).value);
 }
 
-class StartSingleSweepHarness {
+class StartSingleSweepHarness : private SingleSweepExecution {
 public:
     explicit StartSingleSweepHarness(std::size_t idempotencyCapacity = 1024)
-        : handler_([this](SingleSweepWorkItem work) {
-              return submitWork(std::move(work));
-          }),
+        : handler_(*this),
           bus_(InstrumentId{"instrument-1"}, handler_, idempotencyCapacity) {}
 
     CommandResult createChannel() {
@@ -88,7 +86,7 @@ public:
     }
 
 private:
-    SingleSweepSubmitResult submitWork(SingleSweepWorkItem work) {
+    SingleSweepSubmitResult submit(SingleSweepWorkItem work) override {
         submitted_.push_back(work);
         if (!rejections_.empty()) {
             const auto code = rejections_.front();
@@ -97,6 +95,8 @@ private:
         }
         return OperationId{71};
     }
+
+    void discardTrace(display_model::TraceId) noexcept override {}
 
     CommandEnvelope envelope(const char* commandId, CommandPayload payload) {
         return {

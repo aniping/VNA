@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <functional>
-#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -16,6 +15,35 @@ namespace {
 static_assert(!std::is_constructible_v<CommandBus, InstrumentId>);
 static_assert(std::is_constructible_v<
               CommandBus, InstrumentId, SingleSweepCommandHandler&>);
+static_assert(std::is_constructible_v<
+              SingleSweepCommandHandler, SingleSweepExecution&>);
+static_assert(noexcept(std::declval<SingleSweepCommandHandler&>().discard(
+    display_model::TraceId{1})));
+
+class RecordingExecution final : public SingleSweepExecution {
+public:
+    using Behavior = std::function<SingleSweepSubmitResult(
+        const SingleSweepWorkItem&,
+        std::size_t)>;
+
+    explicit RecordingExecution(Behavior behavior)
+        : behavior_(std::move(behavior)) {}
+
+    SingleSweepSubmitResult submit(SingleSweepWorkItem work) override {
+        submitted.push_back(std::move(work));
+        return behavior_(submitted.back(), submitted.size());
+    }
+
+    void discardTrace(display_model::TraceId traceId) noexcept override {
+        discarded = traceId;
+    }
+
+    std::vector<SingleSweepWorkItem> submitted;
+    display_model::TraceId discarded{0};
+
+private:
+    Behavior behavior_;
+};
 
 CapturedSingleSweep capturedSweep(
     domain::ChannelId channelId = domain::ChannelId{2},
@@ -48,19 +76,12 @@ CapturedSingleSweep capturedSweep(
     };
 }
 
-TEST(SingleSweepCommandHandlerTest, RejectsAnEmptySubmitPort) {
-    EXPECT_THROW(
-        static_cast<void>(SingleSweepCommandHandler{SingleSweepSubmit{}}),
-        std::invalid_argument);
-}
-
 TEST(SingleSweepCommandHandlerTest, AssignsCorrelationAndChannelSequences) {
-    std::vector<SingleSweepWorkItem> submitted;
     std::uint64_t nextOperationId = 41;
-    SingleSweepCommandHandler handler{[&](SingleSweepWorkItem work) {
-        submitted.push_back(work);
+    RecordingExecution execution{[&](const auto&, std::size_t) {
         return SingleSweepSubmitResult{OperationId{nextOperationId++}};
     }};
+    SingleSweepCommandHandler handler{execution};
 
     const auto first = handler.submit(capturedSweep());
     const auto second = handler.submit(capturedSweep(domain::ChannelId{2}, 8));
@@ -70,38 +91,42 @@ TEST(SingleSweepCommandHandlerTest, AssignsCorrelationAndChannelSequences) {
     EXPECT_EQ(std::get<OperationId>(first), OperationId{41});
     EXPECT_EQ(std::get<OperationId>(second), OperationId{42});
     EXPECT_EQ(std::get<OperationId>(otherChannel), OperationId{43});
-    ASSERT_EQ(submitted.size(), 3U);
-    EXPECT_EQ(submitted[0].frameContext.frameId, frames::FrameId{1});
-    EXPECT_EQ(submitted[1].frameContext.frameId, frames::FrameId{2});
-    EXPECT_EQ(submitted[2].frameContext.frameId, frames::FrameId{3});
-    EXPECT_EQ(submitted[0].frameContext.sweepId, frames::SweepId{1});
-    EXPECT_EQ(submitted[1].frequencyAxis.id, frames::FrequencyAxisId{2});
-    EXPECT_EQ(submitted[0].frameContext.sequenceNumber, 1U);
-    EXPECT_EQ(submitted[1].frameContext.sequenceNumber, 2U);
-    EXPECT_EQ(submitted[2].frameContext.sequenceNumber, 1U);
-    EXPECT_EQ(submitted[1].frameContext.stateRevision, 8U);
-    EXPECT_EQ(submitted[2].frameContext.channelId, domain::ChannelId{9});
-    EXPECT_EQ(submitted[0].frequencyAxis.startFrequencyHz, 1'000'000U);
-    EXPECT_EQ(submitted[0].frequencyAxis.stopFrequencyHz, 2'000'000U);
-    EXPECT_EQ(submitted[0].frequencyAxis.points, 5U);
-    EXPECT_EQ(submitted[0].measurement.id, domain::MeasurementId{3});
-    EXPECT_EQ(submitted[0].traceId, display_model::TraceId{4});
+    ASSERT_EQ(execution.submitted.size(), 3U);
+    EXPECT_EQ(execution.submitted[0].frameContext.frameId, frames::FrameId{1});
+    EXPECT_EQ(execution.submitted[1].frameContext.frameId, frames::FrameId{2});
+    EXPECT_EQ(execution.submitted[2].frameContext.frameId, frames::FrameId{3});
+    EXPECT_EQ(execution.submitted[0].frameContext.sweepId, frames::SweepId{1});
+    EXPECT_EQ(execution.submitted[1].frequencyAxis.id,
+              frames::FrequencyAxisId{2});
+    EXPECT_EQ(execution.submitted[0].frameContext.sequenceNumber, 1U);
+    EXPECT_EQ(execution.submitted[1].frameContext.sequenceNumber, 2U);
+    EXPECT_EQ(execution.submitted[2].frameContext.sequenceNumber, 1U);
+    EXPECT_EQ(execution.submitted[1].frameContext.stateRevision, 8U);
+    EXPECT_EQ(execution.submitted[2].frameContext.channelId,
+              domain::ChannelId{9});
+    EXPECT_EQ(execution.submitted[0].frequencyAxis.startFrequencyHz,
+              1'000'000U);
+    EXPECT_EQ(execution.submitted[0].frequencyAxis.stopFrequencyHz,
+              2'000'000U);
+    EXPECT_EQ(execution.submitted[0].frequencyAxis.points, 5U);
+    EXPECT_EQ(execution.submitted[0].measurement.id,
+              domain::MeasurementId{3});
+    EXPECT_EQ(execution.submitted[0].traceId, display_model::TraceId{4});
 }
 
 TEST(SingleSweepCommandHandlerTest, RejectionsDoNotConsumeCandidates) {
-    std::vector<SingleSweepWorkItem> submitted;
-    SingleSweepCommandHandler handler{[&](SingleSweepWorkItem work) {
-        submitted.push_back(work);
-        if (submitted.size() == 1U) {
+    RecordingExecution execution{[](const auto&, std::size_t attempt) {
+        if (attempt == 1U) {
             return SingleSweepSubmitResult{SingleSweepSubmitError{
                 .code = SingleSweepSubmitErrorCode::QueueFull}};
         }
-        if (submitted.size() == 2U) {
+        if (attempt == 2U) {
             return SingleSweepSubmitResult{SingleSweepSubmitError{
                 .code = SingleSweepSubmitErrorCode::Stopped}};
         }
         return SingleSweepSubmitResult{OperationId{51}};
     }};
+    SingleSweepCommandHandler handler{execution};
 
     const auto full = handler.submit(capturedSweep());
     const auto stopped = handler.submit(capturedSweep());
@@ -112,13 +137,25 @@ TEST(SingleSweepCommandHandlerTest, RejectionsDoNotConsumeCandidates) {
     EXPECT_EQ(std::get<SingleSweepSubmitError>(stopped).code,
               SingleSweepSubmitErrorCode::Stopped);
     EXPECT_EQ(std::get<OperationId>(accepted), OperationId{51});
-    ASSERT_EQ(submitted.size(), 3U);
-    EXPECT_EQ(submitted[0].frameContext.frameId, frames::FrameId{1});
-    EXPECT_EQ(submitted[1].frameContext.frameId, frames::FrameId{1});
-    EXPECT_EQ(submitted[2].frameContext.frameId, frames::FrameId{1});
-    EXPECT_EQ(submitted[2].frameContext.sweepId, frames::SweepId{1});
-    EXPECT_EQ(submitted[2].frequencyAxis.id, frames::FrequencyAxisId{1});
-    EXPECT_EQ(submitted[2].frameContext.sequenceNumber, 1U);
+    ASSERT_EQ(execution.submitted.size(), 3U);
+    EXPECT_EQ(execution.submitted[0].frameContext.frameId, frames::FrameId{1});
+    EXPECT_EQ(execution.submitted[1].frameContext.frameId, frames::FrameId{1});
+    EXPECT_EQ(execution.submitted[2].frameContext.frameId, frames::FrameId{1});
+    EXPECT_EQ(execution.submitted[2].frameContext.sweepId, frames::SweepId{1});
+    EXPECT_EQ(execution.submitted[2].frequencyAxis.id,
+              frames::FrequencyAxisId{1});
+    EXPECT_EQ(execution.submitted[2].frameContext.sequenceNumber, 1U);
+}
+
+TEST(SingleSweepCommandHandlerTest, DelegatesRetirementToExecutionOwner) {
+    RecordingExecution execution{[](const auto&, std::size_t) {
+        return SingleSweepSubmitResult{OperationId{1}};
+    }};
+    SingleSweepCommandHandler handler{execution};
+
+    handler.discard(display_model::TraceId{7});
+
+    EXPECT_EQ(execution.discarded, display_model::TraceId{7});
 }
 
 }  // namespace

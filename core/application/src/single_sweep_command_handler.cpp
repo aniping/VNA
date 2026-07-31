@@ -1,16 +1,12 @@
 #include <vna/application/single_sweep_command_handler.hpp>
 
-#include <stdexcept>
 #include <utility>
 
 namespace vna::application {
 
-SingleSweepCommandHandler::SingleSweepCommandHandler(SingleSweepSubmit submit)
-    : submit_(std::move(submit)) {
-    if (!submit_) {
-        throw std::invalid_argument{"single sweep submit port must not be empty"};
-    }
-}
+SingleSweepCommandHandler::SingleSweepCommandHandler(
+    SingleSweepExecution& execution) noexcept
+    : execution_(execution) {}
 
 SingleSweepCommandResult SingleSweepCommandHandler::submit(
     CapturedSingleSweep capture) {
@@ -36,7 +32,7 @@ SingleSweepCommandResult SingleSweepCommandHandler::submit(
         .measurement = capture.measurement,
         .traceId = capture.trace.id,
     };
-    auto submitted = submit_(std::move(work));
+    auto submitted = execution_.submit(std::move(work));
     if (const auto* accepted = std::get_if<OperationId>(&submitted)) {
         ++nextFrameId_;
         ++nextSweepId_;
@@ -45,6 +41,11 @@ SingleSweepCommandResult SingleSweepCommandHandler::submit(
         return *accepted;
     }
     return std::get<SingleSweepSubmitError>(submitted);
+}
+
+void SingleSweepCommandHandler::discard(
+    display_model::TraceId traceId) noexcept {
+    execution_.discardTrace(traceId);
 }
 
 }  // namespace vna::application

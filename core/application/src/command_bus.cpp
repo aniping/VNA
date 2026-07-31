@@ -6,6 +6,8 @@
 #include <exception>
 #include <type_traits>
 
+#include <vna/application/single_sweep_command_handler.hpp>
+
 namespace vna::application {
 
 CommandErrorCode commandErrorCode(const CommandError& error) noexcept {
@@ -183,6 +185,7 @@ CommandResult CommandBus::execute(const RemoveTraceCommand& command) {
     if (!trace.hasValue()) {
         return displayError(trace.error());
     }
+    singleSweepHandler_.discard(command.traceId);
     return succeeded(CommandValue{std::monostate{}});
 }
 

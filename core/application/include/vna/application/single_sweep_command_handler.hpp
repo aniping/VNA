@@ -1,7 +1,6 @@
 #pragma once
 
 #include <cstdint>
-#include <functional>
 #include <mutex>
 #include <unordered_map>
 #include <variant>
@@ -9,9 +8,6 @@
 #include <vna/application/single_sweep_executor.hpp>
 
 namespace vna::application {
-
-using SingleSweepSubmit =
-    std::function<SingleSweepSubmitResult(SingleSweepWorkItem)>;
 
 // CommandBus supplies one immutable state capture. The handler exclusively
 // assigns acquisition correlation, so rejected admission cannot create gaps.
@@ -29,16 +25,22 @@ using SingleSweepCommandResult =
 
 class SingleSweepCommandHandler {
 public:
-    // submit must remain callable for this handler's lifetime. It is invoked
-    // under the handler lock, must return promptly, and must not re-enter it.
-    explicit SingleSweepCommandHandler(SingleSweepSubmit submit);
+    // The execution owner must outlive this handler. Admission and retirement
+    // are both quick, non-reentrant calls made under application transaction
+    // locks; retirement is noexcept and never delivers completion callbacks.
+    explicit SingleSweepCommandHandler(
+        SingleSweepExecution& execution) noexcept;
 
     // Thread-safe. Only an accepted executor result commits ID candidates.
     [[nodiscard]] SingleSweepCommandResult submit(CapturedSingleSweep capture);
 
+    // Trace deletion is already committed before this cleanup begins. Adapter
+    // failure is contained so stale frame cleanup can never restore the Trace.
+    void discard(display_model::TraceId traceId) noexcept;
+
 private:
     std::mutex mutex_;
-    SingleSweepSubmit submit_;
+    SingleSweepExecution& execution_;
     std::uint64_t nextFrameId_{1};
     std::uint64_t nextSweepId_{1};
     std::uint64_t nextFrequencyAxisId_{1};
