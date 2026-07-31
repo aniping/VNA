@@ -22,6 +22,18 @@ target_link_libraries(
 gtest_discover_tests(vna_application_tests)
 
 add_executable(
+    vna_platform_contract_tests
+    contract/platform/state_directory_contract_test.cpp
+)
+target_link_libraries(
+    vna_platform_contract_tests
+    PRIVATE
+        vna::platform
+        GTest::gtest_main
+)
+gtest_discover_tests(vna_platform_contract_tests)
+
+add_executable(
     vna_httplib_compatibility_tests
     integration/httplib_compatibility_test.cpp
 )
