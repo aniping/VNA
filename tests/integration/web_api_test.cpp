@@ -125,16 +125,14 @@ TEST_F(WebApiTest, CreatesChannelThroughUnifiedCommandEndpoint) {
     EXPECT_EQ(commandBus_.snapshot().instrument.channels.size(), 1U);
 }
 
-TEST_F(WebApiTest, CreatesMeasurementWindowAndTraceThroughHttp) {
+TEST_F(WebApiTest, CreatesAndUpdatesTraceThroughHttp) {
     ASSERT_EQ(postCommand(createChannelRequest())->status, 200);
 
     const auto measurement = postCommand(commandRequest(
         "command-2", 1, "createMeasurement", {{"channelId", 1}, {"type", "S11"}}));
     ASSERT_TRUE(measurement);
     ASSERT_EQ(measurement->status, 200);
-    EXPECT_EQ(
-        nlohmann::json::parse(measurement->body)["value"]["measurementId"],
-        1);
+    EXPECT_EQ(nlohmann::json::parse(measurement->body)["value"]["measurementId"], 1);
 
     const auto window = postCommand(commandRequest(
         "command-3", 2, "createWindow", nlohmann::json::object()));
@@ -143,19 +141,38 @@ TEST_F(WebApiTest, CreatesMeasurementWindowAndTraceThroughHttp) {
     EXPECT_EQ(nlohmann::json::parse(window->body)["value"]["windowId"], 1);
 
     const auto trace = postCommand(commandRequest(
-        "command-4",
-        3,
-        "createTrace",
+        "command-4", 3, "createTrace",
         {{"windowId", 1}, {"measurementId", 1}, {"format", "logMagnitude"}}));
     ASSERT_TRUE(trace);
     ASSERT_EQ(trace->status, 200);
     EXPECT_EQ(nlohmann::json::parse(trace->body)["value"]["traceId"], 1);
 
+    const auto updated = postCommand(commandRequest(
+        "command-5",
+        4,
+        "updateTraceFormat",
+        {{"traceId", 1}, {"format", "phase"}}));
+    ASSERT_TRUE(updated);
+    EXPECT_EQ(updated->status, httplib::StatusCode::OK_200);
+    EXPECT_EQ(nlohmann::json::parse(updated->body)["stateRevision"], 5);
+    const auto invalid = postCommand(commandRequest(
+        "command-6", 5, "updateTraceFormat", {{"traceId", 1}, {"format", "polar"}}));
+    ASSERT_TRUE(invalid);
+    EXPECT_EQ(invalid->status, httplib::StatusCode::BadRequest_400);
+    EXPECT_EQ(nlohmann::json::parse(invalid->body)["error"], "invalidCommand");
+    const auto missing = postCommand(commandRequest(
+        "command-7", 5, "updateTraceFormat", {{"traceId", 99}, {"format", "smith"}}));
+    ASSERT_TRUE(missing);
+    EXPECT_EQ(missing->status, httplib::StatusCode::UnprocessableContent_422);
+    EXPECT_EQ(nlohmann::json::parse(missing->body)["status"], "validationError");
+    EXPECT_EQ(nlohmann::json::parse(missing->body)["stateRevision"], 5);
+
     const auto snapshot = commandBus_.snapshot();
-    EXPECT_EQ(snapshot.stateRevision, 4U);
+    EXPECT_EQ(snapshot.stateRevision, 5U);
     EXPECT_EQ(snapshot.instrument.measurements.size(), 1U);
     EXPECT_EQ(snapshot.instrument.windows.size(), 1U);
     EXPECT_EQ(snapshot.instrument.traces.size(), 1U);
+    EXPECT_EQ(snapshot.instrument.traces[0].format, domain::TraceFormat::Phase);
 }
 
 TEST_F(WebApiTest, MapsStaleRevisionToConflict) {

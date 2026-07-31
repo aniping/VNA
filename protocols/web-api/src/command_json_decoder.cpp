@@ -87,6 +87,11 @@ application::CommandPayload commandPayloadFromJson(
                 payload.at("measurementId").get<std::uint64_t>()},
             traceFormatFromJson(payload)};
     }
+    if (type == "updateTraceFormat") {
+        return application::UpdateTraceFormatCommand{
+            domain::TraceId{payload.at("traceId").get<std::uint64_t>()},
+            traceFormatFromJson(payload)};
+    }
     throw std::invalid_argument{"unsupported command type"};
 }
 
