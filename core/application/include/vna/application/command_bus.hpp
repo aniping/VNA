@@ -63,6 +63,11 @@ struct UpdateTraceFormatCommand {
     display_model::TraceFormat format;
 };
 
+struct UpdateTraceScalePerDivisionCommand {
+    display_model::TraceId traceId;
+    double scalePerDivision;
+};
+
 struct RemoveTraceCommand {
     display_model::TraceId traceId;
 };
@@ -74,6 +79,7 @@ using CommandPayload = std::variant<
     CreateWindowCommand,
     CreateTraceCommand,
     UpdateTraceFormatCommand,
+    UpdateTraceScalePerDivisionCommand,
     RemoveTraceCommand>;
 
 using CommandValue = std::variant<
@@ -150,6 +156,8 @@ private:
     [[nodiscard]] CommandResult execute(const CreateTraceCommand& command);
     [[nodiscard]] CommandResult execute(
         const UpdateTraceFormatCommand& command);
+    [[nodiscard]] CommandResult execute(
+        const UpdateTraceScalePerDivisionCommand& command);
     [[nodiscard]] CommandResult execute(const RemoveTraceCommand& command);
     [[nodiscard]] CommandResult succeeded(CommandValue value);
     [[nodiscard]] CommandResult domainError(domain::DomainError error) const;

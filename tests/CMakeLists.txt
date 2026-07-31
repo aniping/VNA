@@ -28,6 +28,7 @@ add_executable(
     unit/application/completion_fence_test.cpp
     unit/application/operation_manager_test.cpp
     unit/application/trace_command_test.cpp
+    unit/application/trace_scale_command_test.cpp
 )
 target_link_libraries(
     vna_application_tests

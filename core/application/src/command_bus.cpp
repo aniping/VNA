@@ -104,6 +104,17 @@ CommandResult CommandBus::execute(const UpdateTraceFormatCommand& command) {
     return succeeded(CommandValue{trace.value()});
 }
 
+CommandResult CommandBus::execute(
+    const UpdateTraceScalePerDivisionCommand& command) {
+    const auto trace = displayWorkspace_.updateTraceScalePerDivision(
+        command.traceId,
+        command.scalePerDivision);
+    if (!trace.hasValue()) {
+        return displayError(trace.error());
+    }
+    return succeeded(CommandValue{trace.value()});
+}
+
 CommandResult CommandBus::execute(const RemoveTraceCommand& command) {
     const auto trace = displayWorkspace_.removeTrace(command.traceId);
     if (!trace.hasValue()) {
