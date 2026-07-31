@@ -84,6 +84,12 @@ bool samePayload(
     return left.traceId == right.traceId;
 }
 
+bool samePayload(
+    const StartSingleSweepCommand& left,
+    const StartSingleSweepCommand& right) noexcept {
+    return left.channelId == right.channelId;
+}
+
 bool sameSignature(
     const CommandEnvelope& left,
     const CommandEnvelope& right) noexcept {

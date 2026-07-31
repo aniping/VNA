@@ -4,6 +4,7 @@
 #include "command_idempotency_internal.hpp"
 
 #include <exception>
+#include <type_traits>
 
 namespace vna::application {
 namespace {
@@ -17,8 +18,9 @@ bool isCacheable(const CommandResult& result) noexcept {
         std::holds_alternative<display_model::DisplayError>(error)) {
         return true;
     }
-    return std::get<ApplicationError>(error).code ==
-        ApplicationErrorCode::StateRevisionConflict;
+    const auto code = std::get<ApplicationError>(error).code;
+    return code == ApplicationErrorCode::StateRevisionConflict ||
+        code == ApplicationErrorCode::UnsupportedSweepConfiguration;
 }
 
 }  // namespace
@@ -62,6 +64,8 @@ CommandErrorCode commandErrorCode(const ApplicationError& error) noexcept {
             return CommandErrorCode::ResourceBusy;
         case ApplicationErrorCode::StateRevisionConflict:
             return CommandErrorCode::StateRevisionConflict;
+        case ApplicationErrorCode::UnsupportedSweepConfiguration:
+            return CommandErrorCode::UnsupportedSweepConfiguration;
         case ApplicationErrorCode::WrongInstrument:
             return CommandErrorCode::WrongInstrument;
     }
@@ -107,7 +111,15 @@ CommandResult CommandBus::dispatch(const CommandEnvelope& command) {
     }
 
     const auto result = std::visit(
-        [this](const auto& payload) { return execute(payload); },
+        [this, &command](const auto& payload) {
+            if constexpr (std::is_same_v<
+                              std::decay_t<decltype(payload)>,
+                              StartSingleSweepCommand>) {
+                return execute(payload, command);
+            } else {
+                return execute(payload);
+            }
+        },
         command.payload);
     if (isCacheable(result)) {
         idempotency_->remember(command, result);

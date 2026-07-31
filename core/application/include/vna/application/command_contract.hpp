@@ -7,6 +7,7 @@
 #include <utility>
 #include <variant>
 
+#include <vna/application/operation_id.hpp>
 #include <vna/display_model/display_workspace.hpp>
 #include <vna/domain/instrument.hpp>
 
@@ -83,6 +84,10 @@ struct RemoveTraceCommand {
     display_model::TraceId traceId;
 };
 
+struct StartSingleSweepCommand {
+    domain::ChannelId channelId;
+};
+
 using CommandPayload = std::variant<
     CreateChannelCommand,
     UpdateChannelSweepCommand,
@@ -91,14 +96,16 @@ using CommandPayload = std::variant<
     CreateTraceCommand,
     UpdateTraceFormatCommand,
     UpdateTraceScalePerDivisionCommand,
-    RemoveTraceCommand>;
+    RemoveTraceCommand,
+    StartSingleSweepCommand>;
 
 using CommandValue = std::variant<
     std::monostate,
     domain::ChannelId,
     domain::MeasurementId,
     display_model::WindowId,
-    display_model::TraceId>;
+    display_model::TraceId,
+    OperationId>;
 
 enum class CommandOrigin {
     Web,
