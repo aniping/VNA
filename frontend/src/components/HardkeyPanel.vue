@@ -1,66 +1,13 @@
 <script setup lang="ts">
-defineProps<{ activeKey: string | null; hasChannel: boolean }>()
-const emit = defineEmits<{ select: [key: string] }>()
+import { hardkeyGroups, type HardkeyName } from './hardkeyModel'
 
-interface HardkeyGroup {
-  title: string
-  keys: Array<{
-    label: string
-    enabled?: boolean
-    requiresChannel?: boolean
-    accent?: 'help' | 'preset'
-  }>
-}
-
-const groups: HardkeyGroup[] = [
-  {
-    title: 'Trace',
-    keys: [
-      { label: 'Meas', enabled: true },
-      { label: 'Format' },
-      { label: 'Scale' },
-      { label: 'Trace Config' },
-      { label: 'Line' },
-      { label: 'Marker' },
-    ],
-  },
-  {
-    title: 'Stimulus',
-    keys: [
-      { label: 'Start', enabled: true, requiresChannel: true },
-      { label: 'Stop', enabled: true, requiresChannel: true },
-      { label: 'Center', enabled: true, requiresChannel: true },
-      { label: 'Span', enabled: true, requiresChannel: true },
-    ],
-  },
-  {
-    title: 'Channel',
-    keys: [
-      { label: 'Power / Bw / Avg' },
-      { label: 'Sweep' },
-      { label: 'Cal' },
-      { label: 'Channel Config' },
-      { label: 'Mode' },
-      { label: 'Offset / Embed' },
-    ],
-  },
-  {
-    title: 'System',
-    keys: [
-      { label: 'File / Print' },
-      { label: 'Setup' },
-      { label: 'Tools' },
-      { label: 'Display' },
-      { label: 'Help', accent: 'help' },
-      { label: 'Preset', accent: 'preset' },
-    ],
-  },
-]
+defineProps<{ activeKey: HardkeyName | null; hasChannel: boolean }>()
+const emit = defineEmits<{ select: [key: HardkeyName] }>()
 </script>
 
 <template>
   <nav class="hardkey-panel" aria-label="Virtual hard keys">
-    <section v-for="group in groups" :key="group.title" class="hardkey-group">
+    <section v-for="group in hardkeyGroups" :key="group.title" class="hardkey-group">
       <h2>{{ group.title }}</h2>
       <div class="hardkey-grid">
         <button

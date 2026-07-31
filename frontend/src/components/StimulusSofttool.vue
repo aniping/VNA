@@ -1,8 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { ChannelSnapshot, SweepSettings } from '../api/vnaApi'
-
-type StimulusKey = 'Start' | 'Stop' | 'Center' | 'Span'
+import type { StimulusKey } from './hardkeyModel'
 
 const props = defineProps<{
   channel: ChannelSnapshot

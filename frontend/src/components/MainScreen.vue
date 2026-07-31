@@ -5,8 +5,7 @@ import DiagramGrid from './DiagramGrid.vue'
 import HardkeyPanel from './HardkeyPanel.vue'
 import MeasurementSofttool from './MeasurementSofttool.vue'
 import StimulusSofttool from './StimulusSofttool.vue'
-
-type StimulusKey = 'Start' | 'Stop' | 'Center' | 'Span'
+import { isStimulusKey, type HardkeyName, type StimulusKey } from './hardkeyModel'
 
 const props = defineProps<{
   state: StateSnapshot | null
@@ -38,14 +37,14 @@ const entityCounts = computed(() => {
     + ` · Trc ${instrument.traces.length} · Win ${instrument.windows.length}`
 })
 
-function selectHardkey(key: string): void {
+function selectHardkey(key: HardkeyName): void {
   if (key === 'Meas') {
     activeSofttool.value = activeSofttool.value === 'measurement' ? null : 'measurement'
     return
   }
-  if (!['Start', 'Stop', 'Center', 'Span'].includes(key)) return
+  if (!isStimulusKey(key)) return
   if (!channel.value) return
-  stimulusKey.value = key as StimulusKey
+  stimulusKey.value = key
   activeSofttool.value = 'stimulus'
 }
 
