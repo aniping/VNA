@@ -100,10 +100,16 @@ using CommandValue = std::variant<
     display_model::WindowId,
     display_model::TraceId>;
 
+enum class CommandOrigin {
+    Web,
+    Scpi,
+};
+
 struct CommandEnvelope {
     CommandId commandId;
     SessionId sessionId;
     InstrumentId instrumentId;
+    CommandOrigin origin;
     std::optional<std::uint64_t> expectedStateRevision;
     CommandPayload payload;
 };

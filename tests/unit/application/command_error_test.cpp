@@ -25,6 +25,7 @@ CommandEnvelope traceCommand(std::string commandId, CommandPayload payload) {
         .commandId = CommandId{std::move(commandId)},
         .sessionId = SessionId{"session-1"},
         .instrumentId = InstrumentId{"instrument-1"},
+        .origin = CommandOrigin::Web,
         .expectedStateRevision = 0,
         .payload = std::move(payload),
     };
@@ -56,6 +57,7 @@ TEST(CommandErrorTest, PreservesInvalidSweepDomainError) {
         .commandId = CommandId{"invalid-sweep"},
         .sessionId = SessionId{"session-1"},
         .instrumentId = InstrumentId{"instrument-1"},
+        .origin = CommandOrigin::Web,
         .expectedStateRevision = 0,
         .payload = CreateChannelCommand{domain::SweepSettings{
             .startFrequencyHz = 2'000'000'000,

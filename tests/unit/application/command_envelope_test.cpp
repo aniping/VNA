@@ -19,6 +19,7 @@ TEST(CommandEnvelopeTest, ContainsOnlyEffectiveCommandContext) {
         .commandId = CommandId{"command-1"},
         .sessionId = SessionId{"session-1"},
         .instrumentId = InstrumentId{"instrument-1"},
+        .origin = CommandOrigin::Web,
         .expectedStateRevision = 7,
         .payload = CreateWindowCommand{},
     };
@@ -26,6 +27,7 @@ TEST(CommandEnvelopeTest, ContainsOnlyEffectiveCommandContext) {
     EXPECT_EQ(command.commandId.value(), "command-1");
     EXPECT_EQ(command.sessionId.value(), "session-1");
     EXPECT_EQ(command.instrumentId.value(), "instrument-1");
+    EXPECT_EQ(command.origin, CommandOrigin::Web);
     EXPECT_EQ(command.expectedStateRevision, 7U);
     EXPECT_TRUE(std::holds_alternative<CreateWindowCommand>(command.payload));
 }

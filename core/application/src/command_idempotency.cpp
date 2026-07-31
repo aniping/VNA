@@ -87,7 +87,8 @@ bool samePayload(
 bool sameSignature(
     const CommandEnvelope& left,
     const CommandEnvelope& right) noexcept {
-    if (left.expectedStateRevision != right.expectedStateRevision) {
+    if (left.origin != right.origin ||
+        left.expectedStateRevision != right.expectedStateRevision) {
         return false;
     }
     return std::visit(

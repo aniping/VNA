@@ -40,6 +40,7 @@ CommandEnvelope makeCommand(
         .commandId = CommandId{std::move(commandId)},
         .sessionId = SessionId{"session-1"},
         .instrumentId = std::move(instrumentId),
+        .origin = CommandOrigin::Web,
         .expectedStateRevision = revision,
         .payload = std::move(payload),
     };

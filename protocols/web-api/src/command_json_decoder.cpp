@@ -112,6 +112,7 @@ application::CommandEnvelope commandFromJson(const Json& request) {
             request.at("sessionId").get<std::string>()},
         .instrumentId = application::InstrumentId{
             request.at("instrumentId").get<std::string>()},
+        .origin = application::CommandOrigin::Web,
         .expectedStateRevision = expectedRevision(request),
         .payload = commandPayloadFromJson(type, payload),
     };

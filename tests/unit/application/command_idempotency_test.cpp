@@ -14,11 +14,13 @@ CommandEnvelope command(
     std::string commandId,
     std::optional<std::uint64_t> revision,
     CommandPayload payload,
-    std::string sessionId = "session-1") {
+    std::string sessionId = "session-1",
+    CommandOrigin origin = CommandOrigin::Web) {
     return {
         .commandId = CommandId{std::move(commandId)},
         .sessionId = SessionId{std::move(sessionId)},
         .instrumentId = InstrumentId{"instrument-1"},
+        .origin = origin,
         .expectedStateRevision = revision,
         .payload = std::move(payload),
     };
@@ -27,12 +29,14 @@ CommandEnvelope command(
 CommandEnvelope windowCommand(
     std::string commandId,
     std::optional<std::uint64_t> revision = 0,
-    std::string sessionId = "session-1") {
+    std::string sessionId = "session-1",
+    CommandOrigin origin = CommandOrigin::Web) {
     return command(
         std::move(commandId),
         revision,
         CreateWindowCommand{},
-        std::move(sessionId));
+        std::move(sessionId),
+        origin);
 }
 
 const CommandSuccess* success(const CommandResult& result) {
@@ -88,6 +92,31 @@ TEST(CommandIdempotencyTest, RejectsReuseWithoutReplacingFirstResult) {
     ASSERT_NE(success(replay), nullptr);
     EXPECT_EQ(replay.stateRevision, first.stateRevision);
     EXPECT_EQ(commandBus.snapshot().display.windows.size(), 1U);
+}
+
+TEST(CommandIdempotencyTest, RejectsSameCommandKeyWhenOriginChanges) {
+    CommandBus commandBus{InstrumentId{"instrument-1"}};
+    const auto webCommand = windowCommand("command-1");
+    const auto first = commandBus.dispatch(webCommand);
+    ASSERT_NE(
+        success(commandBus.dispatch(windowCommand("advance", 1))),
+        nullptr);
+
+    const auto reused = commandBus.dispatch(windowCommand(
+        "command-1", 0, "session-1", CommandOrigin::Scpi));
+
+    ASSERT_NE(applicationError(reused), nullptr);
+    EXPECT_EQ(
+        applicationError(reused)->code,
+        ApplicationErrorCode::CommandIdReuse);
+    EXPECT_EQ(reused.stateRevision, 2U);
+    EXPECT_EQ(commandBus.stats().idempotencyEntries, 2U);
+    EXPECT_EQ(commandBus.stats().idempotencyEvictions, 0U);
+    const auto replay = commandBus.dispatch(webCommand);
+    ASSERT_NE(success(replay), nullptr);
+    EXPECT_EQ(replay.stateRevision, first.stateRevision);
+    EXPECT_EQ(success(replay)->value, success(first)->value);
+    EXPECT_EQ(commandBus.snapshot().display.windows.size(), 2U);
 }
 
 TEST(CommandIdempotencyTest, EvictsOldestWithoutRefreshingReplay) {
