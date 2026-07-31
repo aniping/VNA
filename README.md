@@ -96,6 +96,10 @@ S 参数区创建 Trace。采样后端接通前只显示坐标网格，不绘制
 Center 时保持当前 Span，修改 Span 时保持当前 Center，并通过 revision 冲突检查
 提交完整扫频设置。
 
+`Power / Bw / Avg` 当前提供 Power 与 IF Bandwidth 设置，`Sweep` 提供 Points
+设置；尚未进入领域模型的 Averaging 不显示伪造状态。这些设置与 Stimulus 共用
+同一个 Channel 更新命令。
+
 执行前端类型检查和生产构建：
 
 ```powershell
