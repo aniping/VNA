@@ -29,6 +29,7 @@ export interface HardkeyItem {
   enabled?: boolean
   requiresChannel?: boolean
   requiresTrace?: boolean
+  requiresScale?: boolean
   accent?: 'help' | 'preset'
 }
 
@@ -43,7 +44,7 @@ export const hardkeyGroups: HardkeyGroup[] = [
     keys: [
       { label: 'Meas', enabled: true },
       { label: 'Format', enabled: true, requiresTrace: true },
-      { label: 'Scale' },
+      { label: 'Scale', enabled: true, requiresScale: true },
       { label: 'Trace Config' },
       { label: 'Line' },
       { label: 'Marker' },

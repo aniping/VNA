@@ -12,6 +12,7 @@ import FormatSofttool from './FormatSofttool.vue'
 import HardkeyPanel from './HardkeyPanel.vue'
 import InstrumentToolbar from './InstrumentToolbar.vue'
 import MeasurementSofttool from './MeasurementSofttool.vue'
+import ScaleSofttool from './ScaleSofttool.vue'
 import StimulusSofttool from './StimulusSofttool.vue'
 import {
   isChannelKey,
@@ -33,6 +34,7 @@ const emit = defineEmits<{
   createTrace: [setup: TraceSetupModel]
   updateSweep: [channelId: number, sweep: SweepSettings]
   updateTraceFormat: [traceId: number, format: TraceFormat]
+  updateTraceScalePerDivision: [traceId: number, value: number]
 }>()
 
 const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
@@ -44,12 +46,17 @@ const activeTrace = computed(() => {
 })
 const isDiagramMaximized = ref(false)
 const canMaximizeDiagram = computed(() => Boolean(activeTrace.value))
-const activeSofttool = ref<'measurement' | 'format' | 'stimulus' | 'channel' | null>('measurement')
+// Nullable scale is the display-model capability seam; format must not re-derive support.
+const activeScale = computed(() => activeTrace.value?.scale ?? null)
+const activeSofttool = ref<'measurement' | 'format' | 'scale' | 'stimulus' | 'channel' | null>(
+  'measurement',
+)
 const stimulusKey = ref<StimulusKey>('Start')
 const channelKey = ref<ChannelKey>('Power / Bw / Avg')
 const activeKey = computed(() => {
   if (activeSofttool.value === 'measurement') return 'Meas'
   if (activeSofttool.value === 'format') return 'Format'
+  if (activeSofttool.value === 'scale') return 'Scale'
   if (activeSofttool.value === 'stimulus') return stimulusKey.value
   if (activeSofttool.value === 'channel') return channelKey.value
   return null
@@ -66,6 +73,11 @@ watch(activeTrace, (trace) => {
   if (!trace) isDiagramMaximized.value = false
 }, { immediate: true })
 
+watch(activeScale, (scale) => {
+  // Authority can remove Scale support after a Trace change, so no stale tool may remain open.
+  if (!scale && activeSofttool.value === 'scale') activeSofttool.value = null
+})
+
 function toggleDiagramMaximized(): void {
   if (!canMaximizeDiagram.value) return
   isDiagramMaximized.value = !isDiagramMaximized.value
@@ -78,6 +90,10 @@ function selectHardkey(key: HardkeyName): void {
   }
   if (key === 'Format' && activeTrace.value) {
     activeSofttool.value = activeSofttool.value === 'format' ? null : 'format'
+    return
+  }
+  if (key === 'Scale' && activeScale.value) {
+    activeSofttool.value = activeSofttool.value === 'scale' ? null : 'scale'
     return
   }
   if (isStimulusKey(key) && channel.value) {
@@ -96,6 +112,10 @@ function forwardSweepUpdate(channelId: number, sweep: SweepSettings): void {
 
 function forwardTraceFormatUpdate(traceId: number, format: TraceFormat): void {
   emit('updateTraceFormat', traceId, format)
+}
+
+function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
+  emit('updateTraceScalePerDivision', traceId, value)
 }
 </script>
 
@@ -131,6 +151,14 @@ function forwardTraceFormatUpdate(traceId: number, format: TraceFormat): void {
         :busy="busy"
         @update-format="forwardTraceFormatUpdate"
       />
+      <ScaleSofttool
+        v-else-if="activeSofttool === 'scale' && activeTrace && activeScale"
+        :trace-id="activeTrace.id"
+        :scale="activeScale"
+        :disabled="disabled"
+        :busy="busy"
+        @update-scale-per-division="forwardScalePerDivisionUpdate"
+      />
       <StimulusSofttool
         v-else-if="activeSofttool === 'stimulus' && channel"
         :channel="channel"
@@ -152,6 +180,7 @@ function forwardTraceFormatUpdate(traceId: number, format: TraceFormat): void {
         :active-key="activeKey"
         :has-channel="Boolean(channel)"
         :has-trace="Boolean(activeTrace)"
+        :has-scale="Boolean(activeScale)"
         @select="selectHardkey"
       />
     </div>

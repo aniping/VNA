@@ -9,6 +9,7 @@ import {
   fetchState,
   updateChannelSweep,
   updateTraceFormat,
+  updateTraceScalePerDivision,
   type StateSnapshot,
   type SweepSettings,
   type TraceFormat,
@@ -102,6 +103,20 @@ async function handleUpdateTraceFormat(traceId: number, format: TraceFormat): Pr
   }
 }
 
+async function handleUpdateTraceScalePerDivision(traceId: number, value: number): Promise<void> {
+  // Block before the first await so back-to-back submits cannot reuse one expected revision.
+  if (!state.value || commandBusy.value) return
+  commandBusy.value = true
+  try {
+    await updateTraceScalePerDivision(state.value.stateRevision, traceId, value)
+    await refreshState()
+  } catch (error) {
+    serviceError.value = error instanceof Error ? error.message : 'Command failed'
+  } finally {
+    commandBusy.value = false
+  }
+}
+
 onMounted(() => {
   resizeInstrument()
   window.addEventListener('resize', resizeInstrument)
@@ -124,6 +139,7 @@ onBeforeUnmount(() => window.removeEventListener('resize', resizeInstrument))
         @create-trace="handleCreateTrace"
         @update-sweep="handleUpdateSweep"
         @update-trace-format="handleUpdateTraceFormat"
+        @update-trace-scale-per-division="handleUpdateTraceScalePerDivision"
       />
     </div>
   </main>

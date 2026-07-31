@@ -20,6 +20,17 @@ const traceLabel = computed(() => {
   if (!props.trace) return 'No active trace'
   return formatName(props.trace.format)
 })
+const scaleTop = computed(() => scaleBoundary('top'))
+const scaleBottom = computed(() => scaleBoundary('bottom'))
+
+function scaleBoundary(edge: 'top' | 'bottom'): string {
+  // Smith labels describe circle geometry; only Cartesian labels consume display-model Scale.
+  if (props.kind === 'smith') return edge === 'top' ? '1' : '0'
+  const scale = props.trace?.scale
+  if (!scale) return '—'
+  const value = edge === 'top' ? scale.maximum : scale.minimum
+  return `${value} ${scale.unit}`
+}
 
 function formatName(format: string): string {
   const names: Record<string, string> = {
@@ -70,8 +81,12 @@ function selectTrace(): void {
         <span class="smith-arc arc-top" />
         <span class="smith-arc arc-bottom" />
       </div>
-      <span class="scale-top">{{ kind === 'smith' ? '1' : '10 dB' }}</span>
-      <span class="scale-bottom">{{ kind === 'smith' ? '0' : '-90 dB' }}</span>
+      <span class="scale-top" :title="kind !== 'smith' && !trace?.scale ? 'Scale unavailable' : undefined">
+        {{ scaleTop }}
+      </span>
+      <span class="scale-bottom" :title="kind !== 'smith' && !trace?.scale ? 'Scale unavailable' : undefined">
+        {{ scaleBottom }}
+      </span>
       <span class="plot-empty">No measurement data</span>
     </div>
 

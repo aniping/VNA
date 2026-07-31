@@ -118,6 +118,11 @@ Center 时保持当前 Span，修改 Span 时保持当前 Center，并通过 rev
 设置；尚未进入领域模型的 Averaging 不显示伪造状态。这些设置与 Stimulus 共用
 同一个 Channel 更新命令。
 
+活动 Trace 的 `scale` 快照非空时，`Scale` Hard Key 会打开 Scale Values
+Softtool。当前仅 Scale/Div 可编辑：输入有限且大于零的数值后按 Enter 提交，
+失焦或按 Escape 只恢复服务快照，不发送命令。其余 Scale 控件保持禁用；笛卡尔
+Diagram 的上下界只显示服务返回的 maximum/minimum，Scale 不可用时显示 `—`。
+
 执行前端类型检查和生产构建：
 
 ```powershell

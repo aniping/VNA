@@ -21,11 +21,21 @@ export interface WindowSnapshot {
   id: number
 }
 
+export interface CartesianScaleSnapshot {
+  scalePerDivision: number
+  referenceValue: number
+  referencePosition: number
+  minimum: number
+  maximum: number
+  unit: 'dB'
+}
+
 export interface TraceSnapshot {
   id: number
   windowId: number
   measurementId: number
   format: string
+  scale: CartesianScaleSnapshot | null
 }
 
 export type MeasurementType = 'S11' | 'S21'
@@ -118,6 +128,17 @@ export async function updateTraceFormat(
   format: TraceFormat,
 ): Promise<CommandResult<{ traceId: number }>> {
   return sendCommand(stateRevision, 'updateTraceFormat', { traceId, format })
+}
+
+export async function updateTraceScalePerDivision(
+  stateRevision: number,
+  traceId: number,
+  value: number,
+): Promise<CommandResult<{ traceId: number }>> {
+  return sendCommand(stateRevision, 'updateTraceScalePerDivision', {
+    traceId,
+    scalePerDivision: value,
+  })
 }
 
 async function sendCommand<T>(
