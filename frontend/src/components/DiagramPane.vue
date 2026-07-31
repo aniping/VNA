@@ -5,6 +5,8 @@ import type {
   MeasurementSnapshot,
   TraceSnapshot,
 } from '../api/vnaApi'
+import type { TraceDisplayFrame } from '../api/traceDisplayFrameApi'
+import LogMagnitudeCurve from './LogMagnitudeCurve.vue'
 
 const props = defineProps<{
   paneNumber: number
@@ -12,6 +14,7 @@ const props = defineProps<{
   channel?: ChannelSnapshot
   measurement?: MeasurementSnapshot
   trace?: TraceSnapshot
+  frame?: TraceDisplayFrame
   active: boolean
 }>()
 const emit = defineEmits<{ select: [traceId: number] }>()
@@ -22,6 +25,17 @@ const traceLabel = computed(() => {
 })
 const scaleTop = computed(() => scaleBoundary('top'))
 const scaleBottom = computed(() => scaleBoundary('bottom'))
+const curve = computed(() => {
+  const frame = props.frame
+  const trace = props.trace
+  const scale = trace?.scale
+  // Identity and presentation checks prevent a parent from painting a stale Trace into this pane.
+  if (props.kind !== 'cartesian' || !frame || !trace || !scale) return null
+  if (frame.traceId !== trace.id || frame.format !== trace.format || frame.valueUnit !== scale.unit) {
+    return null
+  }
+  return { frame, scale }
+})
 
 function scaleBoundary(edge: 'top' | 'bottom'): string {
   // Smith labels describe circle geometry; only Cartesian labels consume display-model Scale.
@@ -87,7 +101,8 @@ function selectTrace(): void {
       <span class="scale-bottom" :title="kind !== 'smith' && !trace?.scale ? 'Scale unavailable' : undefined">
         {{ scaleBottom }}
       </span>
-      <span class="plot-empty">No measurement data</span>
+      <LogMagnitudeCurve v-if="curve" :frame="curve.frame" :scale="curve.scale" />
+      <span v-else class="plot-empty">No measurement data</span>
     </div>
 
     <footer class="channel-row">
