@@ -55,6 +55,7 @@ gtest_discover_tests(vna_platform_contract_tests)
 
 add_executable(
     vna_logging_tests
+    integration/logging/json_lines_logger_concurrency_test.cpp
     integration/logging/json_lines_logger_test.cpp
     integration/logging/json_lines_logger_overload_test.cpp
     integration/logging/json_lines_logger_rotation_boundary_test.cpp
