@@ -156,6 +156,7 @@ add_executable(
     integration/web_api_error_test.cpp
     integration/web_api_idempotency_test.cpp
     integration/web_api_scale_test.cpp
+    integration/web_api_single_sweep_test.cpp
     integration/web_api_static_files_test.cpp
     integration/web_api_text_id_test.cpp
     integration/web_api_test.cpp
@@ -164,6 +165,7 @@ target_link_libraries(
     vna_web_api_tests
     PRIVATE
         vna::web_api
+        vna::simulation
         httplib::httplib
         nlohmann_json::nlohmann_json
         GTest::gtest_main

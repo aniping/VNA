@@ -99,6 +99,11 @@ application::CommandPayload commandPayloadFromJson(
                 payload.at("traceId").get<std::uint64_t>()},
             payload.at("scalePerDivision").get<double>()};
     }
+    if (type == "startSingleSweep") {
+        return application::StartSingleSweepCommand{
+            domain::ChannelId{
+                payload.at("channelId").get<std::uint64_t>()}};
+    }
     throw std::invalid_argument{"unsupported command type"};
 }
 

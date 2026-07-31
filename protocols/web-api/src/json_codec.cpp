@@ -150,6 +150,11 @@ CommandOutcomeInfo commandOutcomeInfo(
             return {"conflict", 409, "resource-busy"};
         case application::CommandErrorCode::StateRevisionConflict:
             return {"conflict", 409, "state-revision-conflict"};
+        case application::CommandErrorCode::UnsupportedSweepConfiguration:
+            return {
+                "validationError",
+                422,
+                "unsupported-sweep-configuration"};
         case application::CommandErrorCode::WrongInstrument:
             return {"wrongInstrument", 404, "wrong-instrument"};
     }
@@ -170,6 +175,10 @@ void encodeCommandValue(Json& body, const application::CommandValue& value) {
     }
     if (const auto* traceId = std::get_if<display_model::TraceId>(&value)) {
         body["value"] = {{"traceId", traceId->value()}};
+    }
+    if (const auto* operationId =
+            std::get_if<application::OperationId>(&value)) {
+        body["value"] = {{"operationId", operationId->value()}};
     }
 }
 
