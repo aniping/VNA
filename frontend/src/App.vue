@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import {
-  createChannel,
-  createMeasurement,
-  createTrace,
-  createWindow,
   fetchState,
   updateChannelSweep,
   updateTraceFormat,
@@ -12,7 +8,6 @@ import {
   type StateSnapshot,
   type SweepSettings,
   type TraceFormat,
-  type TraceSetup,
 } from './api/vnaApi'
 import {
   replaceLatestDisplayFrame,
@@ -42,46 +37,6 @@ async function refreshState(): Promise<void> {
   const snapshot = await fetchState()
   frames.value = retainDisplayableFrames(frames.value, snapshot.instrument.traces)
   state.value = snapshot
-}
-
-async function handleCreateChannel(sweep: SweepSettings): Promise<void> {
-  if (!state.value) return
-  commandBusy.value = true
-  try {
-    await createChannel(state.value.stateRevision, sweep)
-    await refreshState()
-    serviceError.value = ''
-  } catch (error) {
-    serviceError.value = error instanceof Error ? error.message : 'Command failed'
-  } finally {
-    commandBusy.value = false
-  }
-}
-
-async function handleCreateTrace(setup: TraceSetup): Promise<void> {
-  const channel = state.value?.instrument.channels[0]
-  if (!state.value || !channel) return
-  commandBusy.value = true
-  try {
-    const measurement = await createMeasurement(
-      state.value.stateRevision,
-      channel.id,
-      setup.measurementType,
-    )
-    const windowResult = await createWindow(measurement.stateRevision)
-    await createTrace(
-      windowResult.stateRevision,
-      windowResult.value.windowId,
-      measurement.value.measurementId,
-      setup.format,
-    )
-    await refreshState()
-    serviceError.value = ''
-  } catch (error) {
-    serviceError.value = error instanceof Error ? error.message : 'Command failed'
-  } finally {
-    commandBusy.value = false
-  }
 }
 
 async function handleUpdateSweep(channelId: number, sweep: SweepSettings): Promise<void> {
@@ -181,8 +136,6 @@ onBeforeUnmount(() => {
         :display-error="displayError"
         :busy="commandBusy"
         :frames="frames"
-        @create-channel="handleCreateChannel"
-        @create-trace="handleCreateTrace"
         @update-sweep="handleUpdateSweep"
         @update-trace-format="handleUpdateTraceFormat"
         @update-trace-scale-per-division="handleUpdateTraceScalePerDivision"

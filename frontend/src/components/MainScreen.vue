@@ -5,7 +5,6 @@ import type {
   StateSnapshot,
   SweepSettings,
   TraceFormat,
-  TraceSetup as TraceSetupModel,
 } from '../api/vnaApi'
 import type { TraceDisplayFrame } from '../api/traceDisplayFrameApi'
 import ChannelSofttool from './ChannelSofttool.vue'
@@ -34,8 +33,6 @@ const props = defineProps<{
   frames: ReadonlyMap<number, TraceDisplayFrame>
 }>()
 const emit = defineEmits<{
-  createChannel: [sweep: SweepSettings]
-  createTrace: [setup: TraceSetupModel]
   updateSweep: [channelId: number, sweep: SweepSettings]
   updateTraceFormat: [traceId: number, format: TraceFormat]
   updateTraceScalePerDivision: [traceId: number, value: number]
@@ -48,6 +45,8 @@ const activeTrace = computed(() => {
   const traces = props.state?.instrument.traces ?? []
   return traces.find((trace) => trace.id === activeTraceId.value) ?? traces[0]
 })
+const activeMeasurement = computed(() => props.state?.instrument.measurements
+  .find((measurement) => measurement.id === activeTrace.value?.measurementId))
 const isDiagramMaximized = ref(false)
 const canMaximizeDiagram = computed(() => Boolean(activeTrace.value))
 const workspace = computed(() => selectWorkspacePresentation({
@@ -169,11 +168,7 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
 
       <MeasurementSofttool
         v-if="activeSofttool === 'measurement'"
-        :has-channel="Boolean(channel)"
-        :disabled="workspace.controlsDisabled"
-        :busy="busy"
-        @create-channel="emit('createChannel', $event)"
-        @create-trace="emit('createTrace', $event)"
+        :measurement-type="activeMeasurement?.type"
       />
       <FormatSofttool
         v-else-if="activeSofttool === 'format' && activeTrace"

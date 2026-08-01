@@ -3,7 +3,7 @@
 面向商用级矢量网络分析仪（VNA）的绿地软件项目。项目从统一业务内核出发，同时支持本地与远程访问、真实硬件与仿真后端，以及可按需启用的诊断能力。
 
 当前已完成第一阶段的领域骨架、统一命令入口、最小仪表服务，以及连接真实
-服务状态的 ZNA 单窗口前端。
+服务状态的 ZNB 单屏前端。
 
 ## 文档
 
@@ -11,7 +11,7 @@
 - [领域语言](CONTEXT.md)
 - [第一阶段实施范围](docs/phase-1.md)
 - [平台支持矩阵](docs/support-matrix.md)
-- [ZNA26 界面复刻基线](docs/ui-zna26-reference.md)
+- [ZNB 单屏界面复刻基线](docs/ui-zna26-reference.md)
 - [架构决策记录](docs/adr/)
 
 ## 当前基线
@@ -161,10 +161,11 @@ pnpm run dev
 
 当前单窗口界面只渲染服务快照中真实存在的 Window：一个 Window 对应一个主图，
 多个 Window 也不会补齐不存在的空白 Diagram。Softtool 默认关闭，点击 `Meas`
-可打开或重新关闭 Measurement Softtool；已有 Channel 时可在 S 参数区创建 Trace。
+可打开或重新关闭 Measurement Softtool。Meas 只呈现活动 Trace 的 S 参数测量量；
+修改测量量的命令契约尚未开放，因此相关入口保持禁用，不创建本地 Trace 或 Window。
 默认 S21 Trace 的色块和曲线为绿色；活动 Trace 信息条、活动 Channel 和右上角
 真实 WindowId 使用蓝/青蓝色高亮，所有 Diagram 外框保持统一细深灰蓝（手册
-第 112、127–129、935–936 页）。尚无测量帧时 Diagram 显示空态；后台连续采集
+第 112、127–129、935–936 页，ZNA v41 补充）。尚无测量帧时 Diagram 显示空态；后台连续采集
 会自动更新显示帧，Toolbar 的
 `Restart Sweep` 在当前发布版中暂不可用并按禁用处理。
 Phase/Smith 当前暂无首版显示帧，页面保留网格并显示 `NO DISPLAY DATA`，Format

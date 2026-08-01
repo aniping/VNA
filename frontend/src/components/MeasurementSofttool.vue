@@ -1,25 +1,18 @@
 <script setup lang="ts">
-import type { SweepSettings, TraceSetup as TraceSetupModel } from '../api/vnaApi'
-import ChannelSetup from './ChannelSetup.vue'
-import TraceSetup from './TraceSetup.vue'
+import { computed } from 'vue'
+import type { MeasurementType } from '../api/vnaApi'
+import {
+  logicalPorts,
+  measurementCategories,
+  physicalPorts,
+  portPairForMeasurement,
+  sParameters,
+} from './measurementSofttoolModel'
 
-defineProps<{ hasChannel: boolean; disabled: boolean; busy: boolean }>()
-const emit = defineEmits<{
-  createChannel: [sweep: SweepSettings]
-  createTrace: [setup: TraceSetupModel]
-}>()
-
-const categories = [
-  'S-Params',
-  'Wave',
-  'Ratio / Harmonics',
-  'Noise Figure',
-  'Intermodulation',
-  'Gain Compression',
-  'Power Sensor',
-  'Spectrum',
-  'DC Meas',
-]
+const props = defineProps<{ measurementType: MeasurementType | undefined }>()
+// Snapshot identity is the only selected-state authority. Until the command contract exists,
+// this component deliberately has no emits and native disabled controls prevent local success.
+const portPair = computed(() => portPairForMeasurement(props.measurementType))
 </script>
 
 <template>
@@ -28,41 +21,42 @@ const categories = [
       <strong>Measurement Menu</strong>
       <span>S-Parameters</span>
     </header>
-    <div class="softtool-tabs">
-      <button type="button">⚙&nbsp; Measurement Setup <span>›</span></button>
-      <button class="active" type="button">S-Params</button>
-    </div>
     <div class="softtool-body">
-      <section class="setup-column">
-        <ChannelSetup
-          v-if="!hasChannel"
-          :disabled="disabled"
-          :busy="busy"
-          @create-channel="emit('createChannel', $event)"
-        />
-        <template v-else>
-          <h2>Measurement</h2>
-          <button class="measurement-selector" type="button">
-            <span>S-Parameters</span><span>▼</span>
+      <section class="parameter-column" aria-label="S-Parameter selection">
+        <div class="selector-row">
+          <button type="button" aria-label="Measurement family S" disabled>S</button>
+          <button type="button" aria-label="Active logical port pair" disabled>
+            {{ portPair }}
           </button>
-          <TraceSetup
-            :disabled="disabled"
-            :busy="busy"
-            @create-trace="emit('createTrace', $event)"
-          />
-        </template>
-        <div class="topology">
-          <h2>Topology</h2>
-          <div><span>Port 1</span><b>····</b><span>Port 2</span></div>
         </div>
+        <div class="parameter-grid">
+          <button
+            v-for="parameter in sParameters"
+            :key="parameter"
+            type="button"
+            :class="{ active: measurementType === parameter }"
+            :aria-pressed="measurementType === parameter"
+            disabled
+          >
+            {{ parameter }}
+          </button>
+        </div>
+        <button class="full-width" type="button" disabled>All S-Params</button>
+        <button class="full-width" type="button" disabled>S-Param Wizard <span>›</span></button>
+        <h2>Balanced Ports</h2>
+        <button class="topology" type="button" aria-label="Balanced Ports topology" disabled>
+          <span v-for="port in physicalPorts" :key="port">{{ port }}</span>
+          <b aria-hidden="true">••••</b>
+          <span v-for="port in logicalPorts" :key="port">{{ port }}</span>
+        </button>
       </section>
       <nav class="category-column" aria-label="Measurement categories">
         <button
-          v-for="category in categories"
+          v-for="category in measurementCategories"
           :key="category"
           type="button"
           :class="{ active: category === 'S-Params' }"
-          :disabled="category !== 'S-Params'"
+          disabled
         >
           {{ category }}
         </button>
@@ -75,18 +69,20 @@ const categories = [
 .measurement-softtool { min-width: 0; overflow: hidden; background: #10181c; border-left: 2px solid #05090b; }
 .softtool-title { display: grid; height: 42px; padding: 5px 8px; background: #25333a; font-size: 11px; }
 .softtool-title span { justify-self: end; color: #f0f4f5; }
-.softtool-tabs { display: grid; grid-template-columns: 165px 1fr; height: 43px; border-bottom: 2px solid #0a0f12; }
-.softtool-tabs button { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; border: 1px solid #11191d; background: #51636c; font-size: 11px; text-align: left; }
-.softtool-tabs button.active { border-right: 3px solid #258ed3; background: #374951; }
-.softtool-body { display: grid; grid-template-columns: 165px 1fr; height: calc(100% - 85px); }
-.setup-column { min-width: 0; padding: 3px; overflow: hidden; background: #1c282e; }
-.setup-column h2 { margin: 2px 0; padding: 4px 3px; font-size: 11px; font-weight: 600; }
-.measurement-selector { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 35px; padding: 0 7px; border: 1px solid #172126; background: #53656e; font-size: 11px; }
+.softtool-body { display: grid; grid-template-columns: 165px 1fr; height: calc(100% - 42px); }
+.parameter-column { min-width: 0; padding: 3px; overflow: hidden; background: #1c282e; }
+.selector-row { display: grid; grid-template-columns: 1fr 54px; gap: 3px; }
+.selector-row button { height: 35px; }
+.parameter-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 3px; margin-top: 3px; }
+.parameter-grid button { height: 39px; text-align: left; }
+.parameter-grid button.active { border-left: 4px solid #258fd5; background: #647882; }
+button { padding: 3px 7px; border: 1px solid #11191d; background: #53656e; color: #f0f3f4; font-size: 11px; }
+button:disabled { color: #b5c0c4; background: #3e4b51; opacity: 1; cursor: default; }
+.full-width { display: flex; align-items: center; justify-content: space-between; width: 100%; height: 39px; margin-top: 3px; text-align: left; }
+h2 { margin: 3px 0 1px; font-size: 10px; font-weight: 600; }
+.topology { display: grid; grid-template-columns: 1fr 1fr; width: 100%; height: 51px; color: #dfe6e8; }
+.topology b { grid-column: 1 / -1; color: #c8d4d8; letter-spacing: 6px; }
 .category-column { display: flex; flex-direction: column; gap: 2px; padding: 3px 2px; background: #11191d; }
-.category-column button { height: 50px; padding: 3px 5px; border: 1px solid #0b1114; background: #172126; font-size: 11px; line-height: 1.05; text-align: left; }
+.category-column button { min-height: 43px; text-align: left; }
 .category-column button.active { border-right: 3px solid #248fd5; background: #384a53; }
-.category-column button:disabled { color: #f0f3f4; opacity: 1; }
-.topology { margin-top: 8px; }
-.topology div { display: flex; align-items: center; justify-content: space-between; padding: 8px 6px; color: #dfe6e8; background: #5b6d75; font-size: 10px; }
-.topology b { color: #c8d4d8; letter-spacing: 1px; }
 </style>
