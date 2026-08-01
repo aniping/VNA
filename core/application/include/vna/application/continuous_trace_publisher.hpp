@@ -19,6 +19,7 @@ struct ContinuousTracePreset {
 enum class ContinuousTracePublisherState {
     Running,
     Stopped,
+    Retired,
     AcquisitionFailed,
 };
 
@@ -40,11 +41,12 @@ public:
         acquisition::ContinuousAcquisition& acquisition,
         ContinuousTracePreset preset,
         TraceDisplayFrameRepository& repository);
-    // The callback is a notification/error seam. It must return promptly and
-    // must not re-enter this publisher or permanently block worker destruction.
+    // The callback must return promptly and must not re-enter this publisher or
+    // CommandBus; the lifecycle gate intentionally spans the complete call.
     ContinuousTracePublisher(
         acquisition::ContinuousAcquisition& acquisition,
         ContinuousTracePreset preset,
+        TraceDisplayFrameRepository& repository,
         TraceDisplayPublisher publish);
     ~ContinuousTracePublisher();
     ContinuousTracePublisher(const ContinuousTracePublisher&) = delete;
@@ -56,6 +58,9 @@ public:
     // join blocks until acquisition reaches a natural terminal state.
     void stop() noexcept;
     void join();
+    // Retirement is trace-scoped and linearized with the final publish. It
+    // requests only this worker to stop and deliberately does not join it.
+    void retireTrace(display_model::TraceId traceId) noexcept;
     [[nodiscard]] ContinuousTracePublisherSnapshot snapshot() const;
 
 private:

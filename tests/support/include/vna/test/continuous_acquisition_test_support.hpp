@@ -52,7 +52,10 @@ public:
         const ContinuousAcquisitionPlan&,
         std::uint64_t sequence,
         std::stop_token token) const {
-        std::stop_callback notify{token, [&] { state_->changed.notify_all(); }};
+        std::stop_callback notify{token, [&] {
+            std::lock_guard lock{state_->mutex};
+            state_->changed.notify_all();
+        }};
         std::unique_lock lock{state_->mutex};
         state_->requestedSequence = sequence;
         state_->changed.notify_all();

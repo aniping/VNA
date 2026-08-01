@@ -106,7 +106,7 @@ TEST(ContinuousTracePublisherTest, PublishesKnownS21FrameAndCorrelation) {
         acquisition::test_support::validPlan(), source};
     TraceDisplayFrameRepository repository{1};
     PublishProbe probe{repository};
-    ContinuousTracePublisher publisher{acquisition, preset(), probe};
+    ContinuousTracePublisher publisher{acquisition, preset(), repository, probe};
     ASSERT_TRUE(source.waitForRequest(1));
     source.release(1);
     ASSERT_TRUE(probe.waitForCompletedCalls(1));
@@ -133,7 +133,7 @@ TEST(ContinuousTracePublisherTest, RejectsOneFrameThenRecovers) {
         acquisition::test_support::validPlan(), source};
     TraceDisplayFrameRepository repository{1};
     PublishProbe probe{repository};
-    ContinuousTracePublisher publisher{acquisition, preset(), probe};
+    ContinuousTracePublisher publisher{acquisition, preset(), repository, probe};
     ASSERT_TRUE(source.waitForRequest(1));
     source.release(1);
     ASSERT_TRUE(source.waitForRequest(2));
@@ -159,7 +159,7 @@ TEST(ContinuousTracePublisherTest, RecoversAfterPublishError) {
         acquisition::test_support::validPlan(), source};
     TraceDisplayFrameRepository repository{1};
     PublishProbe probe{repository, true};
-    ContinuousTracePublisher publisher{acquisition, preset(), probe};
+    ContinuousTracePublisher publisher{acquisition, preset(), repository, probe};
     ASSERT_TRUE(source.waitForRequest(1));
     source.release(1);
     ASSERT_TRUE(probe.waitForCompletedCalls(1));
@@ -181,7 +181,7 @@ TEST(ContinuousTracePublisherTest, PreservesLastGoodWhenAcquisitionFails) {
         acquisition::test_support::validPlan(), source};
     TraceDisplayFrameRepository repository{1};
     PublishProbe probe{repository};
-    ContinuousTracePublisher publisher{acquisition, preset(), probe};
+    ContinuousTracePublisher publisher{acquisition, preset(), repository, probe};
     ASSERT_TRUE(source.waitForRequest(1));
     source.release(1);
     ASSERT_TRUE(source.waitForRequest(2));
@@ -210,7 +210,7 @@ TEST(ContinuousTracePublisherTest, StopWakesOnlyPublisher) {
         acquisition::test_support::validPlan(), source};
     TraceDisplayFrameRepository repository{1};
     PublishProbe probe{repository};
-    ContinuousTracePublisher publisher{acquisition, preset(), probe};
+    ContinuousTracePublisher publisher{acquisition, preset(), repository, probe};
     const auto firstRequested = source.waitForRequest(1);
     source.release(1);
     const auto firstPublished = probe.waitForCompletedCalls(1);

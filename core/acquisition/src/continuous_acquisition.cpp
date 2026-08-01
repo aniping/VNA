@@ -78,12 +78,10 @@ public:
         worker_ = std::jthread{[this](std::stop_token token) { run(token); }};
     }
 
-    ~Impl() {
-        stop();
-    }
+    ~Impl() { stop(); }
     void stop() noexcept {
         worker_.request_stop();
-        changed_.notify_all();
+        notifyWaiters();
         if (worker_.joinable()) {
             worker_.join();
         }
@@ -102,7 +100,7 @@ public:
     RawFrameHandle waitForNext(
         std::uint64_t afterSequence,
         std::stop_token token) const {
-        std::stop_callback notify{token, [this] { changed_.notify_all(); }};
+        std::stop_callback notify{token, [this] { notifyWaiters(); }};
         std::unique_lock lock{mutex_};
         changed_.wait(lock, [&] {
             return token.stop_requested() ||
@@ -121,6 +119,11 @@ public:
         return snapshot_;
     }
 private:
+    void notifyWaiters() const {
+        // Sharing the predicate mutex prevents a cancellation notification loss.
+        std::lock_guard lock{mutex_};
+        changed_.notify_all();
+    }
     void run(std::stop_token token) noexcept {
         std::uint64_t nextSequence = 1;
         while (!token.stop_requested()) {

@@ -67,9 +67,10 @@ public:
     Impl(
         acquisition::ContinuousAcquisition& acquisition,
         ContinuousTracePreset preset,
+        TraceDisplayFrameRepository& repository,
         TraceDisplayPublisher publish)
         : acquisition_(acquisition), preset_(std::move(preset)),
-          publish_(std::move(publish)) {
+          repository_(repository), publish_(std::move(publish)) {
         validatePreset(preset_);
         if (!publish_) {
             throw std::invalid_argument{"continuous trace publisher is empty"};
@@ -91,6 +92,18 @@ public:
     ContinuousTracePublisherSnapshot snapshot() const {
         std::lock_guard lock{mutex_};
         return snapshot_;
+    }
+    void retireTrace(display_model::TraceId traceId) noexcept {
+        if (traceId != preset_.trace.id) {
+            return;
+        }
+        worker_.request_stop();
+        const std::lock_guard gate{publishGate_};
+        {
+            std::lock_guard lock{mutex_};
+            snapshot_.state = ContinuousTracePublisherState::Retired;
+        }
+        repository_.discard(traceId);
     }
 private:
     void run(std::stop_token token) noexcept {
@@ -124,8 +137,15 @@ private:
     void process(const acquisition::RawFrame& raw) noexcept {
         try {
             auto frame = buildDisplayFrame(raw, preset_);
-            if (!frame.has_value() ||
-                !publish_(std::move(frame.value())).hasValue()) {
+            if (!frame.has_value()) {
+                reject();
+                return;
+            }
+            const std::lock_guard gate{publishGate_};
+            if (isRetired()) {
+                return;
+            }
+            if (!publish_(std::move(frame.value())).hasValue()) {
                 reject();
                 return;
             }
@@ -145,16 +165,24 @@ private:
         std::lock_guard lock{mutex_};
         ++snapshot_.rejectedFrames;
     }
+    bool isRetired() const {
+        std::lock_guard lock{mutex_};
+        return snapshot_.state == ContinuousTracePublisherState::Retired;
+    }
     void finish(
         ContinuousTracePublisherState state,
         std::optional<acquisition::ContinuousAcquisitionFailure> failure = {}) {
         std::lock_guard lock{mutex_};
-        snapshot_.state = state;
-        snapshot_.acquisitionFailure = std::move(failure);
+        if (snapshot_.state != ContinuousTracePublisherState::Retired) {
+            snapshot_.state = state;
+            snapshot_.acquisitionFailure = std::move(failure);
+        }
     }
     acquisition::ContinuousAcquisition& acquisition_;
     const ContinuousTracePreset preset_;
+    TraceDisplayFrameRepository& repository_;
     const TraceDisplayPublisher publish_;
+    mutable std::mutex publishGate_;
     mutable std::mutex mutex_;
     ContinuousTracePublisherSnapshot snapshot_;
     std::jthread worker_;
@@ -167,18 +195,24 @@ ContinuousTracePublisher::ContinuousTracePublisher(
     : ContinuousTracePublisher(
           acquisition,
           std::move(preset),
+          repository,
           [&repository](TraceDisplayFrame frame) {
               return repository.publish(std::move(frame));
           }) {}
 ContinuousTracePublisher::ContinuousTracePublisher(
     acquisition::ContinuousAcquisition& acquisition,
     ContinuousTracePreset preset,
+    TraceDisplayFrameRepository& repository,
     TraceDisplayPublisher publish)
     : impl_(std::make_unique<Impl>(
-          acquisition, std::move(preset), std::move(publish))) {}
+          acquisition, std::move(preset), repository, std::move(publish))) {}
 ContinuousTracePublisher::~ContinuousTracePublisher() = default;
 void ContinuousTracePublisher::stop() noexcept { impl_->stop(); }
 void ContinuousTracePublisher::join() { impl_->join(); }
+void ContinuousTracePublisher::retireTrace(
+    display_model::TraceId traceId) noexcept {
+    impl_->retireTrace(traceId);
+}
 ContinuousTracePublisherSnapshot ContinuousTracePublisher::snapshot() const {
     return impl_->snapshot();
 }

@@ -160,5 +160,22 @@ TEST(ContinuousAcquisitionHardeningTest, SlowConsumerReceivesLatestFrame) {
     acquisition.stop();
 }
 
+TEST(ContinuousAcquisitionHardeningTest, StopWakesMinimumPeriodWait) {
+    ControlledSource source;
+    auto plan = validPlan();
+    plan.minimumSweepPeriod = std::chrono::hours{1};
+    ContinuousAcquisition acquisition{std::move(plan), source};
+    ASSERT_TRUE(source.waitForRequest(1));
+    source.release(1);
+    const auto first = acquisition.waitForNext(0);
+    ASSERT_NE(first, nullptr);
+
+    acquisition.stop();
+
+    const auto snapshot = acquisition.snapshot();
+    EXPECT_EQ(snapshot.state, ContinuousAcquisitionState::Stopped);
+    EXPECT_EQ(snapshot.lastPublishedSequence, 1U);
+}
+
 }  // namespace
 }  // namespace vna::acquisition
