@@ -20,11 +20,17 @@ enum class TraceDisplayUnit {
 struct CartesianTraceDisplaySamples {
     TraceDisplayUnit unit;
     std::vector<double> values;
+    friend bool operator==(
+        const CartesianTraceDisplaySamples&,
+        const CartesianTraceDisplaySamples&) = default;
 };
 
 struct ComplexTraceDisplaySamples {
     TraceDisplayUnit unit;
     std::vector<frames::ComplexSample> values;
+    friend bool operator==(
+        const ComplexTraceDisplaySamples&,
+        const ComplexTraceDisplaySamples&) = default;
 };
 
 using TraceDisplaySamples = std::variant<
@@ -45,6 +51,9 @@ struct TraceDisplayFrame {
     display_model::TraceFormat format;
     std::vector<double> frequenciesHz;
     TraceDisplaySamples samples;
+    friend bool operator==(
+        const TraceDisplayFrame&,
+        const TraceDisplayFrame&) = default;
 };
 
 }  // namespace vna::application

@@ -1,5 +1,7 @@
 #include <vna/application/trace_display_frame_repository.hpp>
 
+#include "trace_display_frame_validation_internal.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <optional>
@@ -14,6 +16,8 @@ bool isSupportedMeasurementType(domain::MeasurementType type) {
     switch (type) {
         case domain::MeasurementType::S11:
         case domain::MeasurementType::S21:
+        case domain::MeasurementType::S12:
+        case domain::MeasurementType::S22:
             return true;
     }
     return false;
@@ -139,6 +143,24 @@ std::optional<TraceDisplayFrameError> validateValues(
 
 }  // namespace
 
+namespace internal {
+
+std::optional<TraceDisplayFrameError> validateTraceDisplayFrame(
+    const TraceDisplayFrame& frame) {
+    if (const auto error = validateIdentity(frame)) {
+        return error;
+    }
+    if (const auto error = validatePresentation(frame)) {
+        return error;
+    }
+    if (const auto error = validateShape(frame)) {
+        return error;
+    }
+    return validateValues(frame);
+}
+
+}  // namespace internal
+
 TraceDisplayFrameResult::TraceDisplayFrameResult(
     TraceDisplayFrameHandle value)
     : value_(std::move(value)) {}
@@ -168,16 +190,7 @@ TraceDisplayFrameRepository::TraceDisplayFrameRepository(std::size_t capacity)
 
 TraceDisplayFrameResult TraceDisplayFrameRepository::publish(
     TraceDisplayFrame frame) {
-    if (const auto error = validateIdentity(frame)) {
-        return TraceDisplayFrameResult{*error};
-    }
-    if (const auto error = validatePresentation(frame)) {
-        return TraceDisplayFrameResult{*error};
-    }
-    if (const auto error = validateShape(frame)) {
-        return TraceDisplayFrameResult{*error};
-    }
-    if (const auto error = validateValues(frame)) {
+    if (const auto error = internal::validateTraceDisplayFrame(frame)) {
         return TraceDisplayFrameResult{*error};
     }
     TraceDisplayFrameHandle published;

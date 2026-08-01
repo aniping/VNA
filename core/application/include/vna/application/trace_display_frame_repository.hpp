@@ -5,11 +5,13 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stop_token>
 #include <unordered_map>
 #include <variant>
 
 #include <vna/application/trace_display_frame.hpp>
+#include <vna/application/trace_display_frame_set.hpp>
 
 namespace vna::application {
 
@@ -34,6 +36,33 @@ enum class TraceDisplayFrameErrorCode {
 struct TraceDisplayFrameError {
     TraceDisplayFrameErrorCode code;
 };
+
+enum class TraceDisplayFrameSetErrorCode {
+    EmptyFrameSet,
+    InvalidGeneration,
+    InvalidSequenceNumber,
+    StaleGeneration,
+    FutureGeneration,
+    FrameMetadataMismatch,
+    DuplicateTraceId,
+    InvalidFrame,
+    SequenceRegression,
+    SequenceConflict,
+    CapacityExceeded,
+    GenerationNotNext,
+};
+
+struct TraceDisplayFrameSetError {
+    TraceDisplayFrameSetErrorCode code;
+    std::optional<TraceDisplayFrameError> frameError;
+};
+
+using TraceDisplayFrameSetResult = std::variant<
+    TraceDisplayFrameSetHandle,
+    TraceDisplayFrameSetError>;
+using TraceDisplayGenerationResult = std::variant<
+    GenerationAdvanced,
+    TraceDisplayFrameSetError>;
 
 using TraceDisplayFrameHandle = std::shared_ptr<const TraceDisplayFrame>;
 
@@ -63,6 +92,11 @@ public:
     // Publish takes ownership by value. A successful call moves that value into
     // immutable shared storage so readers remain valid across later replacement.
     [[nodiscard]] TraceDisplayFrameResult publish(TraceDisplayFrame frame);
+    [[nodiscard]] TraceDisplayFrameSetResult publishFrameSet(
+        TraceDisplayFrameSet frameSet);
+    [[nodiscard]] TraceDisplayGenerationResult advanceGeneration(
+        std::uint64_t nextGeneration);
+    [[nodiscard]] TraceDisplayFrameSetHandle latestFrameSet() const;
     [[nodiscard]] TraceDisplayFrameHandle latest(
         display_model::TraceId traceId) const;
     // A waiter observes only its Trace. It receives the newest retained frame,
@@ -104,6 +138,8 @@ private:
 
     const std::size_t capacity_;
     mutable std::mutex mutex_;
+    std::uint64_t generation_{1};
+    TraceDisplayFrameSetHandle latestFrameSet_;
     std::unordered_map<std::uint64_t, TraceDisplayFrameHandle> latestByTrace_;
     mutable std::unordered_map<std::uint64_t, std::shared_ptr<WaitState>>
         waitStates_;
