@@ -13,6 +13,12 @@ export interface DisplayDiagram {
   channel?: ChannelSnapshot
 }
 
+export function traceDisplayEmptyMessage(format?: TraceSnapshot['format']): string {
+  return format && format !== 'logMagnitude'
+    ? 'Display data unavailable for current format'
+    : 'No measurement data'
+}
+
 export function selectDisplayDiagrams(
   state: StateSnapshot | null,
   activeTraceId?: number,

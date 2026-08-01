@@ -17,10 +17,16 @@ export interface WorkspacePresentationInput {
 export interface WorkspacePresentation {
   readonly mode: 'fault' | 'empty' | 'ready' | 'stale'
   readonly showDiagrams: boolean
+  readonly controlsDisabled: boolean
   readonly statusLabel: string
   readonly statusTone: LiveDisplayConnection
   readonly headline: string
   readonly detail: string
+}
+
+function recoverableControlsDisabled(input: WorkspacePresentationInput): boolean {
+  return Boolean(input.displayError)
+    || (input.connection !== 'online' && input.connection !== 'unavailable')
 }
 
 function withoutState(input: WorkspacePresentationInput): WorkspacePresentation {
@@ -28,6 +34,7 @@ function withoutState(input: WorkspacePresentationInput): WorkspacePresentation 
   return {
     mode: 'fault',
     showDiagrams: false,
+    controlsDisabled: true,
     statusLabel: connecting ? 'CONNECTING' : 'OFFLINE',
     statusTone: connecting ? 'connecting' : 'offline',
     headline: connecting ? 'Connecting to service' : 'Service unavailable',
@@ -38,6 +45,9 @@ function withoutState(input: WorkspacePresentationInput): WorkspacePresentation 
 function displayStatus(
   input: WorkspacePresentationInput,
 ): Pick<WorkspacePresentation, 'statusLabel' | 'statusTone'> {
+  if (input.connection === 'unavailable') {
+    return { statusLabel: 'NO DISPLAY DATA', statusTone: 'unavailable' }
+  }
   if (input.connection === 'online') {
     return input.displayError
       ? { statusLabel: 'OFFLINE', statusTone: 'offline' }
@@ -52,6 +62,7 @@ function withoutConfiguration(input: WorkspacePresentationInput): WorkspacePrese
   return {
     mode: 'empty',
     showDiagrams: false,
+    controlsDisabled: recoverableControlsDisabled(input),
     ...displayStatus(input),
     headline: 'No available Diagram',
     detail: 'No display configuration is available.',
@@ -59,13 +70,19 @@ function withoutConfiguration(input: WorkspacePresentationInput): WorkspacePrese
 }
 
 function configuredWithoutFrame(input: WorkspacePresentationInput): WorkspacePresentation {
+  const unavailable = input.connection === 'unavailable'
   return {
     mode: 'fault',
     // Display configuration is authoritative even before samples arrive; DiagramPane owns its grid.
     showDiagrams: true,
+    controlsDisabled: recoverableControlsDisabled(input),
     ...displayStatus(input),
-    headline: input.connection === 'connecting' ? 'Connecting to service' : 'Service unavailable',
-    detail: input.displayError || 'Waiting for live display data.',
+    headline: unavailable
+      ? 'Display data unavailable'
+      : input.connection === 'connecting' ? 'Connecting to service' : 'Service unavailable',
+    detail: unavailable
+      ? 'Current format display is not supported yet.'
+      : input.displayError || 'Waiting for live display data.',
   }
 }
 
@@ -79,6 +96,7 @@ export function selectWorkspacePresentation(
   const hasConfiguration = input.state.instrument.windows.length > 0
     && input.state.instrument.traces.length > 0
   if (!hasConfiguration) return withoutConfiguration(input)
+  if (input.connection === 'unavailable') return configuredWithoutFrame(input)
   if (!healthy && !input.hasFrame) return configuredWithoutFrame(input)
   if (!healthy) {
     // Reconnection changes only the status presentation; last-good diagrams stay mounted.
@@ -86,6 +104,7 @@ export function selectWorkspacePresentation(
     return {
       mode: 'stale',
       showDiagrams: true,
+      controlsDisabled: recoverableControlsDisabled(input),
       statusLabel: reconnecting ? 'RECONNECTING · STALE' : 'DISPLAY ERROR · STALE',
       statusTone: reconnecting ? 'connecting' : 'offline',
       headline: reconnecting ? 'Reconnecting' : 'Display data error',
@@ -95,6 +114,7 @@ export function selectWorkspacePresentation(
   return {
     mode: 'ready',
     showDiagrams: true,
+    controlsDisabled: false,
     statusLabel: 'ONLINE',
     statusTone: 'online',
     headline: '',

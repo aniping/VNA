@@ -7,6 +7,7 @@ import type {
 } from '../api/vnaApi'
 import type { TraceDisplayFrame } from '../api/traceDisplayFrameApi'
 import LogMagnitudeCurve from './LogMagnitudeCurve.vue'
+import { traceDisplayEmptyMessage } from './diagramModel'
 import { traceColorForMeasurement } from './traceVisual'
 
 const props = defineProps<{
@@ -27,6 +28,7 @@ const traceLabel = computed(() => {
 })
 const scaleTop = computed(() => scaleBoundary('top'))
 const scaleBottom = computed(() => scaleBoundary('bottom'))
+const emptyMessage = computed(() => traceDisplayEmptyMessage(props.trace?.format))
 const curve = computed(() => {
   const frame = props.frame
   const trace = props.trace
@@ -111,7 +113,7 @@ function selectTrace(): void {
         {{ scaleBottom }}
       </span>
       <LogMagnitudeCurve v-if="curve" :frame="curve.frame" :scale="curve.scale" />
-      <span v-else class="plot-empty">No measurement data</span>
+      <span v-else class="plot-empty">{{ emptyMessage }}</span>
     </div>
 
     <footer class="channel-row">

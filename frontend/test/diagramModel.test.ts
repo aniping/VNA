@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { selectDisplayDiagrams } from '../src/components/diagramModel.ts'
+import {
+  selectDisplayDiagrams,
+  traceDisplayEmptyMessage,
+} from '../src/components/diagramModel.ts'
 import type { StateSnapshot } from '../src/api/vnaApi.ts'
 
 const snapshot: StateSnapshot = {
@@ -82,4 +85,10 @@ test('active Diagram follows its selected Trace without changing Window order', 
     first: [{ windowId: 31, active: true }, { windowId: 32, active: false }],
     second: [{ windowId: 31, active: false }, { windowId: 32, active: true }],
   })
+})
+
+test('unsupported formats explain why no display frame is drawn', () => {
+  assert.equal(traceDisplayEmptyMessage('phase'), 'Display data unavailable for current format')
+  assert.equal(traceDisplayEmptyMessage('smith'), 'Display data unavailable for current format')
+  assert.equal(traceDisplayEmptyMessage('logMagnitude'), 'No measurement data')
 })

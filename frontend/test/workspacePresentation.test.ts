@@ -84,6 +84,7 @@ test('valid display configuration stays visible while reconnecting before its fi
 
   assert.equal(view.statusLabel, 'RECONNECTING')
   assert.equal(view.showDiagrams, true)
+  assert.equal(view.controlsDisabled, true)
 })
 
 test('valid display configuration reports Connecting while its socket opens', () => {
@@ -96,6 +97,20 @@ test('valid display configuration reports Connecting while its socket opens', ()
 
   assert.equal(view.statusLabel, 'CONNECTING')
   assert.equal(view.showDiagrams, true)
+})
+
+test('unsupported current format keeps its Diagram without reporting the service offline', () => {
+  const view = selectWorkspacePresentation({
+    state: diagramState,
+    connection: 'unavailable',
+    hasFrame: false,
+    displayError: '',
+  })
+
+  assert.equal(view.statusLabel, 'NO DISPLAY DATA')
+  assert.equal(view.statusTone, 'unavailable')
+  assert.equal(view.showDiagrams, true)
+  assert.equal(view.controlsDisabled, false)
 })
 
 test('an online display error with empty state does not claim a reconnect', () => {

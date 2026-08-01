@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import type { LiveDisplayConnection } from '../api/liveDisplaySession'
 import type {
   StateSnapshot,
   SweepSettings,
@@ -26,10 +27,9 @@ import {
 
 const props = defineProps<{
   state: StateSnapshot | null
-  connection: 'connecting' | 'online' | 'offline'
+  connection: LiveDisplayConnection
   serviceError: string
   displayError: string
-  disabled: boolean
   busy: boolean
   frames: ReadonlyMap<number, TraceDisplayFrame>
 }>()
@@ -170,7 +170,7 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
       <MeasurementSofttool
         v-if="activeSofttool === 'measurement'"
         :has-channel="Boolean(channel)"
-        :disabled="disabled"
+        :disabled="workspace.controlsDisabled"
         :busy="busy"
         @create-channel="emit('createChannel', $event)"
         @create-trace="emit('createTrace', $event)"
@@ -178,7 +178,7 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
       <FormatSofttool
         v-else-if="activeSofttool === 'format' && activeTrace"
         :trace="activeTrace"
-        :disabled="disabled"
+        :disabled="workspace.controlsDisabled"
         :busy="busy"
         @update-format="forwardTraceFormatUpdate"
       />
@@ -186,7 +186,7 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
         v-else-if="activeSofttool === 'scale' && activeTrace && activeScale"
         :trace-id="activeTrace.id"
         :scale="activeScale"
-        :disabled="disabled"
+        :disabled="workspace.controlsDisabled"
         :busy="busy"
         @update-scale-per-division="forwardScalePerDivisionUpdate"
       />
@@ -194,7 +194,7 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
         v-else-if="activeSofttool === 'stimulus' && channel"
         :channel="channel"
         :focus="stimulusKey"
-        :disabled="disabled"
+        :disabled="workspace.controlsDisabled"
         :busy="busy"
         @update-sweep="forwardSweepUpdate"
       />
@@ -202,7 +202,7 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
         v-else-if="activeSofttool === 'channel' && channel"
         :channel="channel"
         :mode="channelKey"
-        :disabled="disabled"
+        :disabled="workspace.controlsDisabled"
         :busy="busy"
         @update-sweep="forwardSweepUpdate"
       />

@@ -4,7 +4,12 @@ import type { TraceDisplayFrame } from './traceDisplayFrame.ts'
 export interface DisplayFrameSocketHandlers {
   onOpen(): void
   onMessage(data: unknown): void
-  onClose(): void
+  onClose(close: DisplayFrameSocketClose): void
+}
+
+export interface DisplayFrameSocketClose {
+  readonly code: number
+  readonly reason: string
 }
 
 export interface DisplayFrameSocket {
@@ -22,7 +27,7 @@ export interface LiveDisplayHandlers {
   onConnectionChange(state: LiveDisplayConnection): void
 }
 
-export type LiveDisplayConnection = 'connecting' | 'online' | 'offline'
+export type LiveDisplayConnection = 'connecting' | 'online' | 'offline' | 'unavailable'
 
 const reconnectDelayMs = 500
 
@@ -38,7 +43,10 @@ function browserEnvironment(): LiveDisplayEnvironment {
       const socket = new WebSocket(displayFramesUrl())
       socket.addEventListener('open', handlers.onOpen, { once: true })
       socket.addEventListener('message', (event) => handlers.onMessage(event.data))
-      socket.addEventListener('close', handlers.onClose, { once: true })
+      socket.addEventListener('close', (event) => handlers.onClose({
+        code: event.code,
+        reason: event.reason,
+      }), { once: true })
       return { close: () => socket.close() }
     },
     scheduleReconnect(callback) {
@@ -55,6 +63,11 @@ function messageFrame(data: unknown): TraceDisplayFrame {
 
 function reportError(handlers: LiveDisplayHandlers, error: unknown): void {
   handlers.onError(error instanceof Error ? error : new Error('Display frame stream failed'))
+}
+
+function displayTraceUnavailable(close: DisplayFrameSocketClose): boolean {
+  // PolicyViolation also reports capacity errors, so the server-owned reason is required.
+  return close.code === 1008 && close.reason === 'display trace unavailable'
 }
 
 class LiveDisplaySession {
@@ -93,7 +106,7 @@ class LiveDisplaySession {
       const socket = this.environment.openSocket({
         onOpen: () => this.connected(generation),
         onMessage: (data) => this.receive(generation, sequences, data),
-        onClose: () => this.disconnected(generation),
+        onClose: (close) => this.disconnected(generation, close),
       })
       if (this.isCurrent(generation)) this.socket = socket
       else socket.close()
@@ -122,12 +135,16 @@ class LiveDisplaySession {
     }
   }
 
-  private disconnected(generation: number): void {
+  private disconnected(generation: number, close: DisplayFrameSocketClose): void {
     if (!this.isCurrent(generation)) return
     // The session owns transport only: callers keep their last good frame while this
     // invalidates queued events that could otherwise race a replacement connection.
     this.generation += 1
     this.socket = null
+    if (displayTraceUnavailable(close)) {
+      this.handlers.onConnectionChange('unavailable')
+      return
+    }
     this.handlers.onConnectionChange('offline')
     this.scheduleReconnect()
   }

@@ -27,7 +27,7 @@ import MainScreen from './components/MainScreen.vue'
 
 const scale = ref(1)
 const state = ref<StateSnapshot | null>(null)
-const connection = ref<'connecting' | 'online' | 'offline'>('connecting')
+const connection = ref<LiveDisplayConnection>('connecting')
 const serviceError = ref('')
 const displayError = ref('')
 const commandBusy = ref(false)
@@ -104,6 +104,8 @@ async function handleUpdateTraceFormat(traceId: number, format: TraceFormat): Pr
   try {
     await updateTraceFormat(state.value.stateRevision, traceId, format)
     await refreshState()
+    // A supported format starts a new socket generation after an intentional stream close.
+    if (format === 'logMagnitude') openLiveDisplaySession()
     serviceError.value = ''
   } catch (error) {
     serviceError.value = error instanceof Error ? error.message : 'Command failed'
@@ -121,7 +123,7 @@ function replaceFrame(frame: TraceDisplayFrame): void {
 
 function handleConnectionChange(next: LiveDisplayConnection): void {
   connection.value = next
-  if (next === 'online') {
+  if (next === 'online' || next === 'unavailable') {
     displayError.value = ''
   }
 }
@@ -145,16 +147,21 @@ async function handleUpdateTraceScalePerDivision(traceId: number, value: number)
   }
 }
 
-onMounted(() => {
-  resizeInstrument()
-  window.addEventListener('resize', resizeInstrument)
-  // The session owns initial/reconnect state refresh and socket generation ordering.
-  // App only owns the latest renderable frame per Trace and never starts acquisition.
+function openLiveDisplaySession(): void {
+  stopLiveDisplay?.()
   stopLiveDisplay = startLiveDisplaySession(refreshState, {
     onFrame: replaceFrame,
     onError: handleDisplayError,
     onConnectionChange: handleConnectionChange,
   })
+}
+
+onMounted(() => {
+  resizeInstrument()
+  window.addEventListener('resize', resizeInstrument)
+  // The session owns initial/reconnect state refresh and socket generation ordering.
+  // App only owns the latest renderable frame per Trace and never starts acquisition.
+  openLiveDisplaySession()
 })
 
 onBeforeUnmount(() => {
@@ -172,7 +179,6 @@ onBeforeUnmount(() => {
         :connection="connection"
         :service-error="serviceError"
         :display-error="displayError"
-        :disabled="connection !== 'online' || Boolean(displayError)"
         :busy="commandBusy"
         :frames="frames"
         @create-channel="handleCreateChannel"

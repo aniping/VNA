@@ -79,3 +79,4 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
 .status-pill.offline { color: #ffd9d9; background: #8b2424; }
 .status-pill.connecting { color: #16130a; background: #dfa81f; }
 .status-pill.online { color: #07170f; background: #31b86d; }
+.status-pill.unavailable { color: #dce5e8; background: #49616c; }

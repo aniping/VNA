@@ -16,7 +16,10 @@ class FakeSocket {
   close(): void { this.closed = true }
   message(frame: object): void { this.handlers.onMessage(JSON.stringify(frame)) }
   connect(): void { this.handlers.onOpen() }
-  disconnect(): void { this.closed = true; this.handlers.onClose() }
+  disconnect(code = 1006, reason = ''): void {
+    this.closed = true
+    this.handlers.onClose({ code, reason })
+  }
 }
 function createEnvironment(events: string[]) {
   const sockets: FakeSocket[] = []
@@ -136,7 +139,7 @@ test('stop closes an active socket without scheduling a reconnect', async () => 
   const stop = createLiveDisplaySession(async () => undefined, handlers(), environment)
   await settle()
   stop()
-  sockets[0].handlers.onClose()
+  sockets[0].handlers.onClose({ code: 1006, reason: '' })
   assert.equal(sockets[0].closed, true)
   assert.equal(reconnects.length, 0)
 })
@@ -158,4 +161,76 @@ test('reports connecting, online, and reconnecting transport state', async () =>
 
   assert.deepEqual(states, ['connecting', 'online', 'offline', 'connecting', 'online'])
   stop()
+})
+
+test('reports an intentionally unavailable display stream without reconnecting', async () => {
+  const states: string[] = []
+  const { environment, sockets, reconnects } = createEnvironment([])
+  const stop = createLiveDisplaySession(
+    async () => undefined,
+    { onFrame() {}, onError() {}, onConnectionChange: (state) => states.push(state) },
+    environment,
+  )
+  await settle()
+  sockets[0].connect()
+  sockets[0].disconnect(1008, 'display trace unavailable')
+
+  assert.deepEqual(states, ['connecting', 'online', 'unavailable'])
+  assert.equal(reconnects.length, 0)
+  stop()
+})
+
+test('does not treat another policy violation as an unavailable Trace format', async () => {
+  const states: string[] = []
+  const { environment, sockets, reconnects } = createEnvironment([])
+  const stop = createLiveDisplaySession(
+    async () => undefined,
+    { onFrame() {}, onError() {}, onConnectionChange: (state) => states.push(state) },
+    environment,
+  )
+  await settle()
+  sockets[0].connect()
+  sockets[0].disconnect(1008, 'display stream capacity exceeded')
+
+  assert.deepEqual(states, ['connecting', 'online', 'offline'])
+  assert.equal(reconnects.length, 1)
+  stop()
+})
+
+test('a fresh session after an unavailable format accepts a new sequence baseline', async () => {
+  const received: number[] = []
+  const { environment, sockets } = createEnvironment([])
+  const receive = handlers((value) => { received.push(value.sequenceNumber) })
+  const stopUnsupported = createLiveDisplaySession(async () => undefined, receive, environment)
+  await settle()
+  sockets[0].message(frame(9))
+  sockets[0].disconnect(1008, 'display trace unavailable')
+  stopUnsupported()
+
+  const stopLogMagnitude = createLiveDisplaySession(async () => undefined, receive, environment)
+  await settle()
+  sockets[1].message(frame(1))
+
+  assert.deepEqual(received, [9, 1])
+  stopLogMagnitude()
+})
+
+test('a late unsupported close from a stopped session cannot change its replacement', async () => {
+  const states: string[] = []
+  const { environment, sockets } = createEnvironment([])
+  const report = {
+    onFrame() {}, onError() {}, onConnectionChange: (state: string) => states.push(state),
+  }
+  const stopOld = createLiveDisplaySession(async () => undefined, report, environment)
+  await settle()
+  sockets[0].connect()
+  stopOld()
+
+  const stopReplacement = createLiveDisplaySession(async () => undefined, report, environment)
+  await settle()
+  sockets[1].connect()
+  sockets[0].handlers.onClose({ code: 1008, reason: 'display trace unavailable' })
+
+  assert.deepEqual(states, ['connecting', 'online', 'connecting', 'online'])
+  stopReplacement()
 })
