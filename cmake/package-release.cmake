@@ -111,7 +111,8 @@ if(EXISTS "${backup_dir}" OR IS_SYMLINK "${backup_dir}")
     endif()
 endif()
 
-find_program(pnpm_program NAMES pnpm pnpm.cmd REQUIRED)
+include("${source_dir}/cmake/find-pnpm.cmake")
+find_pnpm_program(pnpm_program)
 find_program(ninja_program NAMES ninja REQUIRED)
 find_program(cxx_compiler NAMES g++ REQUIRED)
 

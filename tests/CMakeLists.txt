@@ -1,5 +1,16 @@
 include(GoogleTest)
 
+if(WIN32)
+    add_test(
+        NAME vna_package_pnpm_discovery_test
+        COMMAND
+            ${CMAKE_COMMAND}
+            -DTEST_TEMP_DIR=${CMAKE_CURRENT_BINARY_DIR}/find-pnpm-test
+            -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/find-pnpm-test.cmake
+    )
+endif()
+
 add_executable(
     vna_domain_tests
     unit/domain/instrument_test.cpp
