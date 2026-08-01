@@ -69,6 +69,7 @@ enum class FrameErrorCode {
     InvalidFrameContext,
     InvalidFrequencyAxis,
     PointCountExceeded,
+    InvalidAcquisitionSettings,
     InvalidPortCount,
     InvalidSourcePort,
     DuplicateSourcePort,
