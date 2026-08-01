@@ -76,6 +76,7 @@ gtest_discover_tests(vna_measurement_tests)
 add_executable(
     vna_data_plane_tests
     unit/data_plane/log_magnitude_projector_test.cpp
+    unit/data_plane/trace_projector_test.cpp
 )
 target_link_libraries(
     vna_data_plane_tests

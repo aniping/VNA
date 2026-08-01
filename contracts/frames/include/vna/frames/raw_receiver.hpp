@@ -81,6 +81,7 @@ enum class FrameErrorCode {
     ZeroReference,
     NonFiniteTraceValue,
     UnsupportedMeasurementType,
+    UnsupportedTraceFormat,
 };
 
 struct FrameError {
