@@ -119,6 +119,7 @@ add_executable(
     unit/application/single_sweep_trace_retirement_test.cpp
     unit/application/text_id_test.cpp
     unit/application/trace_display_frame_query_test.cpp
+    unit/application/trace_display_frame_query_wait_test.cpp
     unit/application/trace_display_frame_repository_test.cpp
     unit/application/trace_display_frame_repository_wait_test.cpp
     unit/application/trace_frame_discard_command_test.cpp
@@ -135,7 +136,7 @@ target_link_libraries(
 target_include_directories(
     vna_application_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support/include
 )
-gtest_discover_tests(vna_application_tests)
+gtest_discover_tests(vna_application_tests PROPERTIES TIMEOUT 10)
 
 add_executable(
     vna_platform_contract_tests

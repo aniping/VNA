@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cstdint>
+#include <stop_token>
 #include <variant>
 
 #include <vna/application/command_bus.hpp>
@@ -32,6 +34,13 @@ public:
 
     [[nodiscard]] TraceDisplayFrameQueryOutcome latest(
         display_model::TraceId traceId) const;
+    // Waiting never holds a CommandBus lock. The Trace is checked before and
+    // after the repository wait so deletion or format changes cannot expose a
+    // frame that no longer belongs to the current display definition.
+    [[nodiscard]] TraceDisplayFrameQueryOutcome waitForNext(
+        display_model::TraceId traceId,
+        std::uint64_t afterSequence,
+        std::stop_token token = {}) const;
 
 private:
     const CommandBus& commandBus_;
