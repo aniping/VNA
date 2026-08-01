@@ -1,18 +1,10 @@
 #pragma once
 
-#include <cstdint>
-
 #include <vna/acquisition/continuous_acquisition.hpp>
 #include <vna/display_model/display_workspace.hpp>
 #include <vna/domain/instrument.hpp>
 
 namespace vna::application {
-
-struct ContinuousTracePreset {
-    std::uint64_t stateRevision;
-    domain::MeasurementSnapshot measurement;
-    display_model::TraceSnapshot trace;
-};
 
 // A complete state is assembled before CommandBus construction so no caller
 // can observe partially-created factory entities or artificial revisions.
@@ -26,7 +18,8 @@ struct CommandBusInitialState {
 struct FactoryPreset {
     acquisition::ContinuousAcquisitionPlan acquisitionPlan;
     CommandBusInitialState commandBusState;
-    ContinuousTracePreset continuousTracePreset;
+    domain::ChannelId acquisitionChannelId;
+    display_model::TraceId defaultTraceId;
 };
 
 [[nodiscard]] FactoryPreset makeFactoryPreset();

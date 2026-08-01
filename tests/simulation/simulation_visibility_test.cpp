@@ -21,6 +21,8 @@ frames::MeasurementFrame simulatePresetS21(
     const application::FactoryPreset& preset,
     std::uint64_t sequence) {
     const auto& plan = preset.acquisitionPlan;
+    const auto instrument = preset.commandBusState.instrument.snapshot();
+    const auto measurement = instrument.measurements.front();
     auto payload = simulateOpenPorts({
         .frequencyAxis = plan.frequencyAxis,
         .portCount = plan.portCount,
@@ -35,8 +37,8 @@ frames::MeasurementFrame simulatePresetS21(
     auto raw = frames::makeRawReceiverFrame(
         {.frameId = frames::FrameId{sequence},
          .sweepId = frames::SweepId{sequence},
-         .channelId = preset.continuousTracePreset.measurement.channelId,
-         .stateRevision = preset.continuousTracePreset.stateRevision,
+         .channelId = preset.acquisitionChannelId,
+         .stateRevision = 0,
          .sequenceNumber = sequence},
         plan.frequencyAxis,
         std::move(payload.value()));
@@ -44,7 +46,7 @@ frames::MeasurementFrame simulatePresetS21(
         throw std::runtime_error{"factory raw frame failed"};
     }
     auto measured = measurement::synthesizeSParameter(
-        std::move(raw.value()), preset.continuousTracePreset.measurement);
+        std::move(raw.value()), measurement);
     if (!measured.hasValue()) {
         throw std::runtime_error{"factory S21 synthesis failed"};
     }

@@ -127,6 +127,7 @@ add_executable(
     unit/application/completion_fence_test.cpp
     unit/application/completion_fence_hardening_test.cpp
     unit/application/continuous_trace_plan_test.cpp
+    unit/application/continuous_trace_dynamic_test.cpp
     unit/application/control_authority_test.cpp
     unit/application/control_authority_concurrency_test.cpp
     unit/application/factory_preset_test.cpp

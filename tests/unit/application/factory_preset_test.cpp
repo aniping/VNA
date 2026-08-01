@@ -48,17 +48,8 @@ TEST(FactoryPresetTest, CreatesPacedTwoPortPlanAndContinuousS21Target) {
     EXPECT_EQ(plan.sourcePorts[0], 1U);
     EXPECT_EQ(plan.sourcePorts[1], 2U);
 
-    const auto& target = preset.continuousTracePreset;
-    EXPECT_EQ(target.stateRevision, 0U);
-    EXPECT_EQ(target.measurement.id, domain::MeasurementId{1});
-    EXPECT_EQ(target.measurement.channelId, domain::ChannelId{1});
-    EXPECT_EQ(target.measurement.type, domain::MeasurementType::S21);
-    EXPECT_EQ(target.trace.id, display_model::TraceId{1});
-    EXPECT_EQ(target.trace.windowId, display_model::WindowId{1});
-    EXPECT_EQ(target.trace.measurementId, target.measurement.id);
-    EXPECT_EQ(target.trace.format, display_model::TraceFormat::LogMagnitude);
-    ASSERT_TRUE(target.trace.scale.has_value());
-    EXPECT_DOUBLE_EQ(target.trace.scale->scalePerDivision, 10.0);
+    EXPECT_EQ(preset.acquisitionChannelId, domain::ChannelId{1});
+    EXPECT_EQ(preset.defaultTraceId, display_model::TraceId{1});
 }
 
 TEST(FactoryPresetTest, CreatesCorrelatedS21StateAtRevisionZero) {

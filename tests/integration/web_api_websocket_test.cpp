@@ -24,7 +24,7 @@ using namespace std::chrono_literals;
 class WebApiWebSocketTest : public ::testing::Test {
 protected:
     WebApiWebSocketTest()
-        : traceId_(preset_.continuousTracePreset.trace.id),
+        : traceId_(preset_.defaultTraceId),
           commandBus_(
               application::InstrumentId{"instrument-1"},
               std::move(preset_.commandBusState)),
@@ -51,8 +51,8 @@ protected:
         return {
             .frameId = frames::FrameId{sequence},
             .traceId = traceId_,
-            .measurementId = preset_.continuousTracePreset.measurement.id,
-            .measurementType = preset_.continuousTracePreset.measurement.type,
+            .measurementId = domain::MeasurementId{1},
+            .measurementType = domain::MeasurementType::S21,
             .stateRevision = 0,
             .generation = 1,
             .sequenceNumber = sequence,

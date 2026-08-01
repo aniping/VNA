@@ -1,9 +1,7 @@
 #include <vna/application/factory_preset.hpp>
 
-#include <algorithm>
 #include <chrono>
 #include <cstdint>
-#include <stdexcept>
 #include <utility>
 
 namespace vna::application {
@@ -27,23 +25,9 @@ constexpr domain::SweepSettings factorySweepSettings() {
 
 struct FactoryState {
     CommandBusInitialState commandBusState;
-    ContinuousTracePreset continuousTracePreset;
+    domain::ChannelId acquisitionChannelId;
+    display_model::TraceId defaultTraceId;
 };
-
-display_model::TraceSnapshot captureTrace(
-    const display_model::DisplayWorkspace& workspace,
-    display_model::TraceId traceId) {
-    // Use the identity returned by creation so composition never guesses from
-    // collection order when selecting its sole continuous display target.
-    const auto snapshot = workspace.snapshot();
-    const auto found = std::find_if(
-        snapshot.traces.cbegin(), snapshot.traces.cend(),
-        [traceId](const auto& trace) { return trace.id == traceId; });
-    if (found == snapshot.traces.cend()) {
-        throw std::logic_error{"factory trace was not created"};
-    }
-    return *found;
-}
 
 FactoryState makeInitialState(const domain::SweepSettings& sweep) {
     domain::Instrument instrument;
@@ -56,17 +40,13 @@ FactoryState makeInitialState(const domain::SweepSettings& sweep) {
         window,
         measurement,
         display_model::TraceFormat::LogMagnitude).value();
-    const auto traceSnapshot = captureTrace(displayWorkspace, trace);
     return {
         .commandBusState = {
             .instrument = std::move(instrument),
             .displayWorkspace = std::move(displayWorkspace),
         },
-        .continuousTracePreset = {
-            .stateRevision = 0,
-            .measurement = {measurement, channel, domain::MeasurementType::S21},
-            .trace = traceSnapshot,
-        },
+        .acquisitionChannelId = channel,
+        .defaultTraceId = trace,
     };
 }
 
@@ -90,7 +70,8 @@ FactoryPreset makeFactoryPreset() {
             .minimumSweepPeriod = kSimulationMinimumSweepPeriod,
         },
         .commandBusState = std::move(state.commandBusState),
-        .continuousTracePreset = std::move(state.continuousTracePreset),
+        .acquisitionChannelId = state.acquisitionChannelId,
+        .defaultTraceId = state.defaultTraceId,
     };
 }
 

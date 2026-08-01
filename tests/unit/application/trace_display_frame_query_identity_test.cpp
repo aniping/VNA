@@ -14,9 +14,9 @@ namespace {
 class TraceDisplayFrameQueryIdentityTest : public ::testing::Test {
 protected:
     TraceDisplayFrameQueryIdentityTest()
-        : traceId_(preset_.continuousTracePreset.trace.id),
-          measurementId_(preset_.continuousTracePreset.measurement.id),
-          measurementType_(preset_.continuousTracePreset.measurement.type),
+        : traceId_(preset_.defaultTraceId),
+          measurementId_(domain::MeasurementId{1}),
+          measurementType_(domain::MeasurementType::S21),
           bus_(
               InstrumentId{"instrument-1"},
               std::move(preset_.commandBusState)),

@@ -43,9 +43,9 @@ class WebApiWebSocketLifecycleTest
       private application::SingleSweepExecution {
 protected:
     WebApiWebSocketLifecycleTest()
-        : traceId_(preset_.continuousTracePreset.trace.id),
+        : traceId_(preset_.defaultTraceId),
           catalog_(
-              preset_.continuousTracePreset.measurement.channelId,
+              preset_.acquisitionChannelId,
               repository_,
               initialSnapshot(preset_)),
           sweepHandler_(*this),
@@ -77,8 +77,8 @@ protected:
         return {
             .frameId = frames::FrameId{sequence},
             .traceId = traceId_,
-            .measurementId = preset_.continuousTracePreset.measurement.id,
-            .measurementType = preset_.continuousTracePreset.measurement.type,
+            .measurementId = domain::MeasurementId{1},
+            .measurementType = domain::MeasurementType::S21,
             .stateRevision = 0,
             .generation = 1,
             .sequenceNumber = sequence,

@@ -134,7 +134,7 @@ vna::application::StateSnapshot presetSnapshot(
 struct PublicationState {
     explicit PublicationState(const vna::application::FactoryPreset& preset)
         : repository{traceCapacity},
-          catalog{preset.continuousTracePreset.measurement.channelId,
+          catalog{preset.acquisitionChannelId,
                   repository,
                   presetSnapshot(preset)} {}
 
@@ -191,7 +191,7 @@ int runServer() {
     const auto paths = serverPaths();
 
     auto preset = vna::application::makeFactoryPreset();
-    const auto defaultTraceId = preset.continuousTracePreset.trace.id;
+    const auto defaultTraceId = preset.defaultTraceId;
     // Declaration order is the borrowing graph. Reverse destruction stops Web
     // access first, then CommandBus and publisher, before acquisition and repos.
     vna::application::OperationManager operationManager;
