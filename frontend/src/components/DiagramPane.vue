@@ -7,6 +7,7 @@ import type {
 } from '../api/vnaApi'
 import type { TraceDisplayFrame } from '../api/traceDisplayFrameApi'
 import LogMagnitudeCurve from './LogMagnitudeCurve.vue'
+import { traceColorForMeasurement } from './traceVisual'
 
 const props = defineProps<{
   paneNumber: number
@@ -18,6 +19,7 @@ const props = defineProps<{
   active: boolean
 }>()
 const emit = defineEmits<{ select: [traceId: number] }>()
+const traceColor = computed(() => traceColorForMeasurement(props.measurement?.type))
 
 const traceLabel = computed(() => {
   if (!props.trace) return 'No active trace'
@@ -72,6 +74,7 @@ function selectTrace(): void {
   <article
     class="diagram-pane"
     :class="{ active }"
+    :style="{ '--trace-color': traceColor }"
     :aria-label="`Diagram ${paneNumber}`"
     :role="trace ? 'button' : undefined"
     :tabindex="trace ? 0 : undefined"
@@ -121,7 +124,7 @@ function selectTrace(): void {
 .diagram-pane.active .trace-strip { background: #168fda; box-shadow: inset 0 -3px #f2db24; }
 .trace-strip { display: flex; align-items: center; gap: 5px; padding: 0 5px; overflow: hidden; color: #dce5e8; background: #243138; font-size: 12px; white-space: nowrap; }
 .trace-index { padding: 3px 5px; color: #dce5e8; background: transparent; }
-.measurement-chip { padding: 2px 5px; color: #1b1b11; background: #f2db24; font-weight: 700; }
+.measurement-chip { padding: 2px 5px; color: #1b1b11; background: var(--trace-color); font-weight: 700; }
 .trace-name { overflow: hidden; text-overflow: ellipsis; }
 .strip-spacer { flex: 1; }
 .plot-area { position: relative; overflow: hidden; background-color: #020404; color: #8ca0a8; }

@@ -67,7 +67,7 @@ const canStartSingleSweep = computed(() => (
 // Nullable scale is the display-model capability seam; format must not re-derive support.
 const activeScale = computed(() => activeTrace.value?.scale ?? null)
 const activeSofttool = ref<'measurement' | 'format' | 'scale' | 'stimulus' | 'channel' | null>(
-  'measurement',
+  null,
 )
 const stimulusKey = ref<StimulusKey>('Start')
 const channelKey = ref<ChannelKey>('Power / Bw / Avg')

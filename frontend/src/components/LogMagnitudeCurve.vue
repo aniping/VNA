@@ -32,6 +32,6 @@ const description = computed(
 
 <style scoped>
 /* The viewport clips out-of-range dB values without changing their projected coordinates. */
-.trace-curve { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; overflow: hidden; color: #f2db24; pointer-events: none; }
+.trace-curve { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; overflow: hidden; color: var(--trace-color, #f2db24); pointer-events: none; }
 path { fill: none; stroke: currentColor; stroke-width: 2px; vector-effect: non-scaling-stroke; }
 </style>

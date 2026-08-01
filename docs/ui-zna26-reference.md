@@ -51,18 +51,19 @@ Mode。该模式仍可在应用窗口内排列多个图表，并在最右侧启�
 
 1. 顶部工具栏，约 42 px 高：撤销、缩放、最大化图表、增加 Trace/Marker、
    删除、截图等。
-2. 图表工作区，约 848 px 宽：默认采用 2×2 排列。每格都包含 Trace 信息条、
-   黑底绘图区和 Channel 状态行；无采样帧时只画坐标网格，不伪造业务曲线。
-3. Measurement Softtool，约 270 px 宽：紧邻图表右侧，包含测量设置区、
-   S 参数选择区与测量类别导航区。
+2. 图表工作区：手册 Preset 默认采用单个主图；每个真实 Window 对应一个
+   Diagram，包含 Trace 信息条、黑底绘图区和 Channel 状态行。多个 Window
+   仍按工作区布局显示，但不得固定补齐不存在的空 Diagram。
+3. Softtool，约 270 px 宽：默认关闭；用户按下相应 Hard Key 后在图表右侧打开。
+   Measurement Softtool 包含测量设置区、S 参数选择区与测量类别导航区。
 4. 虚拟 Hard Key 面板，约 150 px 宽：固定在最右侧，以两列按钮分为 Trace、
    Stimulus、Channel、System 四组。
 5. 底部菜单与状态栏，约 34 px 高：File、Trace、Channel、Display、Tools、System、Help，
    以及活动 Channel、平均状态、进度和时间。
 
-初始 M1.5 页面显示四格布局，其中两个笛卡尔网格和两个 Smith 网格用于验证
-几何结构。只有服务中真实存在的 Trace 才显示 Trace 名称；采样数据接通前不绘制
-黄色曲线。后续支持 1×2、2×1 和单图最大化。
+手册默认状态只显示一个包含 S21 dB Magnitude Trace 的主图。Diagram 数量必须
+来自 `StateSnapshot` 中的真实 Window；只有服务中真实存在的 Trace 才显示 Trace
+名称，采样数据接通前不绘制曲线。多个 Window 与单图最大化能力继续保留。
 
 ## 5. 虚拟 Hard Key 结构
 
@@ -87,10 +88,9 @@ Single Window Mode 将以下虚拟功能键放在应用窗口最右侧；它不�
 | 普通按钮 | 中灰蓝色、细深色分隔线 |
 | 活动按钮 | 高饱和青蓝色 |
 | 帮助按钮 | 橙黄色 |
-| Trace 1 | 黄色 |
-| Trace 2 | 绿色 |
-| Trace 3 | 青色 |
-| Trace 4 | 洋红色 |
+| 默认 S21 Trace | 绿色；色块与曲线一致 |
+| 活动 Diagram | 黄色边框，不改变 Trace 颜色 |
+| 其他 Trace | 当前单 Trace 映射沿用既有黄色；不据此推导后端颜色接口 |
 | 坐标网格 | 低对比灰蓝色 |
 | 主要文本 | 白色或浅灰色，紧凑无衬线字体 |
 
@@ -102,8 +102,10 @@ Single Window Mode 将以下虚拟功能键放在应用窗口最右侧；它不�
 M1.5 必须先交付以下可操作内容：
 
 - 1280×800 单应用窗口及等比缩放。
-- 2×2 黑底图表、独立 Trace 信息条、Channel 状态行和底部菜单。
-- 图表右侧 Measurement Softtool 与最右两列虚拟 Hard Key。
+- 手册默认单个黑底主图、独立 Trace 信息条、Channel 状态行和底部菜单；多 Window
+  状态只渲染快照中真实存在的 Diagram。
+- 默认关闭 Softtool；Meas Hard Key 可在图表右侧打开 Measurement Softtool，
+  最右两列虚拟 Hard Key 常驻。
 - Meas 功能键与对应 Softtool 的联动。
 - Start、Stop、Points、IFBW、Power 数值输入入口。
 - 服务连接状态和 `stateRevision`，融入状态栏而非另做 Dashboard 卡片。
