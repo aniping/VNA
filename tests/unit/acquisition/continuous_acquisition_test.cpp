@@ -1,5 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <cstdint>
+#include <limits>
+#include <optional>
+#include <stop_token>
+#include <stdexcept>
+#include <utility>
+
 #include <vna/acquisition/continuous_acquisition.hpp>
 
 #include "continuous_acquisition_test_support.hpp"
@@ -44,6 +51,46 @@ TEST(ContinuousAcquisitionTest, StartsAndPublishesCompleteFramesInSequence) {
     EXPECT_EQ(stopped.state, ContinuousAcquisitionState::Stopped);
     EXPECT_EQ(stopped.lastPublishedSequence, 2U);
     EXPECT_EQ(acquisition.latest(), second);
+}
+
+TEST(ContinuousAcquisitionTest, PassesAuthoritativeIfBandwidthAndPowerToSource) {
+    std::optional<ContinuousAcquisitionPlan> observed;
+    RawSweepSource source = [&](const auto& plan, std::uint64_t,
+                                std::stop_token) {
+        observed = plan;
+        return frames::Result<frames::RawReceiverPayload>{frames::FrameError{
+            frames::FrameErrorCode::InvalidFrequencyAxis}};
+    };
+    ContinuousAcquisition acquisition{validPlan(), std::move(source)};
+
+    acquisition.join();
+
+    ASSERT_TRUE(observed.has_value());
+    EXPECT_EQ(observed->ifBandwidthHz, 10'000U);
+    EXPECT_DOUBLE_EQ(observed->powerDbm, -10.5);
+}
+
+TEST(ContinuousAcquisitionTest, RejectsInvalidIfBandwidthAndPower) {
+    int sourceCalls = 0;
+    RawSweepSource source = [&](const auto&, std::uint64_t, std::stop_token) {
+        ++sourceCalls;
+        return frames::Result<frames::RawReceiverPayload>{frames::FrameError{
+            frames::FrameErrorCode::InvalidFrequencyAxis}};
+    };
+    auto invalidBandwidth = validPlan();
+    invalidBandwidth.ifBandwidthHz = 0;
+    EXPECT_THROW(
+        ContinuousAcquisition(invalidBandwidth, source), std::invalid_argument);
+
+    for (const auto invalidPower : {
+             std::numeric_limits<double>::infinity(),
+             -std::numeric_limits<double>::infinity(),
+             std::numeric_limits<double>::quiet_NaN()}) {
+        auto plan = validPlan();
+        plan.powerDbm = invalidPower;
+        EXPECT_THROW(ContinuousAcquisition(plan, source), std::invalid_argument);
+    }
+    EXPECT_EQ(sourceCalls, 0);
 }
 
 }  // namespace

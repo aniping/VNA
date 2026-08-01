@@ -21,6 +21,7 @@ void validatePlan(const ContinuousAcquisitionPlan& plan) {
         plan.portCount == 0 || plan.portCount > frames::kMaxPortCount ||
         plan.sourcePorts.empty() ||
         plan.sourcePorts.size() > plan.portCount ||
+        plan.ifBandwidthHz == 0 || !std::isfinite(plan.powerDbm) ||
         plan.minimumSweepPeriod < decltype(plan.minimumSweepPeriod)::zero()) {
         throw std::invalid_argument{"invalid continuous acquisition plan"};
     }

@@ -22,6 +22,8 @@ inline ContinuousAcquisitionPlan validPlan() {
         },
         .portCount = 2,
         .sourcePorts = {1, 2},
+        .ifBandwidthHz = 10'000,
+        .powerDbm = -10.5,
     };
 }
 

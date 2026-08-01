@@ -22,6 +22,8 @@ struct ContinuousAcquisitionPlan {
     frames::FrequencyAxis frequencyAxis;
     std::uint32_t portCount;
     std::vector<std::uint32_t> sourcePorts;
+    std::uint32_t ifBandwidthHz;
+    double powerDbm;
     std::chrono::steady_clock::duration minimumSweepPeriod{};
 };
 
