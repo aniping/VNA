@@ -36,7 +36,7 @@ class TraceConfigurationTransactionTest : public ::testing::Test {
 protected:
     TraceConfigurationTransactionTest()
         : catalog_(
-              preset_.continuousTracePreset.measurement.channelId,
+              preset_.acquisitionChannelId,
               repository_,
               presetSnapshot(preset_)),
           bus_(InstrumentId{"instrument-1"},
