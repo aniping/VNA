@@ -53,7 +53,7 @@ public:
     LogSinks(const std::filesystem::path& directory, std::ostream* console,
              std::size_t maxFileBytes, std::size_t maxFiles)
         : console_(console) {
-        if (directory.empty() || console_ == nullptr) {
+        if (directory.empty()) {
             throw std::invalid_argument("invalid JSON Lines logger options");
         }
         std::filesystem::create_directories(directory);
@@ -70,6 +70,11 @@ public:
     }
 
     bool writeEmergency(const std::string& line) noexcept {
+        // A disabled console cannot claim emergency delivery; overload then
+        // follows the existing rejection and terminal-failure contract.
+        if (console_ == nullptr) {
+            return false;
+        }
         const std::scoped_lock lock{consoleMutex_};
         return write(*console_, line) && flush(*console_);
     }
@@ -94,11 +99,17 @@ private:
     }
 
     bool writeConsole(const std::string& line) noexcept {
+        if (console_ == nullptr) {
+            return true;
+        }
         const std::scoped_lock lock{consoleMutex_};
         return write(*console_, line);
     }
 
     bool flushConsole() noexcept {
+        if (console_ == nullptr) {
+            return true;
+        }
         const std::scoped_lock lock{consoleMutex_};
         return flush(*console_);
     }

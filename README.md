@@ -114,6 +114,9 @@ Linux/GCC 使用相同目录结构，以下命令同样从仓库根运行：
 浏览器打开 `http://127.0.0.1:8080/`。服务仅监听 `127.0.0.1:8080`，可通过
 `/api/v1/health`、`/api/v1/state`
 和 `/api/v1/commands` 验证当前 HTTP 切片。
+启动脚本只向控制台输出启动状态、Web URL 和日志文件位置；结构化
+`server.lifecycle` JSON Lines 只写入 `logs/vna.log.jsonl`。服务非零退出时，
+脚本额外输出一行人类错误提示并保留原始退出码，不自动打开浏览器。
 `/api/v1/commands` 的失败响应保留 `status` 与 `stateRevision`，并提供稳定的
 `errorCode` 供客户端区分具体错误。
 `commandId`、`sessionId` 和 `instrumentId` 必须为 1..128 bytes，且不得包含

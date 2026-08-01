@@ -129,6 +129,23 @@ TEST(JsonLinesLoggerTest, WritesStructuredEventToConsoleAndFile) {
     EXPECT_EQ(lines.peek(), std::char_traits<char>::eof());
 }
 
+TEST(JsonLinesLoggerTest, WritesLifecycleEventOnlyToFileWhenConsoleIsDisabled) {
+    using namespace std::chrono_literals;
+    TemporaryDirectory directory;
+    auto options = JsonLinesLoggerOptions{.logDirectory = directory.path()};
+    options.console = nullptr;
+    auto logger = makeJsonLinesLogger(options);
+
+    ASSERT_EQ(logger->submit(completeEvent("server.lifecycle")),
+              observability::SubmitResult::Accepted);
+    ASSERT_TRUE(logger->flush(1s));
+
+    const auto contents = readFile(directory.path() / "vna.log.jsonl");
+    const auto record = nlohmann::json::parse(contents);
+    EXPECT_EQ(record.at("event"), "server.lifecycle");
+    EXPECT_EQ(record.at("status"), "succeeded");
+}
+
 TEST(JsonLinesLoggerTest, FlushTimeoutDoesNotForgetAcceptedEvent) {
     using namespace std::chrono_literals;
     TemporaryDirectory directory;

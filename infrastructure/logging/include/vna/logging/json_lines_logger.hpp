@@ -11,7 +11,8 @@ namespace vna::logging {
 
 struct JsonLinesLoggerOptions {
     std::filesystem::path logDirectory;
-    // Non-owning/non-null; must outlive Logger. Its write/flush must return.
+    // Non-owning; when non-null it must outlive Logger and its I/O must return.
+    // nullptr disables ordinary console JSON while retaining the file sink.
     std::ostream* console{&std::cout};
     // Must be > 0; internal flush barriers are coalesced separately.
     std::size_t queueCapacity{1024};

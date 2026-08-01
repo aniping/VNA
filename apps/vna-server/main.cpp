@@ -178,7 +178,10 @@ int runServer() {
     // Construct it before the logger so a broken release never creates logs.
     vna::web_api::WebApi webApi{
         commandBus, operationManager, displayFrameQuery, webRoot};
-    auto logger = vna::logging::makeJsonLinesLogger({logDirectory});
+    auto logOptions = vna::logging::JsonLinesLoggerOptions{logDirectory};
+    // The portable launcher owns the human console; JSONL remains authoritative.
+    logOptions.console = nullptr;
+    auto logger = vna::logging::makeJsonLinesLogger(logOptions);
     try {
         return serveUntilStopped(webApi, logger);
     } catch (...) {
