@@ -1,19 +1,23 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { TraceDisplayFrame } from '../api/traceDisplayFrameApi'
-import type { CartesianScaleSnapshot } from '../api/vnaApi'
-import { projectLogMagnitudePoints } from '../plot/logMagnitudeProjection'
+import {
+  projectCartesianPoints,
+  type CartesianAxisRange,
+  type CartesianSamples,
+} from '../plot/cartesianProjection'
 
 const props = defineProps<{
-  frame: TraceDisplayFrame
-  scale: CartesianScaleSnapshot
+  traceId: number
+  label: string
+  samples: CartesianSamples
+  range: CartesianAxisRange
 }>()
 
-const pathData = computed(() => projectLogMagnitudePoints(props.frame, props.scale)
+const pathData = computed(() => projectCartesianPoints(props.samples, props.range)
   .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
   .join(' '))
 const description = computed(
-  () => `Trace ${props.frame.traceId} Log Magnitude curve, ${props.frame.values.length} samples`,
+  () => `Trace ${props.traceId} ${props.label} curve, ${props.samples.values.length} samples`,
 )
 </script>
 
@@ -31,7 +35,7 @@ const description = computed(
 </template>
 
 <style scoped>
-/* The viewport clips out-of-range dB values without changing their projected coordinates. */
+/* The rectangular viewport clips crossing segments without changing backend values. */
 .trace-curve { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; overflow: hidden; color: var(--trace-color, #f2db24); pointer-events: none; }
 path { fill: none; stroke: currentColor; stroke-width: 2px; vector-effect: non-scaling-stroke; }
 </style>

@@ -6,7 +6,7 @@ import type {
   TraceSnapshot,
 } from '../api/vnaApi'
 import type { TraceDisplayFrame } from '../api/traceDisplayFrameApi'
-import LogMagnitudeCurve from './LogMagnitudeCurve.vue'
+import CartesianCurve from './CartesianCurve.vue'
 import { traceDisplayEmptyMessage } from './diagramModel'
 import { traceColorForMeasurement } from './traceVisual'
 
@@ -38,7 +38,12 @@ const curve = computed(() => {
   if (frame.traceId !== trace.id || frame.format !== trace.format || frame.valueUnit !== scale.unit) {
     return null
   }
-  return { frame, scale }
+  return {
+    traceId: frame.traceId,
+    label: 'Log Magnitude',
+    samples: { frequenciesHz: frame.frequenciesHz, values: frame.values },
+    range: { minimum: scale.minimum, maximum: scale.maximum },
+  }
 })
 
 function scaleBoundary(edge: 'top' | 'bottom'): string {
@@ -112,7 +117,13 @@ function selectTrace(): void {
       <span class="scale-bottom" :title="kind !== 'smith' && !trace?.scale ? 'Scale unavailable' : undefined">
         {{ scaleBottom }}
       </span>
-      <LogMagnitudeCurve v-if="curve" :frame="curve.frame" :scale="curve.scale" />
+      <CartesianCurve
+        v-if="curve"
+        :trace-id="curve.traceId"
+        :label="curve.label"
+        :samples="curve.samples"
+        :range="curve.range"
+      />
       <span v-else class="plot-empty">{{ emptyMessage }}</span>
     </div>
 
