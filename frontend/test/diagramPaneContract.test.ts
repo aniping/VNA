@@ -44,3 +44,9 @@ test('Cartesian and Smith grids remain mounted independently of measurement fram
   assert.match(smithGrid, /v-if="kind === 'smith'"/)
   assert.doesNotMatch(smithGrid, /curve|frame/)
 })
+
+test('Smith grid strokes stay device-sized instead of covering the plot', () => {
+  assert.match(styles, /\.smith-grid\s+:is\(circle, line\)\s*\{[^}]*vector-effect:\s*non-scaling-stroke/)
+  const svgStyle = styles.match(/\.smith-grid\s*\{([^}]*)\}/)?.[1] ?? ''
+  assert.doesNotMatch(svgStyle, /vector-effect/)
+})

@@ -160,7 +160,8 @@ function selectTrace(): void {
 .scale-top { top: 4px; }
 .scale-bottom { bottom: 4px; }
 .plot-empty { position: absolute; inset: 0; display: grid; place-items: center; color: #536269; font-size: 12px; }
-.smith-grid { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; fill: none; stroke: #4a606a; stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.smith-grid { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; fill: none; stroke: #4a606a; stroke-width: 1px; }
+.smith-grid :is(circle, line) { vector-effect: non-scaling-stroke; }
 .smith-grid .grid-major { stroke: #607580; }
 .channel-row { display: flex; align-items: center; justify-content: space-between; gap: 5px; padding: 0 4px; overflow: hidden; color: #d7e0e3; background: #202c32; font-size: 10px; white-space: nowrap; }
 .channel-id { padding: 3px 4px; color: #fff; background: #2c3c43; font-weight: 700; }
