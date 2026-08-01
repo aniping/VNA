@@ -371,13 +371,9 @@ input_frame_id
 
 ## 10. 扫频规划与测量后端
 
-Measurement Planner 根据启用的 Measurement 计算最小激励端口集合和接收机需求。Sweep Plan Compiler 再结合 CapabilitySet 生成可执行计划。Trace 不参与采集规划。
+Measurement Planner 根据启用的 Measurement 计算最小激励端口集合和接收机需求。Sweep Plan Compiler 再结合 CapabilitySet 生成可执行计划，Trace 不参与采集规划。下一阶段多端口持续显示契约仍待实现，详见 [ADR-0009](adr/0009-multiport-continuous-display.md)。
 
-例如同时测量 S11、S21、S12、S22 时：
-
-- 源端口 1 激励一次，获取 S11 和 S21 所需接收机数据。
-- 源端口 2 激励一次，获取 S12 和 S22 所需接收机数据。
-- 同一 Measurement 的 LogMag、Phase 和 Smith Trace 共享校准后复数数据。
+同时测量 S11、S21、S12、S22 时，源端口 1 的一次激励提供 S11 和 S21，源端口 2 的一次激励提供 S12 和 S22；同一 Measurement 的 LogMag、Phase 和 Smith Trace 共享校准后的复数数据。
 
 后端核心契约：
 
@@ -683,5 +679,7 @@ vna-platform/
 - [ADR-0006：采用乐观并发控制、幂等命令与结构化错误](adr/0006-optimistic-control-and-command-reliability.md)
 - [ADR-0007：在 Scale 和 Marker 前拆分显示模型](adr/0007-separate-display-model.md)
 - [ADR-0008：以 Operation 完成栅栏实现 SCPI 同步](adr/0008-operation-fences-for-scpi-synchronization.md)
+- [ADR-0009：一次原始帧驱动多端口连续显示](adr/0009-multiport-continuous-display.md)
 
 第一阶段的具体范围和验收标准见 [第一阶段实施范围](phase-1.md)。
+其中的功能排除项是第一阶段历史范围；后续阶段以新增 ADR 记录扩展契约。
