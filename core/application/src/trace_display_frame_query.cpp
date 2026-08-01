@@ -1,6 +1,7 @@
 #include <vna/application/trace_display_frame_query.hpp>
 
 #include <algorithm>
+#include <optional>
 
 namespace vna::application {
 namespace {
@@ -17,6 +18,41 @@ const display_model::TraceSnapshot* findTrace(
     return trace == snapshot.display.traces.cend() ? nullptr : &*trace;
 }
 
+const domain::MeasurementSnapshot* findMeasurement(
+    const StateSnapshot& snapshot,
+    domain::MeasurementId measurementId) {
+    const auto measurement = std::find_if(
+        snapshot.instrument.measurements.cbegin(),
+        snapshot.instrument.measurements.cend(),
+        [measurementId](const domain::MeasurementSnapshot& candidate) {
+            return candidate.id == measurementId;
+        });
+    return measurement == snapshot.instrument.measurements.cend()
+        ? nullptr
+        : &*measurement;
+}
+
+struct TraceBinding {
+    domain::MeasurementId measurementId;
+    domain::MeasurementType measurementType;
+    display_model::TraceFormat format;
+    friend bool operator==(const TraceBinding&, const TraceBinding&) = default;
+};
+
+std::optional<TraceBinding> findBinding(
+    const StateSnapshot& snapshot,
+    display_model::TraceId traceId) {
+    const auto* trace = findTrace(snapshot, traceId);
+    if (trace == nullptr) {
+        return std::nullopt;
+    }
+    const auto* measurement = findMeasurement(snapshot, trace->measurementId);
+    if (measurement == nullptr) {
+        return std::nullopt;
+    }
+    return TraceBinding{trace->measurementId, measurement->type, trace->format};
+}
+
 TraceDisplayFrameQueryOutcome resolveFrame(
     const StateSnapshot& snapshot,
     display_model::TraceId traceId,
@@ -26,9 +62,11 @@ TraceDisplayFrameQueryOutcome resolveFrame(
         return TraceDisplayFrameQueryError{
             .code = TraceDisplayFrameQueryErrorCode::TraceNotFound};
     }
-    if (frame == nullptr || frame->traceId != traceId ||
-        trace->format != display_model::TraceFormat::LogMagnitude ||
-        frame->format != trace->format) {
+    const auto binding = findBinding(snapshot, traceId);
+    if (!binding.has_value() || frame == nullptr || frame->traceId != traceId ||
+        frame->measurementId != binding->measurementId ||
+        frame->measurementType != binding->measurementType ||
+        frame->format != binding->format) {
         return TraceDisplayFrameQueryError{
             .code = TraceDisplayFrameQueryErrorCode::FrameNotAvailable};
     }
@@ -58,7 +96,8 @@ TraceDisplayFrameQueryOutcome TraceDisplayFrameQuery::waitForNext(
         return TraceDisplayFrameQueryError{
             .code = TraceDisplayFrameQueryErrorCode::TraceNotFound};
     }
-    if (trace->format != display_model::TraceFormat::LogMagnitude) {
+    const auto binding = findBinding(before, traceId);
+    if (!binding.has_value()) {
         return TraceDisplayFrameQueryError{
             .code = TraceDisplayFrameQueryErrorCode::FrameNotAvailable};
     }
@@ -67,12 +106,9 @@ TraceDisplayFrameQueryOutcome TraceDisplayFrameQuery::waitForNext(
     // two module locks, while a concurrent discard cannot slip between policy
     // validation and waiter registration.
     const auto frame = repository_.waitForNext(
-        traceId, afterSequence, token, [this, traceId] {
+        traceId, afterSequence, token, [this, traceId, binding] {
             const auto current = commandBus_.snapshot();
-            const auto* currentTrace = findTrace(current, traceId);
-            return currentTrace != nullptr &&
-                   currentTrace->format ==
-                       display_model::TraceFormat::LogMagnitude;
+            return findBinding(current, traceId) == binding;
         });
     return resolveFrame(commandBus_.snapshot(), traceId, frame);
 }
