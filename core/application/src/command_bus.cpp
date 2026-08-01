@@ -51,6 +51,8 @@ CommandErrorCode commandErrorCode(const ApplicationError& error) noexcept {
             return CommandErrorCode::ResourceBusy;
         case ApplicationErrorCode::StateRevisionConflict:
             return CommandErrorCode::StateRevisionConflict;
+        case ApplicationErrorCode::TraceConfigurationRejected:
+            return CommandErrorCode::TraceConfigurationRejected;
         case ApplicationErrorCode::UnsupportedSweepConfiguration:
             return CommandErrorCode::UnsupportedSweepConfiguration;
         case ApplicationErrorCode::WrongInstrument:
@@ -161,41 +163,6 @@ CommandResult CommandBus::execute(const CreateMeasurementCommand& command) {
 
 CommandResult CommandBus::execute(const CreateWindowCommand&) {
     return succeeded(CommandValue{displayWorkspace_.createWindow()});
-}
-
-CommandResult CommandBus::execute(const CreateTraceCommand& command) {
-    if (!instrument_.containsMeasurement(command.measurementId)) {
-        return domainError(domain::DomainError{
-            .code = domain::DomainErrorCode::MeasurementNotFound});
-    }
-    const auto trace = displayWorkspace_.createTrace(
-        command.windowId,
-        command.measurementId,
-        command.format);
-    if (!trace.hasValue()) {
-        return displayError(trace.error());
-    }
-    return succeeded(CommandValue{trace.value()});
-}
-
-CommandResult CommandBus::execute(
-    const UpdateTraceScalePerDivisionCommand& command) {
-    const auto trace = displayWorkspace_.updateTraceScalePerDivision(
-        command.traceId,
-        command.scalePerDivision);
-    if (!trace.hasValue()) {
-        return displayError(trace.error());
-    }
-    return succeeded(CommandValue{trace.value()});
-}
-
-CommandResult CommandBus::execute(const RemoveTraceCommand& command) {
-    const auto trace = displayWorkspace_.removeTrace(command.traceId);
-    if (!trace.hasValue()) {
-        return displayError(trace.error());
-    }
-    singleSweepHandler_.discard(command.traceId);
-    return succeeded(CommandValue{std::monostate{}});
 }
 
 CommandResult CommandBus::succeeded(CommandValue value) {

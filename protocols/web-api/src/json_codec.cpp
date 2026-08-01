@@ -176,6 +176,9 @@ CommandOutcomeInfo commandOutcomeInfo(
             return {"conflict", 409, "resource-busy"};
         case application::CommandErrorCode::StateRevisionConflict:
             return {"conflict", 409, "state-revision-conflict"};
+        case application::CommandErrorCode::TraceConfigurationRejected:
+            return {
+                "validationError", 422, "trace-configuration-rejected"};
         case application::CommandErrorCode::UnsupportedSweepConfiguration:
             return {
                 "validationError",

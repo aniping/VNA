@@ -112,7 +112,7 @@ protected:
     std::uint64_t nextCommandId_{1};
 };
 
-TEST_F(TraceFrameDiscardCommandTest, RemovalRepeatedlyReleasesTraceCapacity) {
+TEST_F(TraceFrameDiscardCommandTest, CatalogRemovalReleasesTraceCapacity) {
     TraceDisplayFrameHandle firstReader;
     for (std::uint64_t cycle = 1; cycle <= 3; ++cycle) {
         const auto traceId = createTrace();
@@ -129,7 +129,7 @@ TEST_F(TraceFrameDiscardCommandTest, RemovalRepeatedlyReleasesTraceCapacity) {
     }
     ASSERT_NE(firstReader, nullptr);
     EXPECT_EQ(firstReader->traceId, display_model::TraceId{1});
-    EXPECT_EQ(discardCalls_, 3U);
+    EXPECT_EQ(discardCalls_, 0U);
 }
 
 TEST_F(TraceFrameDiscardCommandTest, FailedRemovalDoesNotDiscardFrame) {

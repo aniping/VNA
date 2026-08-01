@@ -153,6 +153,7 @@ bool CommandBus::IdempotencyStore::isCacheable(
     }
     const auto code = std::get<ApplicationError>(error).code;
     return code == ApplicationErrorCode::StateRevisionConflict ||
+        code == ApplicationErrorCode::TraceConfigurationRejected ||
         code == ApplicationErrorCode::UnsupportedSweepConfiguration;
 }
 

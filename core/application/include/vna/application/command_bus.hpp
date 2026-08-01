@@ -18,6 +18,7 @@ enum class ApplicationErrorCode {
     ControlDenied,
     ResourceBusy,
     StateRevisionConflict,
+    TraceConfigurationRejected,
     UnsupportedSweepConfiguration,
     WrongInstrument,
 };
@@ -34,6 +35,7 @@ enum class CommandErrorCode {
     ControlDenied,
     ResourceBusy,
     StateRevisionConflict,
+    TraceConfigurationRejected,
     UnsupportedSweepConfiguration,
     WrongInstrument,
 };
@@ -148,7 +150,13 @@ private:
     [[nodiscard]] CommandResult execute(
         const StartSingleSweepCommand& command,
         const CommandEnvelope& envelope);
+    [[nodiscard]] CommandResult commitTraceConfiguration(
+        domain::Instrument candidateInstrument,
+        display_model::DisplayWorkspace candidateDisplay,
+        CommandValue value);
     [[nodiscard]] CommandResult succeeded(CommandValue value);
+    [[nodiscard]] CommandResult succeededWithoutRevision(
+        CommandValue value) const;
     [[nodiscard]] CommandResult domainError(domain::DomainError error) const;
     [[nodiscard]] CommandResult displayError(
         display_model::DisplayError error) const;

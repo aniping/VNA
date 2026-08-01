@@ -166,40 +166,20 @@ TEST(ContinuousTraceRetirementTest, RetireBeforePublishIsIdempotentAndScoped) {
     EXPECT_EQ(acquisitionState, acquisition::ContinuousAcquisitionState::Running);
 }
 
-TEST(DisabledSingleSweepExecutionTest, RejectsSubmitAndForwardsRetirement) {
-    acquisition::test_support::ControlledSource source;
-    acquisition::ContinuousAcquisition acquisition{
-        acquisition::test_support::validPlan(), source};
+TEST(DisabledSingleSweepExecutionTest, RejectsSubmitWithoutOwningDisplayState) {
     TraceDisplayFrameRepository repository{1};
     ASSERT_TRUE(repository.publish(seedFrame()).hasValue());
-    ContinuousTracePublisher publisher{
-        acquisition, retirementPreset(), repository};
-    DisabledSingleSweepExecution disabled{publisher};
-    const auto firstRequested = source.waitForRequest(1);
+    const auto retained = repository.latest(display_model::TraceId{1});
+    DisabledSingleSweepExecution disabled;
 
     const auto result = disabled.submit(test_support::validWorkItem());
     disabled.invalidateTraceFrame(display_model::TraceId{1});
-    const auto stateAfterInvalidation = publisher.snapshot().state;
-    const auto frameAfterInvalidation = repository.latest(
-        display_model::TraceId{1});
-    ASSERT_TRUE(repository.publish(seedFrame()).hasValue());
     disabled.discardTrace(display_model::TraceId{1});
-    publisher.stop();
-    const auto acquisitionSnapshot = acquisition.snapshot();
-    acquisition.stop();
 
     const auto* error = std::get_if<SingleSweepSubmitError>(&result);
     ASSERT_NE(error, nullptr);
     EXPECT_EQ(error->code, SingleSweepSubmitErrorCode::Stopped);
-    EXPECT_TRUE(firstRequested);
-    EXPECT_EQ(stateAfterInvalidation, ContinuousTracePublisherState::Running);
-    EXPECT_EQ(frameAfterInvalidation, nullptr);
-    EXPECT_EQ(acquisitionSnapshot.state,
-              acquisition::ContinuousAcquisitionState::Running);
-    EXPECT_EQ(acquisitionSnapshot.lastPublishedSequence, 0U);
-    EXPECT_EQ(repository.latest(display_model::TraceId{1}), nullptr);
-    EXPECT_EQ(publisher.snapshot().state,
-              ContinuousTracePublisherState::Retired);
+    EXPECT_EQ(repository.latest(display_model::TraceId{1}), retained);
 }
 
 }  // namespace
