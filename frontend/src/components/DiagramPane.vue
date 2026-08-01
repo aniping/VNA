@@ -7,7 +7,9 @@ import type {
 } from '../api/vnaApi'
 import type { MultiFormatTraceDisplayFrame } from '../api/traceDisplayFrameSet'
 import CartesianCurve from './CartesianCurve.vue'
-import { traceDisplayEmptyMessage } from './diagramModel'
+import SmithCurve from './SmithCurve.vue'
+import { phaseAxisRange, selectDiagramCurve } from './diagramCurveModel'
+import { noMeasurementDataMessage } from './diagramModel'
 import { traceColorForMeasurement } from './traceVisual'
 
 const props = defineProps<{
@@ -28,27 +30,15 @@ const traceLabel = computed(() => {
 })
 const scaleTop = computed(() => scaleBoundary('top'))
 const scaleBottom = computed(() => scaleBoundary('bottom'))
-const emptyMessage = computed(() => traceDisplayEmptyMessage(props.trace?.format))
-const curve = computed(() => {
-  const frame = props.frame
-  const trace = props.trace
-  const scale = trace?.scale
-  // Identity and presentation checks prevent a parent from painting a stale Trace into this pane.
-  if (props.kind !== 'cartesian' || frame?.format !== 'logMagnitude' || !trace || !scale) return null
-  if (frame.traceId !== trace.id || frame.format !== trace.format || frame.valueUnit !== scale.unit) {
-    return null
-  }
-  return {
-    traceId: frame.traceId,
-    label: 'Log Magnitude',
-    samples: { frequenciesHz: frame.frequenciesHz, values: frame.values },
-    range: { minimum: scale.minimum, maximum: scale.maximum },
-  }
-})
+const curve = computed(() => selectDiagramCurve(props.trace, props.measurement, props.frame))
 
 function scaleBoundary(edge: 'top' | 'bottom'): string {
   // Smith labels describe circle geometry; only Cartesian labels consume display-model Scale.
   if (props.kind === 'smith') return edge === 'top' ? '1' : '0'
+  if (props.trace?.format === 'phase') {
+    const value = edge === 'top' ? phaseAxisRange.maximum : phaseAxisRange.minimum
+    return `${value} degree`
+  }
   const scale = props.trace?.scale
   if (!scale) return '—'
   const value = edge === 'top' ? scale.maximum : scale.minimum
@@ -104,27 +94,41 @@ function selectTrace(): void {
     </header>
 
     <div class="plot-area" :class="kind">
-      <div v-if="kind === 'smith'" class="smith-grid" aria-hidden="true">
-        <span class="smith-ring ring-one" />
-        <span class="smith-ring ring-two" />
-        <span class="smith-ring ring-three" />
-        <span class="smith-arc arc-top" />
-        <span class="smith-arc arc-bottom" />
-      </div>
-      <span class="scale-top" :title="kind !== 'smith' && !trace?.scale ? 'Scale unavailable' : undefined">
+      <svg
+        v-if="kind === 'smith'"
+        class="smith-grid"
+        viewBox="-1 -1 2 2"
+        preserveAspectRatio="xMidYMid meet"
+        aria-hidden="true"
+      >
+        <circle cx="0" cy="0" r="1" class="grid-major" />
+        <line x1="-1" y1="0" x2="1" y2="0" class="grid-major" />
+        <circle cx="0.5" cy="0" r="0.5" />
+        <circle cx="0.67" cy="0" r="0.33" />
+        <circle cx="0.8" cy="0" r="0.2" />
+        <circle cx="1" cy="-1" r="1" />
+        <circle cx="1" cy="1" r="1" />
+      </svg>
+      <span class="scale-top" :title="trace?.format === 'logMagnitude' && !trace.scale ? 'Scale unavailable' : undefined">
         {{ scaleTop }}
       </span>
-      <span class="scale-bottom" :title="kind !== 'smith' && !trace?.scale ? 'Scale unavailable' : undefined">
+      <span class="scale-bottom" :title="trace?.format === 'logMagnitude' && !trace.scale ? 'Scale unavailable' : undefined">
         {{ scaleBottom }}
       </span>
       <CartesianCurve
-        v-if="curve"
+        v-if="curve?.kind === 'cartesian'"
         :trace-id="curve.traceId"
         :label="curve.label"
+        :unit="curve.unit"
         :samples="curve.samples"
         :range="curve.range"
       />
-      <span v-else class="plot-empty">{{ emptyMessage }}</span>
+      <SmithCurve
+        v-else-if="curve?.kind === 'smith'"
+        :trace-id="curve.traceId"
+        :samples="curve.samples"
+      />
+      <span v-else class="plot-empty">{{ noMeasurementDataMessage }}</span>
     </div>
 
     <footer class="channel-row">
@@ -156,15 +160,8 @@ function selectTrace(): void {
 .scale-top { top: 4px; }
 .scale-bottom { bottom: 4px; }
 .plot-empty { position: absolute; inset: 0; display: grid; place-items: center; color: #536269; font-size: 12px; }
-.smith-grid { position: absolute; top: 50%; left: 50%; width: min(86%, 270px); aspect-ratio: 1; transform: translate(-50%, -50%); border: 1px solid #607580; border-radius: 50%; }
-.smith-grid::before { content: ''; position: absolute; top: 50%; left: 0; width: 100%; border-top: 1px solid #607580; }
-.smith-ring { position: absolute; top: 50%; right: 0; transform: translateY(-50%); aspect-ratio: 1; border: 1px solid #4a606a; border-radius: 50%; }
-.ring-one { width: 75%; }
-.ring-two { width: 50%; }
-.ring-three { width: 25%; }
-.smith-arc { position: absolute; right: 0; width: 73%; height: 73%; border: 1px solid #4a606a; border-radius: 50%; }
-.arc-top { bottom: 50%; }
-.arc-bottom { top: 50%; }
+.smith-grid { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; fill: none; stroke: #4a606a; stroke-width: 1px; vector-effect: non-scaling-stroke; }
+.smith-grid .grid-major { stroke: #607580; }
 .channel-row { display: flex; align-items: center; justify-content: space-between; gap: 5px; padding: 0 4px; overflow: hidden; color: #d7e0e3; background: #202c32; font-size: 10px; white-space: nowrap; }
 .channel-id { padding: 3px 4px; color: #fff; background: #2c3c43; font-weight: 700; }
 .channel-id.active { background: #397cb4; }

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  noMeasurementDataMessage,
   selectDisplayDiagrams,
-  traceDisplayEmptyMessage,
 } from '../src/components/diagramModel.ts'
 import type { StateSnapshot } from '../src/api/vnaApi.ts'
 
@@ -87,8 +87,6 @@ test('active Diagram follows its selected Trace without changing Window order', 
   })
 })
 
-test('unsupported formats explain why no display frame is drawn', () => {
-  assert.equal(traceDisplayEmptyMessage('phase'), 'Display data unavailable for current format')
-  assert.equal(traceDisplayEmptyMessage('smith'), 'Display data unavailable for current format')
-  assert.equal(traceDisplayEmptyMessage('logMagnitude'), 'No measurement data')
+test('every supported format keeps the same grid empty state while awaiting its next frame set', () => {
+  assert.equal(noMeasurementDataMessage, 'No measurement data')
 })

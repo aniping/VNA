@@ -9,6 +9,7 @@ import {
 const props = defineProps<{
   traceId: number
   label: string
+  unit: string
   samples: CartesianSamples
   range: CartesianAxisRange
 }>()
@@ -17,7 +18,7 @@ const pathData = computed(() => projectCartesianPoints(props.samples, props.rang
   .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
   .join(' '))
 const description = computed(
-  () => `Trace ${props.traceId} ${props.label} curve, ${props.samples.values.length} samples`,
+  () => `Trace ${props.traceId} ${props.label} curve in ${props.unit}, ${props.samples.values.length} samples`,
 )
 </script>
 

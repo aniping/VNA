@@ -172,8 +172,9 @@ pnpm run dev
 第 112、127–129、935–936 页，ZNA v41 补充）。尚无测量帧时 Diagram 显示空态；后台连续采集
 会自动更新显示帧，Toolbar 的
 `Restart Sweep` 在当前发布版中暂不可用并按禁用处理。
-Phase/Smith 当前暂无首版显示帧，页面保留网格并显示 `NO DISPLAY DATA`，Format
-仍可切回 LogMagnitude；切回后会建立新的实时显示连接，不生成伪造数据。
+LogMagnitude、Phase 与 Smith 都直接绘制连续帧集中的后端样本；Phase 以 degree
+显示在固定 `[-180, 180]` 视域，Smith 直接投影复数平面坐标。切换 Measurement
+或 Format 时保持同一实时连接并等待新 generation，网格保留且不显示旧身份曲线。
 `Maximize Diagram` 可切换活动 Diagram 的最大化状态；其余尚未实现的 Toolbar
 项保持禁用。
 底部 `File` 至 `Help` 菜单尚未接通并保持禁用；连接、revision 和实体计数仍

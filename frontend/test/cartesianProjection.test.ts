@@ -30,3 +30,17 @@ test('keeps out-of-range values outside the viewport for SVG clipping', () => {
 
   assert.deepEqual(points, [{ x: 0, y: 1.2 }, { x: 1, y: -0.2 }])
 })
+
+test('projects Phase endpoints and leaves out-of-domain values for viewport clipping', () => {
+  const points = projectCartesianPoints({
+    frequenciesHz: [1, 2, 3, 4],
+    values: [-180, 0, 180, 240],
+  }, { minimum: -180, maximum: 180 })
+
+  assert.deepEqual(points, [
+    { x: 0, y: 1 },
+    { x: 1 / 3, y: 0.5 },
+    { x: 2 / 3, y: 0 },
+    { x: 1, y: -1 / 6 },
+  ])
+})

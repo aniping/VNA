@@ -26,3 +26,21 @@ test('active Diagram styles identifiers without changing the pane frame', () => 
   assert.match(paneFrame, /border:\s*1px solid #60717a/)
   assert.doesNotMatch(styles, /\.diagram-pane\.active|#f2db24|box-shadow/)
 })
+
+test('DiagramPane delegates all three backend display formats to projection components', () => {
+  assert.match(paneSource, /selectDiagramCurve/)
+  assert.match(paneSource, /<CartesianCurve[\s\S]*?curve\?\.kind === 'cartesian'/)
+  assert.match(paneSource, /:unit="curve\.unit"/)
+  assert.match(paneSource, /<SmithCurve[\s\S]*?curve\?\.kind === 'smith'/)
+  assert.match(paneSource, /phaseAxisRange\.maximum/)
+  assert.match(paneSource, /phaseAxisRange\.minimum/)
+  assert.doesNotMatch(paneSource, /log10|atan2|impedance|admittance/i)
+})
+
+test('Cartesian and Smith grids remain mounted independently of measurement frames', () => {
+  assert.match(openingTag('plot-area'), /:class="kind"/)
+  assert.match(styles, /\.plot-area\.cartesian\s*\{[^}]*background-image:/)
+  const smithGrid = openingTag('smith-grid')
+  assert.match(smithGrid, /v-if="kind === 'smith'"/)
+  assert.doesNotMatch(smithGrid, /curve|frame/)
+})
