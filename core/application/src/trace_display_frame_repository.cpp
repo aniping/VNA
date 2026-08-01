@@ -116,27 +116,40 @@ TraceDisplayFrameResult TraceDisplayFrameRepository::publish(
     if (const auto error = validateValues(frame)) {
         return TraceDisplayFrameResult{*error};
     }
-    std::lock_guard lock{mutex_};
-    const auto found = latestByTrace_.find(frame.traceId.value());
-    if (found != latestByTrace_.end() &&
-        found->second->frameId == frame.frameId &&
-        found->second->sequenceNumber == frame.sequenceNumber) {
-        return TraceDisplayFrameResult{found->second};
+    TraceDisplayFrameHandle published;
+    std::shared_ptr<WaitState> waitState;
+    {
+        std::lock_guard lock{mutex_};
+        const auto found = latestByTrace_.find(frame.traceId.value());
+        if (found != latestByTrace_.end() &&
+            found->second->frameId == frame.frameId &&
+            found->second->sequenceNumber == frame.sequenceNumber) {
+            return TraceDisplayFrameResult{found->second};
+        }
+        // Rejection precedes assignment, so failure cannot wake a waiter or
+        // replace the last known-good frame.
+        if (found != latestByTrace_.end() &&
+            frame.sequenceNumber <= found->second->sequenceNumber) {
+            return TraceDisplayFrameResult{TraceDisplayFrameError{
+                .code = TraceDisplayFrameErrorCode::SequenceRegression}};
+        }
+        if (found == latestByTrace_.end() &&
+            latestByTrace_.size() >= capacity_) {
+            return TraceDisplayFrameResult{TraceDisplayFrameError{
+                .code = TraceDisplayFrameErrorCode::CapacityExceeded}};
+        }
+        published =
+            std::make_shared<const TraceDisplayFrame>(std::move(frame));
+        latestByTrace_[published->traceId.value()] = published;
+        const auto waiting = waitStates_.find(published->traceId.value());
+        if (waiting != waitStates_.end()) {
+            waitState = waiting->second;
+        }
     }
-    // Sequence comparison and replacement share this lock. Every rejection
-    // returns before allocation or assignment, preserving the current frame.
-    if (found != latestByTrace_.end() &&
-        frame.sequenceNumber <= found->second->sequenceNumber) {
-        return TraceDisplayFrameResult{TraceDisplayFrameError{
-            .code = TraceDisplayFrameErrorCode::SequenceRegression}};
+    if (waitState != nullptr) {
+        waitState->changed.notify_all();
     }
-    if (found == latestByTrace_.end() && latestByTrace_.size() >= capacity_) {
-        return TraceDisplayFrameResult{TraceDisplayFrameError{
-            .code = TraceDisplayFrameErrorCode::CapacityExceeded}};
-    }
-    auto published = std::make_shared<const TraceDisplayFrame>(std::move(frame));
-    latestByTrace_[published->traceId.value()] = published;
-    return TraceDisplayFrameResult{std::move(published)};
+    return TraceDisplayFrameResult{published};
 }
 
 TraceDisplayFrameHandle TraceDisplayFrameRepository::latest(
@@ -147,12 +160,6 @@ TraceDisplayFrameHandle TraceDisplayFrameRepository::latest(
         return nullptr;
     }
     return found->second;
-}
-
-void TraceDisplayFrameRepository::discard(
-    display_model::TraceId traceId) noexcept {
-    std::lock_guard lock{mutex_};
-    latestByTrace_.erase(traceId.value());
 }
 
 }  // namespace vna::application
