@@ -1,5 +1,7 @@
 #include <vna/simulation/simulation_sweep.hpp>
 
+#include "open_port_leakage.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -110,12 +112,19 @@ frames::RawReceiverSample makeSample(
          ++responsePort) {
         const auto noise = receiverNoise(
             plan, {point, sourcePort, responsePort}, scale);
-        sample.responses.push_back(responsePort == sourcePort
-                                       ? frames::ComplexSample{
-                                             sample.reference.real + noise.real,
-                                             sample.reference.imaginary +
-                                                 noise.imaginary}
-                                       : noise);
+        if (responsePort == sourcePort) {
+            sample.responses.push_back({
+                sample.reference.real + noise.real,
+                sample.reference.imaginary + noise.imaginary,
+            });
+            continue;
+        }
+        const auto leakage = detail::coherentOpenPortLeakage(
+            plan, point, sourcePort, responsePort);
+        sample.responses.push_back({
+            leakage.real + noise.real,
+            leakage.imaginary + noise.imaginary,
+        });
     }
     return sample;
 }

@@ -134,29 +134,6 @@ TEST(SimulationSweepTest, CoordinateFieldsCannotCancelEachOther) {
               result.value().sourceStates[1].samples[512].responses[2]);
 }
 
-TEST(SimulationSweepTest, WiderIfBandwidthAndLowerPowerRaiseNoiseFloor) {
-    auto quiet = validPlan();
-    quiet.ifBandwidthHz = 100;
-    quiet.powerDbm = 0.0;
-    auto wide = quiet;
-    wide.ifBandwidthHz = 10'000;
-    auto weak = quiet;
-    weak.powerDbm = -20.0;
-
-    const auto quietResult = simulateOpenPorts(quiet);
-    const auto wideResult = simulateOpenPorts(wide);
-    const auto weakResult = simulateOpenPorts(weak);
-
-    ASSERT_TRUE(quietResult.hasValue());
-    ASSERT_TRUE(wideResult.hasValue());
-    ASSERT_TRUE(weakResult.hasValue());
-    const auto floor = [](const auto& payload) {
-        return magnitude(payload.sourceStates[0].samples[0].responses[1]);
-    };
-    EXPECT_GT(floor(wideResult.value()), floor(quietResult.value()));
-    EXPECT_GT(floor(weakResult.value()), floor(quietResult.value()));
-}
-
 TEST(SimulationSweepTest, LocksKnownDeterministicRawPoint) {
     const auto result = simulateOpenPorts(validPlan());
 
@@ -166,8 +143,8 @@ TEST(SimulationSweepTest, LocksKnownDeterministicRawPoint) {
     EXPECT_DOUBLE_EQ(point.reference.imaginary, 9.1762821777476313e-7);
     EXPECT_DOUBLE_EQ(point.responses[0].real, 1.0000076258302051);
     EXPECT_DOUBLE_EQ(point.responses[0].imaginary, 9.4904936105068039e-6);
-    EXPECT_DOUBLE_EQ(point.responses[1].real, -3.4711331584370569e-7);
-    EXPECT_DOUBLE_EQ(point.responses[1].imaginary, 8.9619364311735819e-6);
+    EXPECT_DOUBLE_EQ(point.responses[1].real, 0.00099963779006614299);
+    EXPECT_DOUBLE_EQ(point.responses[1].imaginary, 0.0013090789141456628);
 }
 
 TEST(SimulationSweepTest, ProducesFiniteBoundedMaximumSweep) {

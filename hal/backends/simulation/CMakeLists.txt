@@ -1,4 +1,8 @@
-add_library(vna_simulation src/simulation_sweep.cpp)
+add_library(
+    vna_simulation
+    src/open_port_leakage.cpp
+    src/simulation_sweep.cpp
+)
 add_library(vna::simulation ALIAS vna_simulation)
 
 target_compile_features(vna_simulation PUBLIC cxx_std_20)

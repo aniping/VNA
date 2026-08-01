@@ -134,6 +134,7 @@ Scale/Div，payload 为 `{"traceId": <id>, "scalePerDivision": <number>}`。
 当前发布版启动后由后台 `ContinuousAcquisition` 自动、持续采集，并以约 10 Hz
 的模拟节奏更新默认 S21 显示帧。生产组合不再启动第二个单扫 worker；遗留的
 `startSingleSweep` 当前返回 `409 conflict` 和 `resource-busy`。
+默认开路仿真的 S21 是仪器内部耦合泄漏叠加确定性接收机噪声，不代表 DUT 直通。
 `GET /api/v1/traces/<traceId>/display-frame` 返回最新完整 Log Magnitude dB
 帧；Trace 存在但尚无可用帧时返回空的 `204`，Trace 不存在时返回 `404`。该
 接口用于读取最新完整帧，不作为连续曲线高频轮询通道。
