@@ -1,0 +1,95 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "g++"
+      }
+    },
+    {
+      "name": "dev",
+      "displayName": "Fast server development",
+      "description": "Build only vna-server with ccache and reduced debug information",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/out/dev",
+      "cacheVariables": {
+        "BUILD_TESTING": false,
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER_LAUNCHER": "ccache",
+        "CMAKE_CXX_FLAGS_DEBUG": "-O0 -g1"
+      }
+    },
+    {
+      "name": "test",
+      "displayName": "Complete debug test build",
+      "description": "Build and run every test with ccache and reduced debug information",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/out/test",
+      "cacheVariables": {
+        "BUILD_TESTING": true,
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER_LAUNCHER": "ccache",
+        "CMAKE_CXX_FLAGS_DEBUG": "-O0 -g1"
+      }
+    },
+    {
+      "name": "release",
+      "displayName": "Portable release packaging",
+      "description": "Configure the explicit portable release packaging target",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/out/release-driver",
+      "cacheVariables": {
+        "BUILD_TESTING": false,
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev",
+      "displayName": "Build development server",
+      "configurePreset": "dev",
+      "jobs": 12,
+      "targets": [
+        "vna-server"
+      ]
+    },
+    {
+      "name": "test",
+      "displayName": "Build complete test suite",
+      "configurePreset": "test",
+      "jobs": 12
+    },
+    {
+      "name": "release",
+      "displayName": "Build portable release",
+      "configurePreset": "release",
+      "jobs": 12,
+      "targets": [
+        "package-release"
+      ]
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "test",
+      "displayName": "Run complete test suite",
+      "configurePreset": "test",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 12,
+        "noTestsAction": "error"
+      }
+    }
+  ]
+}

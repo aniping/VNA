@@ -48,10 +48,32 @@ git submodule update --init --recursive
 ## 构建与测试
 
 需要 CMake、Ninja 和 GCC。Windows 使用 MinGW GCC，Linux 使用系统 GCC；
-项目不支持 MSVC。
+项目不支持 MSVC。推荐的开发与测试 preset 还需要 `ccache` 位于 `PATH`。
+首次构建先初始化第三方依赖：
 
 ```powershell
 git submodule update --init --recursive
+```
+
+日常开发只构建 `vna-server`：
+
+```powershell
+cmake --preset dev
+cmake --build --preset dev
+```
+
+`dev` 使用 `out/dev/`、12 个并行任务、ccache 和 `-O0 -g1`，并关闭测试目标；
+它保留行号级调试信息，但不包含完整的变量调试信息。提交前执行完整测试构建：
+
+```powershell
+cmake --preset test
+cmake --build --preset test
+ctest --preset test
+```
+
+如果没有 ccache，或需要完整 `-g` 调试信息，仍可使用原始命令：
+
+```powershell
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=g++
 cmake --build build
 ctest --test-dir build --output-on-failure
@@ -59,7 +81,7 @@ ctest --test-dir build --output-on-failure
 
 在 Windows 上执行前，请确认 `g++` 和 `ninja` 来自同一套 MinGW 工具链。
 
-`build/` 和 `frontend/dist/` 只是构建中间产物。组装包含服务端、前端静态文件、
+`build/`、`out/` 和 `frontend/dist/` 只是构建中间产物。组装包含服务端、前端静态文件、
 日志目录和运行库的便携发布目录前，还需要 Node.js 20.19 或更高版本、pnpm
 11.9.0，并在首次打包或锁文件变化后安装前端依赖：
 
@@ -67,10 +89,11 @@ ctest --test-dir build --output-on-failure
 pnpm --dir frontend install --frozen-lockfile
 ```
 
-随后执行显式发布目标：
+随后执行显式发布 preset：
 
 ```powershell
-cmake --build build --target package-release
+cmake --preset release
+cmake --build --preset release
 ```
 
 该显式目标成功后生成 `release/VectorNetworkAnalyzer/`；普通 CMake 构建和
