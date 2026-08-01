@@ -15,6 +15,7 @@ import InstrumentToolbar from './InstrumentToolbar.vue'
 import MeasurementSofttool from './MeasurementSofttool.vue'
 import ScaleSofttool from './ScaleSofttool.vue'
 import StimulusSofttool from './StimulusSofttool.vue'
+import { selectWorkspacePresentation } from './workspacePresentation'
 import {
   isChannelKey,
   isStimulusKey,
@@ -27,6 +28,7 @@ const props = defineProps<{
   state: StateSnapshot | null
   connection: 'connecting' | 'online' | 'offline'
   serviceError: string
+  displayError: string
   disabled: boolean
   busy: boolean
   frames: ReadonlyMap<number, TraceDisplayFrame>
@@ -48,6 +50,12 @@ const activeTrace = computed(() => {
 })
 const isDiagramMaximized = ref(false)
 const canMaximizeDiagram = computed(() => Boolean(activeTrace.value))
+const workspace = computed(() => selectWorkspacePresentation({
+  state: props.state,
+  connection: props.connection,
+  hasFrame: props.frames.size > 0,
+  displayError: props.displayError,
+}))
 const acquisitionStatus = computed(() => {
   if (!channel.value) return 'Sweep — · Trigger —'
   const sweepMode = channel.value.sweepMode.replace(/^./, (letter) => letter.toUpperCase())
@@ -136,13 +144,27 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
           :can-maximize="canMaximizeDiagram"
           @toggle-maximize="toggleDiagramMaximized"
         />
+        <div
+          v-if="!workspace.showDiagrams"
+          class="workspace-notice"
+          :class="workspace.mode"
+          role="status"
+          aria-live="polite"
+        >
+          <strong>{{ workspace.headline }}</strong>
+          <span>{{ workspace.detail }}</span>
+        </div>
         <DiagramGrid
+          v-else
           :state="state"
           :frames="frames"
           :active-trace-id="activeTrace?.id"
           :maximized="isDiagramMaximized"
           @select-trace="activeTraceId = $event"
         />
+        <div v-if="workspace.mode === 'stale'" class="workspace-stale" role="status">
+          {{ workspace.statusLabel }}
+        </div>
       </div>
 
       <MeasurementSofttool
@@ -206,8 +228,12 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
         {{ item }}
       </button>
       <span class="menu-spacer" />
-      <span class="status-pill" :class="connection" :title="serviceError">
-        {{ connection.toUpperCase() }}
+      <span
+        class="status-pill"
+        :class="workspace.statusTone"
+        :title="displayError || serviceError"
+      >
+        {{ workspace.statusLabel }}
       </span>
       <span title="Sweep mode · Trigger source">{{ acquisitionStatus }}</span>
       <span>Revision {{ state?.stateRevision ?? '—' }}</span>

@@ -57,7 +57,12 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
 
 .application-workspace { display: grid; grid-template-columns: 1fr 160px; min-height: 0; }
 .application-workspace.softtool-visible { grid-template-columns: 848px 272px 160px; }
-.measurement-stage { display: grid; grid-template-rows: 42px 1fr; min-width: 0; min-height: 0; }
+.measurement-stage { position: relative; display: grid; grid-template-rows: 42px 1fr; min-width: 0; min-height: 0; }
+.workspace-notice { display: grid; place-content: center; justify-items: center; gap: 7px; min-height: 0; background: #050707; color: #9babb1; }
+.workspace-notice strong { color: #dce5e8; font-size: 17px; font-weight: 600; }
+.workspace-notice.fault strong { color: #e8b0aa; }
+.workspace-notice span { font-size: 12px; }
+.workspace-stale { position: absolute; top: 49px; right: 7px; z-index: 3; padding: 3px 6px; color: #1b1607; background: #dfa81f; font-size: 10px; font-weight: 700; }
 
 .channel-setup h3 { margin: 5px 0 3px; padding: 6px 7px; background: #1d282d; font-size: 15px; }
 .channel-setup label { display: flex; justify-content: space-between; align-items: center; min-height: 39px; padding: 0 8px; border-bottom: 1px solid #1b252a; font-size: 13px; }

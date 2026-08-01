@@ -29,6 +29,7 @@ const scale = ref(1)
 const state = ref<StateSnapshot | null>(null)
 const connection = ref<'connecting' | 'online' | 'offline'>('connecting')
 const serviceError = ref('')
+const displayError = ref('')
 const commandBusy = ref(false)
 const frames = shallowRef<ReadonlyMap<number, TraceDisplayFrame>>(new Map())
 let stopLiveDisplay: (() => void) | null = null
@@ -41,7 +42,6 @@ async function refreshState(): Promise<void> {
   const snapshot = await fetchState()
   frames.value = retainDisplayableFrames(frames.value, snapshot.instrument.traces)
   state.value = snapshot
-  serviceError.value = ''
 }
 
 async function handleCreateChannel(sweep: SweepSettings): Promise<void> {
@@ -50,6 +50,7 @@ async function handleCreateChannel(sweep: SweepSettings): Promise<void> {
   try {
     await createChannel(state.value.stateRevision, sweep)
     await refreshState()
+    serviceError.value = ''
   } catch (error) {
     serviceError.value = error instanceof Error ? error.message : 'Command failed'
   } finally {
@@ -75,6 +76,7 @@ async function handleCreateTrace(setup: TraceSetup): Promise<void> {
       setup.format,
     )
     await refreshState()
+    serviceError.value = ''
   } catch (error) {
     serviceError.value = error instanceof Error ? error.message : 'Command failed'
   } finally {
@@ -88,6 +90,7 @@ async function handleUpdateSweep(channelId: number, sweep: SweepSettings): Promi
   try {
     await updateChannelSweep(state.value.stateRevision, channelId, sweep)
     await refreshState()
+    serviceError.value = ''
   } catch (error) {
     serviceError.value = error instanceof Error ? error.message : 'Command failed'
   } finally {
@@ -101,6 +104,7 @@ async function handleUpdateTraceFormat(traceId: number, format: TraceFormat): Pr
   try {
     await updateTraceFormat(state.value.stateRevision, traceId, format)
     await refreshState()
+    serviceError.value = ''
   } catch (error) {
     serviceError.value = error instanceof Error ? error.message : 'Command failed'
   } finally {
@@ -112,16 +116,18 @@ function replaceFrame(frame: TraceDisplayFrame): void {
   const trace = state.value?.instrument.traces.find((item) => item.id === frame.traceId)
   if (trace?.format !== frame.format) return
   frames.value = replaceLatestDisplayFrame(frames.value, frame)
-  serviceError.value = ''
+  displayError.value = ''
 }
 
 function handleConnectionChange(next: LiveDisplayConnection): void {
   connection.value = next
-  if (next === 'online') serviceError.value = ''
+  if (next === 'online') {
+    displayError.value = ''
+  }
 }
 
 function handleDisplayError(error: Error): void {
-  serviceError.value = error.message
+  displayError.value = error.message
 }
 
 async function handleUpdateTraceScalePerDivision(traceId: number, value: number): Promise<void> {
@@ -131,6 +137,7 @@ async function handleUpdateTraceScalePerDivision(traceId: number, value: number)
   try {
     await updateTraceScalePerDivision(state.value.stateRevision, traceId, value)
     await refreshState()
+    serviceError.value = ''
   } catch (error) {
     serviceError.value = error instanceof Error ? error.message : 'Command failed'
   } finally {
@@ -164,7 +171,8 @@ onBeforeUnmount(() => {
         :state="state"
         :connection="connection"
         :service-error="serviceError"
-        :disabled="connection !== 'online'"
+        :display-error="displayError"
+        :disabled="connection !== 'online' || Boolean(displayError)"
         :busy="commandBusy"
         :frames="frames"
         @create-channel="handleCreateChannel"
