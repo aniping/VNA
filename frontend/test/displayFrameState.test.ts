@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  createLegacyFrameGuard,
+  removeDisplayFrame,
   replaceLatestDisplayFrame,
   retainDisplayableFrames,
 } from '../src/api/displayFrameState.ts'
@@ -32,6 +34,29 @@ test('replaces one Trace frame without mutating the prior latest-frame Map', () 
   assert.equal(next.get(1), latest)
   assert.equal(next.get(2), other)
   assert.notEqual(next, previous)
+})
+
+test('rejects late legacy frames after a Trace measurement identity changes', () => {
+  const guard = createLegacyFrameGuard()
+  const oldTargetFrame = frame(1, 4)
+  const otherTraceFrame = frame(2, 4)
+  assert.equal(guard.accepts(oldTargetFrame), true)
+
+  guard.block(1)
+
+  assert.equal(guard.accepts(oldTargetFrame), false)
+  assert.equal(guard.accepts(otherTraceFrame), true)
+})
+
+test('removes only the reconfigured Trace frame without mutating last-good state', () => {
+  const previous = new Map([[1, frame(1, 2)], [2, frame(2, 3)]])
+
+  const next = removeDisplayFrame(previous, 1)
+
+  assert.deepEqual([...previous.keys()], [1, 2])
+  assert.deepEqual([...next.keys()], [2])
+  assert.notEqual(next, previous)
+  assert.equal(removeDisplayFrame(next, 1), next)
 })
 
 test('retains last-good frames only for current LogMagnitude Traces', () => {

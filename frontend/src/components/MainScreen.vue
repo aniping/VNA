@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, toRef, watch } from 'vue'
 import type { LiveDisplayConnection } from '../api/liveDisplaySession'
 import type {
+  MeasurementType,
   StateSnapshot,
   SweepSettings,
   TraceFormat,
@@ -16,6 +17,7 @@ import MeasurementSofttool from './MeasurementSofttool.vue'
 import ScaleSofttool from './ScaleSofttool.vue'
 import StimulusSofttool from './StimulusSofttool.vue'
 import { selectWorkspacePresentation } from './workspacePresentation'
+import { useActiveTrace } from './useActiveTrace'
 import {
   isChannelKey,
   isStimulusKey,
@@ -33,6 +35,7 @@ const props = defineProps<{
   frames: ReadonlyMap<number, TraceDisplayFrame>
 }>()
 const emit = defineEmits<{
+  updateTraceMeasurementType: [traceId: number, measurementType: MeasurementType]
   updateSweep: [channelId: number, sweep: SweepSettings]
   updateTraceFormat: [traceId: number, format: TraceFormat]
   updateTraceScalePerDivision: [traceId: number, value: number]
@@ -40,13 +43,7 @@ const emit = defineEmits<{
 
 const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
 const channel = computed(() => props.state?.instrument.channels[0])
-const activeTraceId = ref<number>()
-const activeTrace = computed(() => {
-  const traces = props.state?.instrument.traces ?? []
-  return traces.find((trace) => trace.id === activeTraceId.value) ?? traces[0]
-})
-const activeMeasurement = computed(() => props.state?.instrument.measurements
-  .find((measurement) => measurement.id === activeTrace.value?.measurementId))
+const { activeTraceId, activeTrace, activeMeasurement } = useActiveTrace(toRef(props, 'state'))
 const isDiagramMaximized = ref(false)
 const canMaximizeDiagram = computed(() => Boolean(activeTrace.value))
 const workspace = computed(() => selectWorkspacePresentation({
@@ -84,7 +81,6 @@ const entityCounts = computed(() => {
 })
 
 watch(activeTrace, (trace) => {
-  activeTraceId.value = trace?.id
   if (!trace) isDiagramMaximized.value = false
 }, { immediate: true })
 
@@ -129,6 +125,10 @@ function forwardTraceFormatUpdate(traceId: number, format: TraceFormat): void {
   emit('updateTraceFormat', traceId, format)
 }
 
+function forwardMeasurementTypeUpdate(measurementType: MeasurementType): void {
+  if (activeTrace.value) emit('updateTraceMeasurementType', activeTrace.value.id, measurementType)
+}
+
 function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
   emit('updateTraceScalePerDivision', traceId, value)
 }
@@ -169,6 +169,9 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
       <MeasurementSofttool
         v-if="activeSofttool === 'measurement'"
         :measurement-type="activeMeasurement?.type"
+        :disabled="workspace.controlsDisabled"
+        :busy="busy"
+        @update-measurement-type="forwardMeasurementTypeUpdate"
       />
       <FormatSofttool
         v-else-if="activeSofttool === 'format' && activeTrace"

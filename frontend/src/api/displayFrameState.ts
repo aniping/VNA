@@ -3,6 +3,26 @@ import type { TraceSnapshot } from './vnaApi.ts'
 
 export type DisplayFrameMap = ReadonlyMap<number, TraceDisplayFrame>
 
+export function createLegacyFrameGuard() {
+  const blockedTraceIds = new Set<number>()
+  return {
+    block: (traceId: number): void => { blockedTraceIds.add(traceId) },
+    accepts: (frame: Pick<TraceDisplayFrame, 'traceId'>): boolean => (
+      !blockedTraceIds.has(frame.traceId)
+    ),
+  }
+}
+
+export function removeDisplayFrame(
+  current: DisplayFrameMap,
+  traceId: number,
+): DisplayFrameMap {
+  if (!current.has(traceId)) return current
+  const next = new Map(current)
+  next.delete(traceId)
+  return next
+}
+
 export function replaceLatestDisplayFrame(
   current: DisplayFrameMap,
   frame: TraceDisplayFrame,

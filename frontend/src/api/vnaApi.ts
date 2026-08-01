@@ -133,6 +133,14 @@ export async function updateTraceFormat(
   return sendCommand(stateRevision, 'updateTraceFormat', { traceId, format })
 }
 
+export async function setTraceMeasurementType(
+  stateRevision: number,
+  traceId: number,
+  measurementType: MeasurementType,
+): Promise<CommandResult<{ traceId: number }>> {
+  return sendCommand(stateRevision, 'setTraceMeasurementType', { traceId, measurementType })
+}
+
 export async function updateTraceScalePerDivision(
   stateRevision: number,
   traceId: number,

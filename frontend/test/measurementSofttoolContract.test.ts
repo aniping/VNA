@@ -11,15 +11,20 @@ const app = readSource('src/App.vue')
 const template = softtool.match(/<template>([\s\S]*?)<\/template>/)?.[1] ?? ''
 const styles = softtool.match(/<style scoped>([\s\S]*?)<\/style>/)?.[1] ?? ''
 
-test('Meas is display-only until a trace measurement command exists', () => {
+test('Meas exposes only the four supported S-Parameter command buttons', () => {
   assert.doesNotMatch(softtool, /Format|Create Trace|New Channel|TraceSetup|ChannelSetup/)
-  assert.doesNotMatch(softtool, /defineEmits|@click|@submit/)
+  assert.doesNotMatch(softtool, /@keydown|@keyup|@submit/)
   assert.match(softtool, /All S-Params/)
   assert.match(softtool, /S-Param Wizard/)
   assert.match(softtool, /Balanced Ports/)
   const buttons = [...template.matchAll(/<button\b[\s\S]*?>/g)].map(([button]) => button)
-  assert.equal(buttons.length > 0, true)
-  assert.equal(buttons.every((button) => /\bdisabled\b/.test(button)), true)
+  const choices = buttons.filter((button) => button.includes('v-for="parameter in sParameters"'))
+  assert.equal(choices.length, 1)
+  assert.match(choices[0], /:disabled="isMeasurementChoiceDisabled\(/)
+  assert.match(choices[0], /@click="emit\('updateMeasurementType', parameter\)"/)
+  const unsupported = buttons.filter((button) => !choices.includes(button))
+  assert.equal(unsupported.every((button) => /\sdisabled(?:\s|>)/.test(button)), true)
+  assert.equal(unsupported.every((button) => !button.includes('@click')), true)
   assert.match(template, /measurementType === parameter/)
   assert.match(styles, /\.measurement-softtool[^}]*overflow:\s*hidden/)
   assert.match(styles, /\.softtool-body[^}]*grid-template-columns:\s*165px 1fr/)
@@ -27,6 +32,17 @@ test('Meas is display-only until a trace measurement command exists', () => {
 
 test('production UI has no create Channel, Measurement, Trace, or Window path', () => {
   const productionSources = `${app}\n${mainScreen}`
+  const handler = app.match(
+    /async function handleUpdateTraceMeasurementType[\s\S]*?\n}\n\nfunction replaceFrame/,
+  )?.[0] ?? ''
   assert.doesNotMatch(productionSources, /createChannel|createMeasurement|createTrace|createWindow/)
-  assert.match(mainScreen, /<MeasurementSofttool[\s\S]*?:measurement-type=/)
+  assert.match(mainScreen, /<MeasurementSofttool[\s\S]*?:measurement-type=[\s\S]*?:busy=/)
+  assert.match(mainScreen, /@update-measurement-type="forwardMeasurementTypeUpdate"/)
+  assert.match(mainScreen, /emit\('updateTraceMeasurementType', activeTrace\.value\.id/)
+  assert.match(handler, /commandBusy\.value\) return/)
+  assert.match(handler, /await setTraceMeasurementType\([\s\S]*?legacyFrameGuard\.block\([\s\S]*?removeDisplayFrame\([\s\S]*?await refreshState\(\)/)
+  assert.equal(handler.match(/setTraceMeasurementType\(/g)?.length, 1)
+  assert.equal(handler.match(/refreshState\(\)/g)?.length, 1)
+  assert.doesNotMatch(handler, /state\.value\s*=/)
+  assert.match(app, /if \(!legacyFrameGuard\.accepts\(frame\)\) return/)
 })

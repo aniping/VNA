@@ -22,3 +22,13 @@ export const measurementCategories = [
 export function portPairForMeasurement(type: MeasurementType | undefined): string {
   return type?.slice(1) ?? '—'
 }
+
+export function isMeasurementChoiceDisabled(
+  current: MeasurementType | undefined,
+  candidate: MeasurementType,
+  controlsDisabled: boolean,
+  busy: boolean,
+): boolean {
+  // Keeping the selected item natively disabled makes the no-op rule work for mouse and keyboard.
+  return !current || current === candidate || controlsDisabled || busy
+}

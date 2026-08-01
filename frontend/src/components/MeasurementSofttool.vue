@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { MeasurementType } from '../api/vnaApi'
 import {
+  isMeasurementChoiceDisabled,
   logicalPorts,
   measurementCategories,
   physicalPorts,
@@ -9,9 +10,15 @@ import {
   sParameters,
 } from './measurementSofttoolModel'
 
-const props = defineProps<{ measurementType: MeasurementType | undefined }>()
-// Snapshot identity is the only selected-state authority. Until the command contract exists,
-// this component deliberately has no emits and native disabled controls prevent local success.
+const props = defineProps<{
+  measurementType: MeasurementType | undefined
+  disabled: boolean
+  busy: boolean
+}>()
+const emit = defineEmits<{
+  updateMeasurementType: [measurementType: MeasurementType]
+}>()
+// Snapshot identity remains the only selected-state authority; emitting never changes it locally.
 const portPair = computed(() => portPairForMeasurement(props.measurementType))
 </script>
 
@@ -36,7 +43,8 @@ const portPair = computed(() => portPairForMeasurement(props.measurementType))
             type="button"
             :class="{ active: measurementType === parameter }"
             :aria-pressed="measurementType === parameter"
-            disabled
+            :disabled="isMeasurementChoiceDisabled(measurementType, parameter, disabled, busy)"
+            @click="emit('updateMeasurementType', parameter)"
           >
             {{ parameter }}
           </button>
