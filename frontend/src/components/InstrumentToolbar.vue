@@ -4,13 +4,10 @@ import ToolbarGlyph from './ToolbarGlyph.vue'
 defineProps<{
   maximized: boolean
   canMaximize: boolean
-  canRestartSweep: boolean
-  sweepBusy: boolean
 }>()
 
 const emit = defineEmits<{
   toggleMaximize: []
-  restartSweep: []
 }>()
 
 const groups = [
@@ -36,7 +33,7 @@ const groups = [
     { icon: 'system-menu', label: 'Open System Menu' },
   ] },
   { label: 'Sweep', items: [
-    { icon: 'restart-sweep', label: 'Restart Sweep', action: 'restartSweep' },
+    { icon: 'restart-sweep', label: 'Restart Sweep', disabledReason: 'disabled during Continuous sweep' },
   ] },
   { label: 'Diagram Controls', items: [
     { icon: 'edit-diagrams', label: 'Edit Diagram Area' },
@@ -90,23 +87,6 @@ const groups = [
             <ToolbarGlyph :name="item.icon" />
           </button>
           <button
-            v-else-if="'action' in item"
-            class="toolbar-button"
-            type="button"
-            data-toolbar-item="restart-sweep"
-            :disabled="!canRestartSweep"
-            :aria-busy="sweepBusy"
-            :aria-label="sweepBusy
-              ? `${item.label}, measurement in progress`
-              : canRestartSweep ? item.label : `${item.label}, unavailable for active Trace`"
-            :title="sweepBusy
-              ? `${item.label} — Measurement in progress`
-              : canRestartSweep ? item.label : `${item.label} — Unavailable for active Trace`"
-            @click="emit('restartSweep')"
-          >
-            <ToolbarGlyph :name="item.icon" />
-          </button>
-          <button
             v-else
             class="toolbar-button"
             type="button"
@@ -114,8 +94,10 @@ const groups = [
             disabled
             tabindex="-1"
             aria-disabled="true"
-            :aria-label="`${item.label}, not supported`"
-            :title="`${item.label} — Not supported`"
+            :aria-label="`${item.label}, ${'disabledReason' in item
+              ? item.disabledReason : 'not supported'}`"
+            :title="`${item.label} — ${'disabledReason' in item
+              ? item.disabledReason : 'Not supported'}`"
           >
             <ToolbarGlyph :name="item.icon" />
           </button>

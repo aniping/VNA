@@ -15,6 +15,7 @@ class FakeSocket {
   constructor(handlers: DisplayFrameSocketHandlers) { this.handlers = handlers }
   close(): void { this.closed = true }
   message(frame: object): void { this.handlers.onMessage(JSON.stringify(frame)) }
+  connect(): void { this.handlers.onOpen() }
   disconnect(): void { this.closed = true; this.handlers.onClose() }
 }
 function createEnvironment(events: string[]) {
@@ -38,7 +39,7 @@ function createEnvironment(events: string[]) {
 
 async function settle(): Promise<void> { await Promise.resolve(); await Promise.resolve() }
 function handlers(onFrame: LiveDisplayHandlers['onFrame'] = () => undefined): LiveDisplayHandlers {
-  return { onFrame, onError() {} }
+  return { onFrame, onError() {}, onConnectionChange() {} }
 }
 
 function frame(sequenceNumber: number, traceId = 7): object {
@@ -138,4 +139,23 @@ test('stop closes an active socket without scheduling a reconnect', async () => 
   sockets[0].handlers.onClose()
   assert.equal(sockets[0].closed, true)
   assert.equal(reconnects.length, 0)
+})
+
+test('reports connecting, online, and reconnecting transport state', async () => {
+  const states: string[] = []
+  const { environment, sockets, reconnects } = createEnvironment([])
+  const stop = createLiveDisplaySession(
+    async () => undefined,
+    { onFrame() {}, onError() {}, onConnectionChange: (state) => states.push(state) },
+    environment,
+  )
+  await settle()
+  sockets[0].connect()
+  sockets[0].disconnect()
+  reconnects[0]()
+  await settle()
+  sockets[1].connect()
+
+  assert.deepEqual(states, ['connecting', 'online', 'offline', 'connecting', 'online'])
+  stop()
 })

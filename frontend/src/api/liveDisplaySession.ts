@@ -2,6 +2,7 @@ import { decodeTraceDisplayFrame } from './traceDisplayFrame.ts'
 import type { TraceDisplayFrame } from './traceDisplayFrame.ts'
 
 export interface DisplayFrameSocketHandlers {
+  onOpen(): void
   onMessage(data: unknown): void
   onClose(): void
 }
@@ -18,7 +19,10 @@ export interface LiveDisplayEnvironment {
 export interface LiveDisplayHandlers {
   onFrame(frame: TraceDisplayFrame): void
   onError(error: Error): void
+  onConnectionChange(state: LiveDisplayConnection): void
 }
+
+export type LiveDisplayConnection = 'connecting' | 'online' | 'offline'
 
 const reconnectDelayMs = 500
 
@@ -32,6 +36,7 @@ function browserEnvironment(): LiveDisplayEnvironment {
   return {
     openSocket(handlers) {
       const socket = new WebSocket(displayFramesUrl())
+      socket.addEventListener('open', handlers.onOpen, { once: true })
       socket.addEventListener('message', (event) => handlers.onMessage(event.data))
       socket.addEventListener('close', handlers.onClose, { once: true })
       return { close: () => socket.close() }
@@ -78,6 +83,7 @@ class LiveDisplaySession {
 
   private async connect(): Promise<void> {
     const generation = ++this.generation
+    this.handlers.onConnectionChange('connecting')
     try {
       await this.refreshState()
       if (!this.isCurrent(generation)) return
@@ -85,6 +91,7 @@ class LiveDisplaySession {
       // so carrying the prior connection's baseline would discard its retained latest frame.
       const sequences = new Map<number, number>()
       const socket = this.environment.openSocket({
+        onOpen: () => this.connected(generation),
         onMessage: (data) => this.receive(generation, sequences, data),
         onClose: () => this.disconnected(generation),
       })
@@ -93,8 +100,13 @@ class LiveDisplaySession {
     } catch (error) {
       if (!this.isCurrent(generation)) return
       reportError(this.handlers, error)
+      this.handlers.onConnectionChange('offline')
       this.scheduleReconnect()
     }
+  }
+
+  private connected(generation: number): void {
+    if (this.isCurrent(generation)) this.handlers.onConnectionChange('online')
   }
 
   private receive(generation: number, sequences: Map<number, number>, data: unknown): void {
@@ -116,6 +128,7 @@ class LiveDisplaySession {
     // invalidates queued events that could otherwise race a replacement connection.
     this.generation += 1
     this.socket = null
+    this.handlers.onConnectionChange('offline')
     this.scheduleReconnect()
   }
 

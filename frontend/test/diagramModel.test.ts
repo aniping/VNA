@@ -16,6 +16,8 @@ const snapshot: StateSnapshot = {
         ifBandwidthHz: 1e3,
         powerDbm: -10,
       },
+      sweepMode: 'continuous',
+      triggerSource: 'none',
     }],
     measurements: [{ id: 21, channelId: 11, type: 'S21' }],
     windows: [{ id: 31 }],

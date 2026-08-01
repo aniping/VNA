@@ -9,12 +9,14 @@ export interface SweepSettings {
 export interface ChannelSnapshot {
   id: number
   sweep: SweepSettings
+  sweepMode: 'continuous'
+  triggerSource: 'none'
 }
 
 export interface MeasurementSnapshot {
   id: number
   channelId: number
-  type: string
+  type: MeasurementType
 }
 
 export interface WindowSnapshot {
@@ -34,7 +36,7 @@ export interface TraceSnapshot {
   id: number
   windowId: number
   measurementId: number
-  format: string
+  format: TraceFormat
   scale: CartesianScaleSnapshot | null
 }
 
@@ -81,7 +83,7 @@ export async function checkHealth(): Promise<void> {
 }
 
 export async function fetchState(): Promise<StateSnapshot> {
-  return readJson<StateSnapshot>(await fetch('/api/v1/state'))
+  return decodeStateSnapshot(await readJson<unknown>(await fetch('/api/v1/state')))
 }
 
 export async function createChannel(
@@ -179,3 +181,4 @@ async function sendCommand<T>(
   })
   return readJson<CommandResult<T>>(response)
 }
+import { decodeStateSnapshot } from './stateSnapshotDecoder.ts'
