@@ -130,12 +130,14 @@ pnpm run dev
 浏览器打开 `http://127.0.0.1:5173/`。开发服务器会把 `/api` 请求代理到
 `http://127.0.0.1:8080`，因此页面显示的是本地仪表服务的真实状态。
 
-当前单窗口界面默认使用 2×2 测量图区，右侧依次为 Measurement Softtool 和
-两列虚拟 Hard Key。点击 `Meas` 可关闭或重新打开 Softtool；已有 Channel 时可在
-S 参数区创建 Trace。尚无测量帧时 Diagram 显示空态；活动 Log Magnitude Trace
-可使用 Toolbar 的 `Restart Sweep` 发起单次扫频，操作成功后读取一次最新帧并
-绘制 dB 曲线。`Maximize Diagram` 可在活动 Diagram 最大化与 2×2 布局间切换；
-其余尚未实现的 Toolbar 项保持禁用。
+当前单窗口界面只渲染服务快照中真实存在的 Window：一个 Window 对应一个主图，
+多个 Window 也不会补齐不存在的空白 Diagram。Softtool 默认关闭，点击 `Meas`
+可打开或重新关闭 Measurement Softtool；已有 Channel 时可在 S 参数区创建 Trace。
+默认 S21 Trace 的色块和曲线为绿色，活动 Diagram 仍使用独立的黄色边框。尚无
+测量帧时 Diagram 显示空态；活动 Log Magnitude Trace 可使用 Toolbar 的
+`Restart Sweep` 发起单次扫频，操作成功后读取一次最新帧并绘制 dB 曲线。
+`Maximize Diagram` 可切换活动 Diagram 的最大化状态；其余尚未实现的 Toolbar
+项保持禁用。
 底部 `File` 至 `Help` 菜单尚未接通并保持禁用；连接、revision 和实体计数仍
 显示本地仪表服务的真实状态。
 
