@@ -87,6 +87,11 @@ struct UpdateTraceFormatCommand {
     display_model::TraceFormat format;
 };
 
+struct SetTraceMeasurementTypeCommand {
+    display_model::TraceId traceId;
+    domain::MeasurementType measurementType;
+};
+
 struct UpdateTraceScalePerDivisionCommand {
     display_model::TraceId traceId;
     double scalePerDivision;
@@ -107,6 +112,7 @@ using CommandPayload = std::variant<
     CreateWindowCommand,
     CreateTraceCommand,
     UpdateTraceFormatCommand,
+    SetTraceMeasurementTypeCommand,
     UpdateTraceScalePerDivisionCommand,
     RemoveTraceCommand,
     StartSingleSweepCommand>;

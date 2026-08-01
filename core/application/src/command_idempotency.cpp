@@ -72,6 +72,13 @@ bool samePayload(
 }
 
 bool samePayload(
+    const SetTraceMeasurementTypeCommand& left,
+    const SetTraceMeasurementTypeCommand& right) noexcept {
+    return left.traceId == right.traceId &&
+        left.measurementType == right.measurementType;
+}
+
+bool samePayload(
     const UpdateTraceScalePerDivisionCommand& left,
     const UpdateTraceScalePerDivisionCommand& right) noexcept {
     return left.traceId == right.traceId &&

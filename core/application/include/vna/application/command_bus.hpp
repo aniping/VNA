@@ -145,6 +145,8 @@ private:
     [[nodiscard]] CommandResult execute(
         const UpdateTraceFormatCommand& command);
     [[nodiscard]] CommandResult execute(
+        const SetTraceMeasurementTypeCommand& command);
+    [[nodiscard]] CommandResult execute(
         const UpdateTraceScalePerDivisionCommand& command);
     [[nodiscard]] CommandResult execute(const RemoveTraceCommand& command);
     [[nodiscard]] CommandResult execute(

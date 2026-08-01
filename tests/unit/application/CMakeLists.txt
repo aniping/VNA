@@ -65,6 +65,7 @@ add_executable(
     trace_frame_discard_command_test.cpp
     trace_command_test.cpp
     trace_configuration_transaction_test.cpp
+    trace_measurement_type_command_test.cpp
     trace_scale_command_test.cpp
 )
 vna_configure_application_test(vna_application_trace_command_tests)
