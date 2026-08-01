@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "test": "node -e \"require('node:fs').rmSync('node_modules/.cache/vna-tests',{recursive:true,force:true})\" && tsc -p tsconfig.test.json && cd node_modules/.cache/vna-tests && node --test",
     "build": "vue-tsc --noEmit && vite build"
   },
   "dependencies": {

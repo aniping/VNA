@@ -154,9 +154,10 @@ Softtool。当前仅 Scale/Div 可编辑：输入有限且大于零的数值后�
 失焦或按 Escape 只恢复服务快照，不发送命令。其余 Scale 控件保持禁用；笛卡尔
 Diagram 的上下界只显示服务返回的 maximum/minimum，Scale 不可用时显示 `—`。
 
-执行前端类型检查和生产构建：
+执行前端 Node 测试、类型检查和生产构建：
 
 ```powershell
 cd frontend
+pnpm test
 pnpm run build
 ```
