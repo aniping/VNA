@@ -15,7 +15,7 @@ export type HardkeyName =
   | ChannelKey
   | 'Cal'
   | 'Channel Config'
-  | 'Mode'
+  | 'Trigger'
   | 'Offset / Embed'
   | 'File / Print'
   | 'Setup'
@@ -31,16 +31,19 @@ export interface HardkeyItem {
   requiresTrace?: boolean
   requiresScale?: boolean
   accent?: 'help' | 'preset'
+  visual?: 'question'
 }
 
 export interface HardkeyGroup {
   title: string
+  columns: 2 | 3
   keys: HardkeyItem[]
 }
 
 export const hardkeyGroups: HardkeyGroup[] = [
   {
     title: 'Trace',
+    columns: 3,
     keys: [
       { label: 'Meas', enabled: true },
       { label: 'Format', enabled: true, requiresTrace: true },
@@ -52,26 +55,29 @@ export const hardkeyGroups: HardkeyGroup[] = [
   },
   {
     title: 'Stimulus',
+    columns: 2,
     keys: stimulusKeys.map((label) => ({ label, enabled: true, requiresChannel: true })),
   },
   {
     title: 'Channel',
+    columns: 3,
     keys: [
       ...channelKeys.map((label) => ({ label, enabled: true, requiresChannel: true })),
       { label: 'Cal' },
       { label: 'Channel Config' },
-      { label: 'Mode' },
+      { label: 'Trigger' },
       { label: 'Offset / Embed' },
     ],
   },
   {
     title: 'System',
+    columns: 3,
     keys: [
       { label: 'File / Print' },
       { label: 'Setup' },
       { label: 'Tools' },
       { label: 'Display' },
-      { label: 'Help', accent: 'help' },
+      { label: 'Help', accent: 'help', visual: 'question' },
       { label: 'Preset', accent: 'preset' },
     ],
   },
