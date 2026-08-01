@@ -47,7 +47,7 @@ FactoryPreset makeFactoryPreset() {
                 .points = sweep.points,
             },
             .portCount = 2,
-            .sourcePorts = {1},
+            .sourcePorts = {1, 2},
             .ifBandwidthHz = static_cast<std::uint32_t>(sweep.ifBandwidthHz),
             .powerDbm = sweep.powerDbm,
         },

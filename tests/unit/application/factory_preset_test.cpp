@@ -41,8 +41,9 @@ TEST(FactoryPresetTest, CreatesCorrelatedS21StateAtRevisionZero) {
     EXPECT_EQ(plan.portCount, 2U);
     EXPECT_EQ(plan.ifBandwidthHz, 10'000U);
     EXPECT_DOUBLE_EQ(plan.powerDbm, -10.0);
-    ASSERT_EQ(plan.sourcePorts.size(), 1U);
+    ASSERT_EQ(plan.sourcePorts.size(), 2U);
     EXPECT_EQ(plan.sourcePorts[0], 1U);
+    EXPECT_EQ(plan.sourcePorts[1], 2U);
 
     CommandBus bus{
         InstrumentId{"instrument-1"},
