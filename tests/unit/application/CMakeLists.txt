@@ -31,8 +31,10 @@ vna_configure_application_test(vna_application_operation_tests)
 
 add_executable(
     vna_application_sweep_tests
+    continuous_trace_publisher_test.cpp
     continuous_trace_plan_test.cpp
     continuous_trace_dynamic_test.cpp
+    continuous_trace_retirement_test.cpp
     factory_preset_test.cpp
     single_sweep_command_handler_test.cpp
     single_sweep_executor_failure_test.cpp
