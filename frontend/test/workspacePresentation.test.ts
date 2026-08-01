@@ -20,7 +20,7 @@ test('initial display error is visible and never reports Online', () => {
   assert.equal(view.showDiagrams, false)
 })
 
-test('first live frame error is a fault when state exists but no frame is usable', () => {
+test('first live frame error keeps a valid configured Diagram visible', () => {
   const view = selectWorkspacePresentation({
     state: diagramState,
     connection: 'online',
@@ -31,7 +31,7 @@ test('first live frame error is a fault when state exists but no frame is usable
   assert.equal(view.mode, 'fault')
   assert.equal(view.statusLabel, 'OFFLINE')
   assert.equal(view.headline, 'Service unavailable')
-  assert.equal(view.showDiagrams, false)
+  assert.equal(view.showDiagrams, true)
 })
 
 test('valid state without Window or Trace has an explained Online empty state', () => {
@@ -48,6 +48,56 @@ test('valid state without Window or Trace has an explained Online empty state', 
   assert.equal(view.showDiagrams, false)
 })
 
+test('empty display configuration stays explicit while live display reconnects', () => {
+  const view = selectWorkspacePresentation({
+    state: emptyState,
+    connection: 'offline',
+    hasFrame: false,
+    displayError: '',
+  })
+
+  assert.equal(view.mode, 'empty')
+  assert.equal(view.statusLabel, 'RECONNECTING')
+  assert.equal(view.headline, 'No available Diagram')
+  assert.equal(view.showDiagrams, false)
+})
+
+test('valid display configuration is visible Online before its first frame', () => {
+  const view = selectWorkspacePresentation({
+    state: diagramState,
+    connection: 'online',
+    hasFrame: false,
+    displayError: '',
+  })
+
+  assert.equal(view.statusLabel, 'ONLINE')
+  assert.equal(view.showDiagrams, true)
+})
+
+test('valid display configuration stays visible while reconnecting before its first frame', () => {
+  const view = selectWorkspacePresentation({
+    state: diagramState,
+    connection: 'offline',
+    hasFrame: false,
+    displayError: '',
+  })
+
+  assert.equal(view.statusLabel, 'RECONNECTING')
+  assert.equal(view.showDiagrams, true)
+})
+
+test('valid display configuration reports Connecting while its socket opens', () => {
+  const view = selectWorkspacePresentation({
+    state: diagramState,
+    connection: 'connecting',
+    hasFrame: false,
+    displayError: '',
+  })
+
+  assert.equal(view.statusLabel, 'CONNECTING')
+  assert.equal(view.showDiagrams, true)
+})
+
 test('an online display error with empty state does not claim a reconnect', () => {
   const view = selectWorkspacePresentation({
     state: emptyState,
@@ -56,8 +106,9 @@ test('an online display error with empty state does not claim a reconnect', () =
     displayError: 'Invalid display frame',
   })
 
-  assert.equal(view.mode, 'fault')
+  assert.equal(view.mode, 'empty')
   assert.equal(view.statusLabel, 'OFFLINE')
+  assert.equal(view.headline, 'No available Diagram')
   assert.equal(view.showDiagrams, false)
 })
 

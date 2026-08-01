@@ -35,39 +35,36 @@ function withoutState(input: WorkspacePresentationInput): WorkspacePresentation 
   }
 }
 
-function withoutConfiguration(
+function displayStatus(
   input: WorkspacePresentationInput,
-  healthy: boolean,
-): WorkspacePresentation {
-  if (healthy) {
-    return {
-      mode: 'empty',
-      showDiagrams: false,
-      statusLabel: 'ONLINE',
-      statusTone: 'online',
-      headline: 'No available Diagram',
-      detail: 'No display configuration is available.',
-    }
+): Pick<WorkspacePresentation, 'statusLabel' | 'statusTone'> {
+  if (input.connection === 'online') {
+    return input.displayError
+      ? { statusLabel: 'OFFLINE', statusTone: 'offline' }
+      : { statusLabel: 'ONLINE', statusTone: 'online' }
   }
-  const reconnecting = input.connection !== 'online'
+  return input.connection === 'connecting'
+    ? { statusLabel: 'CONNECTING', statusTone: 'connecting' }
+    : { statusLabel: 'RECONNECTING', statusTone: 'connecting' }
+}
+
+function withoutConfiguration(input: WorkspacePresentationInput): WorkspacePresentation {
   return {
-    mode: 'fault',
+    mode: 'empty',
     showDiagrams: false,
-    statusLabel: reconnecting ? 'RECONNECTING' : 'OFFLINE',
-    statusTone: reconnecting ? 'connecting' : 'offline',
-    headline: reconnecting ? 'Reconnecting to service' : 'Service unavailable',
-    detail: input.displayError || 'Reconnecting to live display.',
+    ...displayStatus(input),
+    headline: 'No available Diagram',
+    detail: 'No display configuration is available.',
   }
 }
 
-function withoutUsableFrame(input: WorkspacePresentationInput): WorkspacePresentation {
-  const reconnecting = input.connection !== 'online'
+function configuredWithoutFrame(input: WorkspacePresentationInput): WorkspacePresentation {
   return {
     mode: 'fault',
-    showDiagrams: false,
-    statusLabel: reconnecting ? 'RECONNECTING' : 'OFFLINE',
-    statusTone: reconnecting ? 'connecting' : 'offline',
-    headline: reconnecting ? 'Reconnecting to service' : 'Service unavailable',
+    // Display configuration is authoritative even before samples arrive; DiagramPane owns its grid.
+    showDiagrams: true,
+    ...displayStatus(input),
+    headline: input.connection === 'connecting' ? 'Connecting to service' : 'Service unavailable',
     detail: input.displayError || 'Waiting for live display data.',
   }
 }
@@ -81,8 +78,8 @@ export function selectWorkspacePresentation(
 
   const hasConfiguration = input.state.instrument.windows.length > 0
     && input.state.instrument.traces.length > 0
-  if (!hasConfiguration) return withoutConfiguration(input, healthy)
-  if (!healthy && !input.hasFrame) return withoutUsableFrame(input)
+  if (!hasConfiguration) return withoutConfiguration(input)
+  if (!healthy && !input.hasFrame) return configuredWithoutFrame(input)
   if (!healthy) {
     // Reconnection changes only the status presentation; last-good diagrams stay mounted.
     const reconnecting = input.connection !== 'online'
