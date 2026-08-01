@@ -40,6 +40,10 @@ std::optional<SParameterPorts> portsFor(domain::MeasurementType type) {
         return SParameterPorts{.responsePort = 1, .sourcePort = 1};
     case domain::MeasurementType::S21:
         return SParameterPorts{.responsePort = 2, .sourcePort = 1};
+    case domain::MeasurementType::S12:
+        return SParameterPorts{.responsePort = 1, .sourcePort = 2};
+    case domain::MeasurementType::S22:
+        return SParameterPorts{.responsePort = 2, .sourcePort = 2};
     }
     return std::nullopt;
 }

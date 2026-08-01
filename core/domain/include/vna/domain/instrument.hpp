@@ -76,9 +76,13 @@ enum class TriggerSource {
     None,
 };
 
+// Sij is response port i divided by the reference captured while source port j
+// is active. The indices describe matrix coordinates, not separate pipelines.
 enum class MeasurementType {
     S11,
     S21,
+    S12,
+    S22,
 };
 
 struct ChannelSnapshot {

@@ -50,6 +50,11 @@ const char* measurementTypeName(domain::MeasurementType type) {
             return "S11";
         case domain::MeasurementType::S21:
             return "S21";
+        // The coordinated Web/frontend contract still exposes only S11/S21.
+        // Keep new data-layer types explicit without publishing partial DTOs.
+        case domain::MeasurementType::S12:
+        case domain::MeasurementType::S22:
+            break;
     }
     return "unknown";
 }

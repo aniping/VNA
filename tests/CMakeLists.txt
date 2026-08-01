@@ -62,6 +62,7 @@ gtest_discover_tests(vna_simulation_tests NO_PRETTY_VALUES)
 
 add_executable(
     vna_measurement_tests
+    unit/measurement/s_parameter_synthesizer_test.cpp
     unit/measurement/s11_synthesizer_test.cpp
 )
 target_link_libraries(

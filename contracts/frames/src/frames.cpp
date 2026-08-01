@@ -39,7 +39,9 @@ bool isFinite(const RawReceiverSample& sample) {
 
 bool isSupportedMeasurement(domain::MeasurementType type) {
     return type == domain::MeasurementType::S11 ||
-           type == domain::MeasurementType::S21;
+           type == domain::MeasurementType::S21 ||
+           type == domain::MeasurementType::S12 ||
+           type == domain::MeasurementType::S22;
 }
 
 std::optional<FrameError> validatePayload(
