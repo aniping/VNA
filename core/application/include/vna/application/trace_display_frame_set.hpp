@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <variant>
 #include <vector>
 
 #include <vna/application/trace_display_frame.hpp>
@@ -25,5 +26,17 @@ using TraceDisplayFrameSetHandle =
 struct GenerationAdvanced {
     std::uint64_t generation;
 };
+
+struct TraceDisplayFrameSetCursor {
+    std::uint64_t generation;
+    std::uint64_t sequenceNumber;
+};
+
+struct FrameSetAvailable {
+    TraceDisplayFrameSetHandle frameSet;
+};
+
+using TraceDisplayFrameSetEvent =
+    std::variant<FrameSetAvailable, GenerationAdvanced>;
 
 }  // namespace vna::application

@@ -97,6 +97,11 @@ public:
     [[nodiscard]] TraceDisplayGenerationResult advanceGeneration(
         std::uint64_t nextGeneration);
     [[nodiscard]] TraceDisplayFrameSetHandle latestFrameSet() const;
+    // The cursor names the last complete set a consumer observed. Waiting is
+    // latest-only, while a generation change is reported even without frames.
+    [[nodiscard]] std::optional<TraceDisplayFrameSetEvent> waitForNextSet(
+        TraceDisplayFrameSetCursor cursor,
+        std::stop_token token = {}) const;
     [[nodiscard]] TraceDisplayFrameHandle latest(
         display_model::TraceId traceId) const;
     // A waiter observes only its Trace. It receives the newest retained frame,
@@ -138,6 +143,7 @@ private:
 
     const std::size_t capacity_;
     mutable std::mutex mutex_;
+    mutable std::condition_variable frameSetChanged_;
     std::uint64_t generation_{1};
     TraceDisplayFrameSetHandle latestFrameSet_;
     std::unordered_map<std::uint64_t, TraceDisplayFrameHandle> latestByTrace_;

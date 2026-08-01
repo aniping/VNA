@@ -21,6 +21,7 @@ add_library(
     src/trace_display_frame_query.cpp
     src/trace_display_frame_repository.cpp
     src/trace_display_frame_set.cpp
+    src/trace_display_frame_set_wait.cpp
     src/trace_display_frame_wait.cpp
     src/trace_format_command.cpp
 )

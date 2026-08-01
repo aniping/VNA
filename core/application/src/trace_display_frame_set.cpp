@@ -124,6 +124,7 @@ TraceDisplayFrameSetResult TraceDisplayFrameRepository::publishFrameSet(
     for (const auto& state : notify) {
         state->changed.notify_all();
     }
+    frameSetChanged_.notify_all();
     return published;
 }
 
@@ -151,6 +152,7 @@ TraceDisplayGenerationResult TraceDisplayFrameRepository::advanceGeneration(
     for (const auto& state : notify) {
         state->changed.notify_all();
     }
+    frameSetChanged_.notify_all();
     return GenerationAdvanced{nextGeneration};
 }
 
