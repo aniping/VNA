@@ -62,7 +62,8 @@ function decodeChannel(value: unknown): ChannelSnapshot {
 
 function decodeMeasurement(value: unknown): MeasurementSnapshot {
   const body = object(value, 'measurement')
-  if (body.type !== 'S11' && body.type !== 'S21') invalidState('unsupported measurement type')
+  if (body.type !== 'S11' && body.type !== 'S21'
+    && body.type !== 'S12' && body.type !== 'S22') invalidState('unsupported measurement type')
   return {
     id: integer(body.id, 1, 'measurement id'),
     channelId: integer(body.channelId, 1, 'measurement channel id'),

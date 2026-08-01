@@ -40,11 +40,12 @@ export interface TraceSnapshot {
   scale: CartesianScaleSnapshot | null
 }
 
-export type MeasurementType = 'S11' | 'S21'
+export type MeasurementType = 'S11' | 'S21' | 'S12' | 'S22'
+export type CreatableMeasurementType = 'S11' | 'S21'
 export type TraceFormat = 'logMagnitude' | 'phase' | 'smith'
 
 export interface TraceSetup {
-  measurementType: MeasurementType
+  measurementType: CreatableMeasurementType
   format: TraceFormat
 }
 
@@ -104,7 +105,7 @@ export async function updateChannelSweep(
 export async function createMeasurement(
   stateRevision: number,
   channelId: number,
-  type: MeasurementType,
+  type: CreatableMeasurementType,
 ): Promise<CommandResult<{ measurementId: number }>> {
   return sendCommand(stateRevision, 'createMeasurement', { channelId, type })
 }

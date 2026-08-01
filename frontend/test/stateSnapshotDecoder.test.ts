@@ -38,6 +38,18 @@ test('decodes authoritative Continuous sweep and None trigger state', () => {
   assert.equal(snapshot.instrument.channels[0].triggerSource, 'none')
 })
 
+test('decodes all frozen two-port S-parameter measurement identities', () => {
+  const measurements = ['S11', 'S21', 'S12', 'S22'].map((type, index) => ({
+    id: index + 1, channelId: 1, type,
+  }))
+  const snapshot = decodeStateSnapshot({
+    ...validSnapshot,
+    instrument: { ...validSnapshot.instrument, measurements },
+  })
+  assert.deepEqual(snapshot.instrument.measurements.map(({ type }) => type),
+    ['S11', 'S21', 'S12', 'S22'])
+})
+
 test('rejects state outside the frozen channel and display contract', () => {
   const channel = validSnapshot.instrument.channels[0]
   const trace = validSnapshot.instrument.traces[0]
