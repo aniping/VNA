@@ -145,6 +145,14 @@ int serveUntilStopped(
     return stoppedRecorded && flushed ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
+std::unique_ptr<vna::observability::Logger> makeServerLogger(
+    const std::filesystem::path& logDirectory) {
+    auto options = vna::logging::JsonLinesLoggerOptions{logDirectory};
+    // The portable launcher owns the human console; JSONL remains authoritative.
+    options.console = nullptr;
+    return vna::logging::makeJsonLinesLogger(options);
+}
+
 int runServer() {
     const auto executable = vna::platform::currentExecutablePath();
     const auto releaseRoot = executable.parent_path().parent_path();
@@ -183,10 +191,7 @@ int runServer() {
         displayFrameQuery,
         defaultTraceId,
         webRoot};
-    auto logOptions = vna::logging::JsonLinesLoggerOptions{logDirectory};
-    // The portable launcher owns the human console; JSONL remains authoritative.
-    logOptions.console = nullptr;
-    auto logger = vna::logging::makeJsonLinesLogger(logOptions);
+    auto logger = makeServerLogger(logDirectory);
     try {
         return serveUntilStopped(webApi, logger);
     } catch (...) {
