@@ -15,6 +15,8 @@ function belongsToSnapshot(
   return measurement?.type === frame.measurementType
 }
 
+export type DisplayFrameSetMap = ReadonlyMap<number, MultiFormatTraceDisplayFrame>
+
 export function filterDisplayFrameSetForSnapshot(
   frameSet: TraceDisplayFrameSet,
   snapshot: StateSnapshot,
@@ -24,4 +26,33 @@ export function filterDisplayFrameSetForSnapshot(
   const frames = frameSet.frames.filter((frame) => belongsToSnapshot(frame, snapshot))
   // Generation belongs to the future live-session baseline, not snapshot compatibility.
   return frames.length === frameSet.frames.length ? frameSet : { ...frameSet, frames }
+}
+
+export function replaceDisplayFramesForSnapshot(
+  frameSet: TraceDisplayFrameSet,
+  snapshot: StateSnapshot,
+): DisplayFrameSetMap {
+  const compatible = filterDisplayFrameSetForSnapshot(frameSet, snapshot)
+  // A set is one acquisition atom. Rebuilding the map ensures a missing current Trace cannot
+  // silently retain samples from an older measurement, format, or generation.
+  return new Map(compatible.frames.map((frame) => [frame.traceId, frame]))
+}
+
+export function retainDisplayFramesForSnapshot(
+  current: DisplayFrameSetMap,
+  snapshot: StateSnapshot,
+): DisplayFrameSetMap {
+  const retained = [...current.values()].filter((frame) => belongsToSnapshot(frame, snapshot))
+  if (retained.length === current.size) return current
+  return new Map(retained.map((frame) => [frame.traceId, frame]))
+}
+
+export function removeDisplayFrame(
+  current: DisplayFrameSetMap,
+  traceId: number,
+): DisplayFrameSetMap {
+  if (!current.has(traceId)) return current
+  const next = new Map(current)
+  next.delete(traceId)
+  return next
 }

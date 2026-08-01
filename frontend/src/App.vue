@@ -12,16 +12,16 @@ import {
   type TraceFormat,
 } from './api/vnaApi'
 import {
-  createLegacyFrameGuard,
   removeDisplayFrame,
-  replaceLatestDisplayFrame,
-  retainDisplayableFrames,
-} from './api/displayFrameState'
+  replaceDisplayFramesForSnapshot,
+  retainDisplayFramesForSnapshot,
+  type DisplayFrameSetMap,
+} from './api/displayFrameSetState'
 import {
   startLiveDisplaySession,
   type LiveDisplayConnection,
 } from './api/liveDisplaySession'
-import type { TraceDisplayFrame } from './api/traceDisplayFrame'
+import type { TraceDisplayFrameSet } from './api/traceDisplayFrameSet'
 import MainScreen from './components/MainScreen.vue'
 
 const scale = ref(1)
@@ -30,8 +30,8 @@ const connection = ref<LiveDisplayConnection>('connecting')
 const serviceError = ref('')
 const displayError = ref('')
 const commandBusy = ref(false)
-const frames = shallowRef<ReadonlyMap<number, TraceDisplayFrame>>(new Map())
-const legacyFrameGuard = createLegacyFrameGuard()
+const frames = shallowRef<DisplayFrameSetMap>(new Map())
+let pendingFrameTraceId: number | null = null
 let stopLiveDisplay: (() => void) | null = null
 
 function resizeInstrument(): void {
@@ -40,8 +40,10 @@ function resizeInstrument(): void {
 
 async function refreshState(): Promise<void> {
   const snapshot = await fetchState()
-  frames.value = retainDisplayableFrames(frames.value, snapshot.instrument.traces)
+  frames.value = retainDisplayFramesForSnapshot(frames.value, snapshot)
   state.value = snapshot
+  // A successful authoritative refresh makes full frame identity sufficient again.
+  pendingFrameTraceId = null
 }
 
 async function handleUpdateSweep(channelId: number, sweep: SweepSettings): Promise<void> {
@@ -63,9 +65,9 @@ async function handleUpdateTraceFormat(traceId: number, format: TraceFormat): Pr
   commandBusy.value = true
   try {
     await updateTraceFormat(state.value.stateRevision, traceId, format)
+    pendingFrameTraceId = traceId
+    frames.value = removeDisplayFrame(frames.value, traceId)
     await refreshState()
-    // A supported format starts a new socket generation after an intentional stream close.
-    if (format === 'logMagnitude') openLiveDisplaySession()
     serviceError.value = ''
   } catch (error) {
     serviceError.value = error instanceof Error ? error.message : 'Command failed'
@@ -82,11 +84,9 @@ async function handleUpdateTraceMeasurementType(
   commandBusy.value = true
   try {
     await setTraceMeasurementType(state.value.stateRevision, traceId, measurementType)
-    // A legacy frame cannot prove its Sij identity. Once configuration changes, this one-way
-    // guard rejects that Trace until the full-identity frame-set transport replaces this path.
-    legacyFrameGuard.block(traceId)
-    // The legacy single-frame DTO has no Measurement identity. Clear only this accepted
-    // reconfiguration so its prior Sij curve cannot masquerade as the pending new result.
+    pendingFrameTraceId = traceId
+    // Clear the accepted reconfiguration immediately; the next complete identity set may
+    // repopulate it only after the authoritative state refresh establishes the new identity.
     frames.value = removeDisplayFrame(frames.value, traceId)
     // Only the refreshed snapshot may expose the new Measurement; no optimistic copy is created.
     await refreshState()
@@ -98,19 +98,16 @@ async function handleUpdateTraceMeasurementType(
   }
 }
 
-function replaceFrame(frame: TraceDisplayFrame): void {
-  if (!legacyFrameGuard.accepts(frame)) return
-  const trace = state.value?.instrument.traces.find((item) => item.id === frame.traceId)
-  if (trace?.format !== frame.format) return
-  frames.value = replaceLatestDisplayFrame(frames.value, frame)
+function replaceFrameSet(frameSet: TraceDisplayFrameSet): void {
+  if (!state.value) return
+  let next = replaceDisplayFramesForSnapshot(frameSet, state.value)
+  if (pendingFrameTraceId !== null) next = removeDisplayFrame(next, pendingFrameTraceId)
+  frames.value = next
   displayError.value = ''
 }
 
 function handleConnectionChange(next: LiveDisplayConnection): void {
   connection.value = next
-  if (next === 'online' || next === 'unavailable') {
-    displayError.value = ''
-  }
 }
 
 function handleDisplayError(error: Error): void {
@@ -135,7 +132,7 @@ async function handleUpdateTraceScalePerDivision(traceId: number, value: number)
 function openLiveDisplaySession(): void {
   stopLiveDisplay?.()
   stopLiveDisplay = startLiveDisplaySession(refreshState, {
-    onFrame: replaceFrame,
+    onFrameSet: replaceFrameSet,
     onError: handleDisplayError,
     onConnectionChange: handleConnectionChange,
   })

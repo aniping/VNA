@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { filterDisplayFrameSetForSnapshot } from '../src/api/displayFrameSetState.ts'
+import {
+  filterDisplayFrameSetForSnapshot,
+  replaceDisplayFramesForSnapshot,
+  retainDisplayFramesForSnapshot,
+} from '../src/api/displayFrameSetState.ts'
 import { decodeStateSnapshot } from '../src/api/stateSnapshotDecoder.ts'
 import { decodeTraceDisplayFrameSet } from '../src/api/traceDisplayFrameSet.ts'
 
@@ -55,4 +59,46 @@ test('retains only frames whose complete display identity matches the current sn
   assert.equal(filtered.generation, 3)
   assert.equal(filtered.sequenceNumber, 9)
   assert.deepEqual(filtered.frames.map(({ traceId }) => traceId), [11])
+})
+
+test('atomically replaces the compatible frame map and drops omitted old Traces', () => {
+  const initial = decodeTraceDisplayFrameSet({
+    generation: 3, sequenceNumber: 9,
+    frames: [
+      { ...common, traceId: 11, measurementId: 21, measurementType: 'S21',
+        format: 'logMagnitude', valueUnit: 'dB', values: [-70, -71, -72] },
+      { ...common, traceId: 12, measurementId: 22, measurementType: 'S11',
+        format: 'phase', valueUnit: 'degree', values: [-45, 0, 45] },
+    ],
+  })
+  const current = replaceDisplayFramesForSnapshot(initial, snapshot)
+  assert.deepEqual([...current.keys()], [11, 12])
+
+  const next = decodeTraceDisplayFrameSet({
+    generation: 4, sequenceNumber: 1,
+    frames: [{ ...common, frameId: 42, generation: 4, sequenceNumber: 1,
+      traceId: 12, measurementId: 22, measurementType: 'S11',
+      format: 'phase', valueUnit: 'degree', values: [-90, 0, 90] }],
+  })
+  const replaced = replaceDisplayFramesForSnapshot(next, snapshot)
+  assert.deepEqual([...replaced.keys()], [12])
+})
+
+test('retains old frames only while their complete identity still matches state', () => {
+  const set = decodeTraceDisplayFrameSet({
+    generation: 3, sequenceNumber: 9,
+    frames: [{ ...common, traceId: 11, measurementId: 21, measurementType: 'S21',
+      format: 'logMagnitude', valueUnit: 'dB', values: [-70, -71, -72] }],
+  })
+  const current = replaceDisplayFramesForSnapshot(set, snapshot)
+  const changed = decodeStateSnapshot({
+    stateRevision: 100,
+    instrument: {
+      ...snapshot.instrument,
+      measurements: snapshot.instrument.measurements.map((item) => (
+        item.id === 21 ? { ...item, type: 'S11' } : item
+      )),
+    },
+  })
+  assert.deepEqual([...retainDisplayFramesForSnapshot(current, changed).keys()], [])
 })

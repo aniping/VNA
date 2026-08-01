@@ -1,5 +1,5 @@
-import { decodeTraceDisplayFrame } from './traceDisplayFrame.ts'
-import type { TraceDisplayFrame } from './traceDisplayFrame.ts'
+import { decodeTraceDisplayFrameSet } from './traceDisplayFrameSet.ts'
+import type { TraceDisplayFrameSet } from './traceDisplayFrameSet.ts'
 
 export interface DisplayFrameSocketHandlers {
   onOpen(): void
@@ -22,7 +22,7 @@ export interface LiveDisplayEnvironment {
 }
 
 export interface LiveDisplayHandlers {
-  onFrame(frame: TraceDisplayFrame): void
+  onFrameSet(frameSet: TraceDisplayFrameSet): void
   onError(error: Error): void
   onConnectionChange(state: LiveDisplayConnection): void
 }
@@ -56,18 +56,22 @@ function browserEnvironment(): LiveDisplayEnvironment {
   }
 }
 
-function messageFrame(data: unknown): TraceDisplayFrame {
-  if (typeof data !== 'string') throw new Error('Display frame message must be text')
-  return decodeTraceDisplayFrame(JSON.parse(data))
+function messageFrameSet(data: unknown): TraceDisplayFrameSet {
+  if (typeof data !== 'string') throw new Error('Display frame-set message must be text')
+  return decodeTraceDisplayFrameSet(JSON.parse(data))
 }
 
 function reportError(handlers: LiveDisplayHandlers, error: unknown): void {
   handlers.onError(error instanceof Error ? error : new Error('Display frame stream failed'))
 }
 
-function displayTraceUnavailable(close: DisplayFrameSocketClose): boolean {
-  // PolicyViolation also reports capacity errors, so the server-owned reason is required.
-  return close.code === 1008 && close.reason === 'display trace unavailable'
+function frameSetAdvances(
+  frameSet: TraceDisplayFrameSet,
+  baseline: { generation: number; sequenceNumber: number },
+): boolean {
+  return frameSet.generation > baseline.generation
+    || (frameSet.generation === baseline.generation
+      && frameSet.sequenceNumber > baseline.sequenceNumber)
 }
 
 class LiveDisplaySession {
@@ -100,13 +104,13 @@ class LiveDisplaySession {
     try {
       await this.refreshState()
       if (!this.isCurrent(generation)) return
-      // Sequence belongs to one socket generation. A restarted server may begin at one,
-      // so carrying the prior connection's baseline would discard its retained latest frame.
-      const sequences = new Map<number, number>()
+      // This baseline belongs to one socket only. A server restart can reset both counters,
+      // while an in-place configuration change advances generation and may reset sequence.
+      const baseline = { generation: 0, sequenceNumber: 0 }
       const socket = this.environment.openSocket({
         onOpen: () => this.connected(generation),
-        onMessage: (data) => this.receive(generation, sequences, data),
-        onClose: (close) => this.disconnected(generation, close),
+        onMessage: (data) => this.receive(generation, baseline, data),
+        onClose: () => this.disconnected(generation),
       })
       if (this.isCurrent(generation)) this.socket = socket
       else socket.close()
@@ -122,29 +126,29 @@ class LiveDisplaySession {
     if (this.isCurrent(generation)) this.handlers.onConnectionChange('online')
   }
 
-  private receive(generation: number, sequences: Map<number, number>, data: unknown): void {
+  private receive(
+    generation: number,
+    baseline: { generation: number; sequenceNumber: number },
+    data: unknown,
+  ): void {
     if (!this.isCurrent(generation)) return
     try {
-      const frame = messageFrame(data)
-      const previous = sequences.get(frame.traceId) ?? 0
-      if (frame.sequenceNumber <= previous) return
-      sequences.set(frame.traceId, frame.sequenceNumber)
-      this.handlers.onFrame(frame)
+      const frameSet = messageFrameSet(data)
+      if (!frameSetAdvances(frameSet, baseline)) return
+      baseline.generation = frameSet.generation
+      baseline.sequenceNumber = frameSet.sequenceNumber
+      this.handlers.onFrameSet(frameSet)
     } catch (error) {
       reportError(this.handlers, error)
     }
   }
 
-  private disconnected(generation: number, close: DisplayFrameSocketClose): void {
+  private disconnected(generation: number): void {
     if (!this.isCurrent(generation)) return
     // The session owns transport only: callers keep their last good frame while this
     // invalidates queued events that could otherwise race a replacement connection.
     this.generation += 1
     this.socket = null
-    if (displayTraceUnavailable(close)) {
-      this.handlers.onConnectionChange('unavailable')
-      return
-    }
     this.handlers.onConnectionChange('offline')
     this.scheduleReconnect()
   }

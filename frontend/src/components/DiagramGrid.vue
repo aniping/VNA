@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { StateSnapshot } from '../api/vnaApi'
-import type { TraceDisplayFrame } from '../api/traceDisplayFrameApi'
+import type { MultiFormatTraceDisplayFrame } from '../api/traceDisplayFrameSet'
 import DiagramPane from './DiagramPane.vue'
 import { selectDisplayDiagrams } from './diagramModel'
 
@@ -9,12 +9,12 @@ const props = defineProps<{
   state: StateSnapshot | null
   activeTraceId?: number
   maximized: boolean
-  frames?: ReadonlyMap<number, TraceDisplayFrame>
+  frames?: ReadonlyMap<number, MultiFormatTraceDisplayFrame>
 }>()
 const emit = defineEmits<{ selectTrace: [traceId: number] }>()
 const diagrams = computed(() => selectDisplayDiagrams(props.state, props.activeTraceId))
 
-function frameForTrace(traceId?: number): TraceDisplayFrame | undefined {
+function frameForTrace(traceId?: number): MultiFormatTraceDisplayFrame | undefined {
   const trace = props.state?.instrument.traces.find((item) => item.id === traceId)
   return trace ? props.frames?.get(trace.id) : undefined
 }

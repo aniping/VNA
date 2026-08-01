@@ -5,7 +5,7 @@ import type {
   MeasurementSnapshot,
   TraceSnapshot,
 } from '../api/vnaApi'
-import type { TraceDisplayFrame } from '../api/traceDisplayFrameApi'
+import type { MultiFormatTraceDisplayFrame } from '../api/traceDisplayFrameSet'
 import CartesianCurve from './CartesianCurve.vue'
 import { traceDisplayEmptyMessage } from './diagramModel'
 import { traceColorForMeasurement } from './traceVisual'
@@ -16,7 +16,7 @@ const props = defineProps<{
   channel?: ChannelSnapshot
   measurement?: MeasurementSnapshot
   trace?: TraceSnapshot
-  frame?: TraceDisplayFrame
+  frame?: MultiFormatTraceDisplayFrame
   active: boolean
 }>()
 const emit = defineEmits<{ select: [traceId: number] }>()
@@ -34,7 +34,7 @@ const curve = computed(() => {
   const trace = props.trace
   const scale = trace?.scale
   // Identity and presentation checks prevent a parent from painting a stale Trace into this pane.
-  if (props.kind !== 'cartesian' || !frame || !trace || !scale) return null
+  if (props.kind !== 'cartesian' || frame?.format !== 'logMagnitude' || !trace || !scale) return null
   if (frame.traceId !== trace.id || frame.format !== trace.format || frame.valueUnit !== scale.unit) {
     return null
   }

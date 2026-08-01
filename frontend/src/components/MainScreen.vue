@@ -7,7 +7,7 @@ import type {
   SweepSettings,
   TraceFormat,
 } from '../api/vnaApi'
-import type { TraceDisplayFrame } from '../api/traceDisplayFrameApi'
+import type { MultiFormatTraceDisplayFrame } from '../api/traceDisplayFrameSet'
 import ChannelSofttool from './ChannelSofttool.vue'
 import DiagramGrid from './DiagramGrid.vue'
 import FormatSofttool from './FormatSofttool.vue'
@@ -32,7 +32,7 @@ const props = defineProps<{
   serviceError: string
   displayError: string
   busy: boolean
-  frames: ReadonlyMap<number, TraceDisplayFrame>
+  frames: ReadonlyMap<number, MultiFormatTraceDisplayFrame>
 }>()
 const emit = defineEmits<{
   updateTraceMeasurementType: [traceId: number, measurementType: MeasurementType]
@@ -49,7 +49,7 @@ const canMaximizeDiagram = computed(() => Boolean(activeTrace.value))
 const workspace = computed(() => selectWorkspacePresentation({
   state: props.state,
   connection: props.connection,
-  hasFrame: props.frames.size > 0,
+  hasFrame: activeTrace.value ? props.frames.has(activeTrace.value.id) : false,
   displayError: props.displayError,
 }))
 const acquisitionStatus = computed(() => {
