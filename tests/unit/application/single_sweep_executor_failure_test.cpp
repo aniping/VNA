@@ -87,7 +87,7 @@ TEST(SingleSweepExecutorFailureTest, RawFrameRejectionIsAtomic) {
     RawSweepSource source = [](const frames::FrequencyAxis& axis,
                                std::stop_token) {
         auto payload = simulation::simulateSweep(axis).value();
-        payload.samples.pop_back();
+        payload.sourceStates.front().samples.pop_back();
         return frames::Result<frames::RawReceiverPayload>{std::move(payload)};
     };
 
@@ -109,7 +109,8 @@ TEST(SingleSweepExecutorFailureTest, ProjectionFailureIsAtomic) {
     RawSweepSource source = [](const frames::FrequencyAxis& axis,
                                std::stop_token) {
         auto payload = simulation::simulateSweep(axis).value();
-        payload.samples.front().b1 = {.real = 0.0, .imaginary = 0.0};
+        payload.sourceStates.front().samples.front().responses.front() =
+            {.real = 0.0, .imaginary = 0.0};
         return frames::Result<frames::RawReceiverPayload>{std::move(payload)};
     };
 

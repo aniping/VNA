@@ -29,13 +29,20 @@ TEST(SimulationSweepTest, GeneratesKnownFivePointReceiverSamples) {
     const auto result = simulateSweep(validAxis());
 
     ASSERT_TRUE(result.hasValue());
-    ASSERT_EQ(result.value().samples.size(), expectedB1.size());
+    ASSERT_EQ(result.value().sourceStates.size(), 2U);
+    const auto& firstSource = result.value().sourceStates[0];
+    const auto& secondSource = result.value().sourceStates[1];
+    ASSERT_EQ(firstSource.samples.size(), expectedB1.size());
     for (std::size_t index = 0; index < expectedB1.size(); ++index) {
-        const auto& sample = result.value().samples[index];
-        EXPECT_DOUBLE_EQ(sample.a1.real, 1.0);
-        EXPECT_DOUBLE_EQ(sample.a1.imaginary, 0.0);
-        EXPECT_DOUBLE_EQ(sample.b1.real, expectedB1[index].real);
-        EXPECT_DOUBLE_EQ(sample.b1.imaginary, expectedB1[index].imaginary);
+        const auto& first = firstSource.samples[index];
+        const auto& second = secondSource.samples[index];
+        EXPECT_DOUBLE_EQ(first.reference.real, 1.0);
+        EXPECT_DOUBLE_EQ(first.reference.imaginary, 0.0);
+        EXPECT_DOUBLE_EQ(first.responses[0].real, expectedB1[index].real);
+        EXPECT_DOUBLE_EQ(first.responses[0].imaginary, expectedB1[index].imaginary);
+        EXPECT_DOUBLE_EQ(second.responses[1].real, expectedB1[index].real);
+        EXPECT_DOUBLE_EQ(
+            second.responses[1].imaginary, expectedB1[index].imaginary);
     }
 }
 
@@ -45,29 +52,24 @@ TEST(SimulationSweepTest, RepeatsIdenticalInputExactly) {
 
     ASSERT_TRUE(first.hasValue());
     ASSERT_TRUE(second.hasValue());
-    ASSERT_EQ(first.value().samples.size(), second.value().samples.size());
-    for (std::size_t index = 0; index < first.value().samples.size(); ++index) {
-        const auto& left = first.value().samples[index];
-        const auto& right = second.value().samples[index];
-        EXPECT_DOUBLE_EQ(left.a1.real, right.a1.real);
-        EXPECT_DOUBLE_EQ(left.a1.imaginary, right.a1.imaginary);
-        EXPECT_DOUBLE_EQ(left.b1.real, right.b1.real);
-        EXPECT_DOUBLE_EQ(left.b1.imaginary, right.b1.imaginary);
-    }
+    EXPECT_EQ(first.value(), second.value());
 }
 
 TEST(SimulationSweepTest, ProducesFiniteBoundedMaximumSweep) {
     const auto result = simulateSweep(validAxis(frames::kMaxSweepPoints));
 
     ASSERT_TRUE(result.hasValue());
-    ASSERT_EQ(result.value().samples.size(), frames::kMaxSweepPoints);
-    for (const auto& sample : result.value().samples) {
-        EXPECT_TRUE(std::isfinite(sample.b1.real));
-        EXPECT_TRUE(std::isfinite(sample.b1.imaginary));
-        EXPECT_LE(std::hypot(sample.b1.real, sample.b1.imaginary), 0.5);
+    ASSERT_EQ(result.value().sourceStates.size(), 2U);
+    for (const auto& state : result.value().sourceStates) {
+        ASSERT_EQ(state.samples.size(), frames::kMaxSweepPoints);
+        for (const auto& sample : state.samples) {
+            for (const auto& response : sample.responses) {
+                EXPECT_TRUE(std::isfinite(response.real));
+                EXPECT_TRUE(std::isfinite(response.imaginary));
+                EXPECT_LE(std::hypot(response.real, response.imaginary), 0.5);
+            }
+        }
     }
-    EXPECT_DOUBLE_EQ(result.value().samples.front().b1.real, 0.5);
-    EXPECT_DOUBLE_EQ(result.value().samples.back().b1.real, -0.5);
 }
 
 struct InvalidAxisCase {

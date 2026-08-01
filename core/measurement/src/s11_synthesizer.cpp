@@ -1,5 +1,6 @@
 #include <vna/measurement/s11_synthesizer.hpp>
 
+#include <algorithm>
 #include <utility>
 #include <vector>
 
@@ -27,6 +28,10 @@ bool isZeroReference(const frames::ComplexSample& reference) {
            0.0;
 }
 
+bool isFirstSource(const frames::RawSourceState& state) {
+    return state.sourcePort == 1;
+}
+
 }  // namespace
 
 frames::Result<frames::MeasurementFrame> synthesizeS11(
@@ -51,17 +56,25 @@ frames::Result<frames::MeasurementFrame> synthesizeS11(
             .code = frames::FrameErrorCode::MeasurementChannelMismatch}};
     }
 
+    const auto& states = validated.value().payload.sourceStates;
+    const auto source =
+        std::find_if(states.cbegin(), states.cend(), isFirstSource);
+    if (source == states.cend()) {
+        return frames::Result<frames::MeasurementFrame>{frames::FrameError{
+            .code = frames::FrameErrorCode::InvalidSourcePort}};
+    }
+
     std::vector<frames::ComplexSample> ratios;
-    ratios.reserve(validated.value().payload.samples.size());
-    for (const auto& sample : validated.value().payload.samples) {
+    ratios.reserve(source->samples.size());
+    for (const auto& sample : source->samples) {
         // A zero reference has no physical ratio. Reject the complete frame
         // instead of publishing a partial vector or allowing NaN/Inf to carry
         // an acquisition failure into later display processing.
-        if (isZeroReference(sample.a1)) {
+        if (isZeroReference(sample.reference)) {
             return frames::Result<frames::MeasurementFrame>{frames::FrameError{
                 .code = frames::FrameErrorCode::ZeroReference}};
         }
-        ratios.push_back(divide(sample.b1, sample.a1));
+        ratios.push_back(divide(sample.responses[0], sample.reference));
     }
 
     return frames::makeMeasurementFrame(

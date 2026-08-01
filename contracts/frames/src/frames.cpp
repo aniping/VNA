@@ -31,7 +31,44 @@ bool isFinite(const ComplexSample& sample) {
 }
 
 bool isFinite(const RawReceiverSample& sample) {
-    return isFinite(sample.a1) && isFinite(sample.b1);
+    return isFinite(sample.reference) &&
+           std::all_of(
+               sample.responses.cbegin(), sample.responses.cend(),
+               [](const ComplexSample& response) { return isFinite(response); });
+}
+
+std::optional<FrameError> validatePayload(
+    const RawReceiverPayload& payload,
+    std::uint32_t points) {
+    if (payload.portCount == 0 || payload.portCount > kMaxPortCount) {
+        return FrameError{.code = FrameErrorCode::InvalidPortCount};
+    }
+    if (payload.sourceStates.empty() ||
+        payload.sourceStates.size() > payload.portCount) {
+        return FrameError{.code = FrameErrorCode::InvalidSourcePort};
+    }
+    std::vector<bool> seen(payload.portCount + 1, false);
+    for (const auto& state : payload.sourceStates) {
+        if (state.sourcePort == 0 || state.sourcePort > payload.portCount) {
+            return FrameError{.code = FrameErrorCode::InvalidSourcePort};
+        }
+        if (seen[state.sourcePort]) {
+            return FrameError{.code = FrameErrorCode::DuplicateSourcePort};
+        }
+        seen[state.sourcePort] = true;
+        if (state.samples.size() != points) {
+            return FrameError{.code = FrameErrorCode::SampleCountMismatch};
+        }
+        for (const auto& sample : state.samples) {
+            if (sample.responses.size() != payload.portCount) {
+                return FrameError{.code = FrameErrorCode::ResponseCountMismatch};
+            }
+            if (!isFinite(sample)) {
+                return FrameError{.code = FrameErrorCode::NonFiniteSample};
+            }
+        }
+    }
+    return std::nullopt;
 }
 
 }  // namespace
@@ -47,15 +84,8 @@ Result<RawReceiverFrame> makeRawReceiverFrame(
     if (const auto error = validateAxis(frequencyAxis)) {
         return Result<RawReceiverFrame>{*error};
     }
-    if (payload.samples.size() != frequencyAxis.points) {
-        return Result<RawReceiverFrame>{
-            FrameError{.code = FrameErrorCode::SampleCountMismatch}};
-    }
-    if (!std::all_of(
-            payload.samples.cbegin(), payload.samples.cend(),
-            [](const RawReceiverSample& sample) { return isFinite(sample); })) {
-        return Result<RawReceiverFrame>{
-            FrameError{.code = FrameErrorCode::NonFiniteSample}};
+    if (const auto error = validatePayload(payload, frequencyAxis.points)) {
+        return Result<RawReceiverFrame>{*error};
     }
     return Result<RawReceiverFrame>{RawReceiverFrame{
         .context = context,

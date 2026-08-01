@@ -29,20 +29,33 @@ FrequencyAxis validAxis(std::uint32_t points = 2) {
 
 RawReceiverPayload validRawPayload(std::uint32_t points = 2) {
     return RawReceiverPayload{
-        .samples = std::vector<RawReceiverSample>(
-            points,
-            {.a1 = {1.0, 0.0}, .b1 = {0.5, 0.25}}),
+        .portCount = 2,
+        .sourceStates = {{
+            .sourcePort = 1,
+            .samples = std::vector<RawReceiverSample>(
+                points,
+                {.reference = {1.0, 0.0},
+                 .responses = {{0.5, 0.25}, {0.01, -0.01}}}),
+        }},
     };
 }
+
+#include "raw_receiver_contract_cases.hpp"
 
 TEST(FrameContractTest, CreatesRawReceiverFrameFromCoordinatorContextAndPayload) {
     const auto context = validContext();
     const auto axis = validAxis();
     RawReceiverPayload payload{
-        .samples = {
-            {.a1 = {1.0, 0.0}, .b1 = {0.5, 0.0}},
-            {.a1 = {1.0, 0.0}, .b1 = {-0.5, 0.25}},
-        },
+        .portCount = 2,
+        .sourceStates = {{
+            .sourcePort = 1,
+            .samples = {
+                {.reference = {1.0, 0.0},
+                 .responses = {{0.5, 0.0}, {0.01, 0.0}}},
+                {.reference = {1.0, 0.0},
+                 .responses = {{-0.5, 0.25}, {0.02, 0.0}}},
+            },
+        }},
     };
 
     const auto result =
@@ -52,9 +65,11 @@ TEST(FrameContractTest, CreatesRawReceiverFrameFromCoordinatorContextAndPayload)
     EXPECT_EQ(result.value().context.frameId, FrameId{11});
     EXPECT_EQ(result.value().context.stateRevision, 19U);
     EXPECT_EQ(result.value().frequencyAxis.points, 2U);
-    ASSERT_EQ(result.value().payload.samples.size(), 2U);
-    EXPECT_DOUBLE_EQ(result.value().payload.samples[1].b1.real, -0.5);
-    EXPECT_DOUBLE_EQ(result.value().payload.samples[1].b1.imaginary, 0.25);
+    ASSERT_EQ(result.value().payload.sourceStates[0].samples.size(), 2U);
+    const auto& response =
+        result.value().payload.sourceStates[0].samples[1].responses[0];
+    EXPECT_DOUBLE_EQ(response.real, -0.5);
+    EXPECT_DOUBLE_EQ(response.imaginary, 0.25);
 }
 
 struct InvalidContextCase {
@@ -141,7 +156,8 @@ TEST(FrameContractTest, AcceptsMaximumSweepPointCount) {
 
     ASSERT_TRUE(result.hasValue());
     EXPECT_EQ(result.value().frequencyAxis.points, 2048U);
-    EXPECT_EQ(result.value().payload.samples.size(), 2048U);
+    EXPECT_EQ(
+        result.value().payload.sourceStates[0].samples.size(), 2048U);
 }
 
 TEST(FrameContractTest, RejectsRawReceiverSampleCountMismatch) {
@@ -154,7 +170,7 @@ TEST(FrameContractTest, RejectsRawReceiverSampleCountMismatch) {
 
 TEST(FrameContractTest, RejectsNonFiniteRawReceiverSample) {
     auto payload = validRawPayload();
-    payload.samples[1].b1.imaginary =
+    payload.sourceStates[0].samples[1].responses[0].imaginary =
         std::numeric_limits<double>::infinity();
 
     const auto result = makeRawReceiverFrame(

@@ -21,7 +21,13 @@ frames::RawReceiverFrame rawFrame(
             .stopFrequencyHz = 2'000'000,
             .points = static_cast<std::uint32_t>(samples.size()),
         },
-        .payload = {.samples = std::move(samples)},
+        .payload = {
+            .portCount = 2,
+            .sourceStates = {{
+                .sourcePort = 1,
+                .samples = std::move(samples),
+            }},
+        },
     };
 }
 
@@ -36,8 +42,10 @@ domain::MeasurementSnapshot s11Measurement() {
 TEST(S11SynthesizerTest, ProducesComplexRatiosWithSourceCorrelation) {
     const auto result = synthesizeS11(
         rawFrame({
-            {.a1 = {1.0, 0.0}, .b1 = {0.5, 0.25}},
-            {.a1 = {1.0, 1.0}, .b1 = {0.0, 2.0}},
+            {.reference = {1.0, 0.0},
+             .responses = {{0.5, 0.25}, {0.01, 0.0}}},
+            {.reference = {1.0, 1.0},
+             .responses = {{0.0, 2.0}, {0.01, 0.0}}},
         }),
         s11Measurement());
 
@@ -56,8 +64,10 @@ TEST(S11SynthesizerTest, ProducesComplexRatiosWithSourceCorrelation) {
 TEST(S11SynthesizerTest, RejectsZeroReferenceBeforeDivision) {
     const auto result = synthesizeS11(
         rawFrame({
-            {.a1 = {0.0, 0.0}, .b1 = {0.5, 0.25}},
-            {.a1 = {1.0, 0.0}, .b1 = {-0.5, 0.25}},
+            {.reference = {0.0, 0.0},
+             .responses = {{0.5, 0.25}, {0.01, 0.0}}},
+            {.reference = {1.0, 0.0},
+             .responses = {{-0.5, 0.25}, {0.01, 0.0}}},
         }),
         s11Measurement());
 
@@ -71,8 +81,10 @@ TEST(S11SynthesizerTest, RejectsMeasurementFromAnotherChannel) {
 
     const auto result = synthesizeS11(
         rawFrame({
-            {.a1 = {1.0, 0.0}, .b1 = {0.5, 0.25}},
-            {.a1 = {1.0, 0.0}, .b1 = {-0.5, 0.25}},
+            {.reference = {1.0, 0.0},
+             .responses = {{0.5, 0.25}, {0.01, 0.0}}},
+            {.reference = {1.0, 0.0},
+             .responses = {{-0.5, 0.25}, {0.01, 0.0}}},
         }),
         measurement);
 
@@ -88,8 +100,10 @@ TEST(S11SynthesizerTest, RejectsUnsupportedMeasurementType) {
 
     const auto result = synthesizeS11(
         rawFrame({
-            {.a1 = {1.0, 0.0}, .b1 = {0.5, 0.25}},
-            {.a1 = {1.0, 0.0}, .b1 = {-0.5, 0.25}},
+            {.reference = {1.0, 0.0},
+             .responses = {{0.5, 0.25}, {0.01, 0.0}}},
+            {.reference = {1.0, 0.0},
+             .responses = {{-0.5, 0.25}, {0.01, 0.0}}},
         }),
         measurement);
 

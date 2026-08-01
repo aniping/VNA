@@ -23,6 +23,31 @@ std::optional<frames::FrameError> validateAxis(
     return std::nullopt;
 }
 
+frames::RawSourceState makeSourceState(
+    std::uint32_t sourcePort,
+    const frames::FrequencyAxis& axis) {
+    frames::RawSourceState state{
+        .sourcePort = sourcePort,
+        .samples = {},
+    };
+    state.samples.reserve(axis.points);
+    for (std::uint32_t index = 0; index < axis.points; ++index) {
+        const auto position = static_cast<double>(index) /
+                              static_cast<double>(axis.points - 1);
+        const frames::ComplexSample reflected{
+            .real = 0.5 - position,
+            .imaginary = position * (1.0 - position),
+        };
+        std::vector<frames::ComplexSample> responses(2, {0.0, 0.0});
+        responses[sourcePort - 1] = reflected;
+        state.samples.push_back(frames::RawReceiverSample{
+            .reference = {1.0, 0.0},
+            .responses = std::move(responses),
+        });
+    }
+    return state;
+}
+
 }  // namespace
 
 frames::Result<frames::RawReceiverPayload> simulateSweep(
@@ -31,26 +56,14 @@ frames::Result<frames::RawReceiverPayload> simulateSweep(
         return frames::Result<frames::RawReceiverPayload>{*error};
     }
 
-    std::vector<frames::RawReceiverSample> samples;
-    samples.reserve(frequencyAxis.points);
-
-    // This simple reflection curve is deliberately algebraic and noiseless.
-    // Its binary-exact five-point values make cross-platform tests stable while
-    // still exercising both real and imaginary receiver components.
-    for (std::uint32_t index = 0; index < frequencyAxis.points; ++index) {
-        const auto position = static_cast<double>(index) /
-                              static_cast<double>(frequencyAxis.points - 1);
-        samples.push_back(frames::RawReceiverSample{
-            .a1 = {.real = 1.0, .imaginary = 0.0},
-            .b1 = {
-                .real = 0.5 - position,
-                .imaginary = position * (1.0 - position),
-            },
-        });
-    }
-
     return frames::Result<frames::RawReceiverPayload>{
-        frames::RawReceiverPayload{.samples = std::move(samples)}};
+        frames::RawReceiverPayload{
+            .portCount = 2,
+            .sourceStates = {
+                makeSourceState(1, frequencyAxis),
+                makeSourceState(2, frequencyAxis),
+            },
+        }};
 }
 
 }  // namespace vna::simulation

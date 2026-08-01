@@ -1,6 +1,6 @@
 #pragma once
 
-#include <vna/frames/frames.hpp>
+#include <vna/frames/raw_receiver.hpp>
 
 namespace vna::simulation {
 

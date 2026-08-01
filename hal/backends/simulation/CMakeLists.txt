@@ -7,5 +7,5 @@ target_include_directories(
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-target_link_libraries(vna_simulation PUBLIC vna::frame_contracts)
+target_link_libraries(vna_simulation PUBLIC vna::raw_receiver_contracts)
 target_compile_options(vna_simulation PRIVATE -Wall -Wextra -Wpedantic)
