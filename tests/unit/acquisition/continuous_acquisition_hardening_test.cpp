@@ -14,7 +14,7 @@
 
 #include <vna/acquisition/continuous_acquisition.hpp>
 
-#include "continuous_acquisition_test_support.hpp"
+#include <vna/test/continuous_acquisition_test_support.hpp>
 
 namespace vna::acquisition {
 namespace {

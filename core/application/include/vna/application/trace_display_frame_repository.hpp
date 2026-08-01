@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <unordered_map>
@@ -42,6 +43,9 @@ public:
 private:
     std::variant<TraceDisplayFrameHandle, TraceDisplayFrameError> value_;
 };
+
+using TraceDisplayPublisher =
+    std::function<TraceDisplayFrameResult(TraceDisplayFrame)>;
 
 class TraceDisplayFrameRepository {
 public:

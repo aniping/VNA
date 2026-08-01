@@ -66,6 +66,9 @@ target_link_libraries(
         vna::acquisition
         GTest::gtest_main
 )
+target_include_directories(
+    vna_acquisition_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/support/include
+)
 gtest_discover_tests(vna_acquisition_tests)
 
 add_executable(
@@ -91,6 +94,7 @@ add_executable(
     unit/application/command_error_test.cpp
     unit/application/completion_fence_test.cpp
     unit/application/completion_fence_hardening_test.cpp
+    unit/application/continuous_trace_publisher_test.cpp
     unit/application/control_authority_test.cpp
     unit/application/control_authority_concurrency_test.cpp
     unit/application/factory_preset_test.cpp

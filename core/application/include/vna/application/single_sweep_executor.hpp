@@ -4,6 +4,7 @@
 #include <functional>
 #include <memory>
 #include <stop_token>
+#include <utility>
 #include <variant>
 
 #include <vna/application/operation_manager.hpp>
@@ -18,9 +19,6 @@ namespace vna::application {
 using RawSweepSource = std::function<frames::Result<frames::RawReceiverPayload>(
     const frames::FrequencyAxis&,
     std::stop_token)>;
-
-using TraceDisplayPublisher =
-    std::function<TraceDisplayFrameResult(TraceDisplayFrame)>;
 
 struct SingleSweepWorkItem {
     CommandId commandId;
