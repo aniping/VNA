@@ -5,21 +5,12 @@
 #include <optional>
 
 #include <vna/acquisition/continuous_acquisition.hpp>
-#include <vna/application/trace_display_frame_repository.hpp>
-#include <vna/display_model/display_workspace.hpp>
-#include <vna/domain/instrument.hpp>
+#include <vna/application/trace_publication_catalog.hpp>
 
 namespace vna::application {
-struct ContinuousTracePreset {
-    std::uint64_t stateRevision;
-    domain::MeasurementSnapshot measurement;
-    display_model::TraceSnapshot trace;
-};
-
 enum class ContinuousTracePublisherState {
     Running,
     Stopped,
-    Retired,
     AcquisitionFailed,
 };
 
@@ -34,20 +25,13 @@ struct ContinuousTracePublisherSnapshot {
 };
 
 // This worker is the sole production waitForNext consumer of acquisition state.
-// Acquisition, repository, and injected publisher dependencies outlive it.
+// Acquisition and catalog dependencies outlive it; each raw sweep uses one
+// immutable plan capture and produces at most one atomic frame-set publish.
 class ContinuousTracePublisher final {
 public:
     ContinuousTracePublisher(
         acquisition::ContinuousAcquisition& acquisition,
-        ContinuousTracePreset preset,
-        TraceDisplayFrameRepository& repository);
-    // The callback must return promptly and must not re-enter this publisher or
-    // CommandBus; the lifecycle gate intentionally spans the complete call.
-    ContinuousTracePublisher(
-        acquisition::ContinuousAcquisition& acquisition,
-        ContinuousTracePreset preset,
-        TraceDisplayFrameRepository& repository,
-        TraceDisplayPublisher publish);
+        TracePublicationCatalog& catalog);
     ~ContinuousTracePublisher();
     ContinuousTracePublisher(const ContinuousTracePublisher&) = delete;
     ContinuousTracePublisher& operator=(const ContinuousTracePublisher&) = delete;
@@ -58,11 +42,6 @@ public:
     // join blocks until acquisition reaches a natural terminal state.
     void stop() noexcept;
     void join();
-    // Invalidation is linearized with publication but keeps this worker alive.
-    void invalidateTraceFrame(display_model::TraceId traceId) noexcept;
-    // Retirement is trace-scoped and linearized with the final publish. It
-    // requests only this worker to stop and deliberately does not join it.
-    void retireTrace(display_model::TraceId traceId) noexcept;
     [[nodiscard]] ContinuousTracePublisherSnapshot snapshot() const;
 
 private:

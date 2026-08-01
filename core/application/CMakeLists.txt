@@ -8,6 +8,7 @@ add_library(
     src/completion_fence.cpp
     src/completion_fence_handles.cpp
     src/continuous_trace_publisher.cpp
+    src/continuous_trace_pipeline.cpp
     src/factory_preset.cpp
     src/frequency_axis_materialization.cpp
     src/operation_manager.cpp

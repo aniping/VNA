@@ -1,18 +1,18 @@
 #pragma once
 
-#include <vna/application/continuous_trace_publisher.hpp>
 #include <vna/application/single_sweep_executor.hpp>
+#include <vna/application/trace_display_frame_repository.hpp>
 
 namespace vna::application {
 
 // Production continuous acquisition owns the only RawSweepSource. This
 // adapter keeps legacy command wiring honest without creating a second worker,
-// Operation, queue, or source owner. The publisher must outlive the adapter.
+// Operation, queue, or source owner. The repository must outlive the adapter.
 class DisabledSingleSweepExecution final : public SingleSweepExecution {
 public:
     explicit DisabledSingleSweepExecution(
-        ContinuousTracePublisher& publisher) noexcept
-        : publisher_(publisher) {}
+        TraceDisplayFrameRepository& repository) noexcept
+        : repository_(repository) {}
 
     [[nodiscard]] SingleSweepSubmitResult submit(
         SingleSweepWorkItem) override {
@@ -21,15 +21,15 @@ public:
 
     void invalidateTraceFrame(
         display_model::TraceId traceId) noexcept override {
-        publisher_.invalidateTraceFrame(traceId);
+        repository_.discard(traceId);
     }
 
     void discardTrace(display_model::TraceId traceId) noexcept override {
-        publisher_.retireTrace(traceId);
+        repository_.discard(traceId);
     }
 
 private:
-    ContinuousTracePublisher& publisher_;
+    TraceDisplayFrameRepository& repository_;
 };
 
 }  // namespace vna::application

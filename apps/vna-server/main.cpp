@@ -199,11 +199,9 @@ int runServer() {
     vna::acquisition::ContinuousAcquisition acquisition{
         std::move(preset.acquisitionPlan), makeSimulationSource()};
     vna::application::ContinuousTracePublisher tracePublisher{
-        acquisition,
-        std::move(preset.continuousTracePreset),
-        publication.repository};
+        acquisition, publication.catalog};
     vna::application::DisabledSingleSweepExecution disabledSingleSweep{
-        tracePublisher};
+        publication.repository};
     vna::application::SingleSweepCommandHandler sweepHandler{
         disabledSingleSweep};
     vna::application::CommandBus commandBus{
