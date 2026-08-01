@@ -13,6 +13,7 @@ add_library(
     src/operation_manager.cpp
     src/single_sweep_command_handler.cpp
     src/single_sweep_executor.cpp
+    src/single_sweep_operation.cpp
     src/single_sweep_pipeline.cpp
     src/single_sweep_publisher.cpp
     src/single_sweep_trace_registry.cpp
@@ -20,6 +21,7 @@ add_library(
     src/trace_display_frame_query.cpp
     src/trace_display_frame_repository.cpp
     src/trace_display_frame_wait.cpp
+    src/trace_format_command.cpp
 )
 add_library(vna::application ALIAS vna_application)
 

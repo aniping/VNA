@@ -192,5 +192,22 @@ TEST(TraceDisplayFrameRepositoryWaitTest, DiscardStartRaceCannotHang) {
     EXPECT_TRUE(result == nullptr || result->sequenceNumber == 2U);
 }
 
+TEST(TraceDisplayFrameRepositoryWaitTest, ValidatesAfterRegisteringWaiter) {
+    TraceDisplayFrameRepository repository{1};
+    ASSERT_TRUE(repository.publish(frameFor(display_model::TraceId{1}, 1))
+                    .hasValue());
+    bool validated = false;
+
+    const auto result = repository.waitForNext(
+        display_model::TraceId{1}, 1, {}, [&] {
+            validated = true;
+            repository.discard(display_model::TraceId{1});
+            return true;
+        });
+
+    EXPECT_TRUE(validated);
+    EXPECT_EQ(result, nullptr);
+}
+
 }  // namespace
 }  // namespace vna::application

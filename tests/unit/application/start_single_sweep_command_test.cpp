@@ -96,6 +96,7 @@ private:
         return OperationId{71};
     }
 
+    void invalidateTraceFrame(display_model::TraceId) noexcept override {}
     void discardTrace(display_model::TraceId) noexcept override {}
 
     CommandEnvelope envelope(const char* commandId, CommandPayload payload) {

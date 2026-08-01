@@ -46,6 +46,8 @@ public:
     virtual ~SingleSweepExecution() = default;
     [[nodiscard]] virtual SingleSweepSubmitResult submit(
         SingleSweepWorkItem work) = 0;
+    virtual void invalidateTraceFrame(
+        display_model::TraceId traceId) noexcept = 0;
     virtual void discardTrace(display_model::TraceId traceId) noexcept = 0;
 };
 
@@ -85,6 +87,11 @@ public:
     // therefore never leaves an Operation that no worker can own.
     [[nodiscard]] SingleSweepSubmitResult submit(
         SingleSweepWorkItem work) override;
+
+    // Invalidation drops only retained display data. Admitted Operations keep
+    // their existing lifecycle and may publish a later frame if still valid.
+    void invalidateTraceFrame(
+        display_model::TraceId traceId) noexcept override;
 
     // The CommandBus calls this after deleting the Trace while its own lock
     // still prevents later admission. It only requests cancellation; terminal

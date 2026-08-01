@@ -93,6 +93,13 @@ public:
         std::lock_guard lock{mutex_};
         return snapshot_;
     }
+    void invalidateTraceFrame(display_model::TraceId traceId) noexcept {
+        if (traceId != preset_.trace.id) {
+            return;
+        }
+        const std::lock_guard gate{publishGate_};
+        repository_.discard(traceId);
+    }
     void retireTrace(display_model::TraceId traceId) noexcept {
         if (traceId != preset_.trace.id) {
             return;
@@ -209,6 +216,10 @@ ContinuousTracePublisher::ContinuousTracePublisher(
 ContinuousTracePublisher::~ContinuousTracePublisher() = default;
 void ContinuousTracePublisher::stop() noexcept { impl_->stop(); }
 void ContinuousTracePublisher::join() { impl_->join(); }
+void ContinuousTracePublisher::invalidateTraceFrame(
+    display_model::TraceId traceId) noexcept {
+    impl_->invalidateTraceFrame(traceId);
+}
 void ContinuousTracePublisher::retireTrace(
     display_model::TraceId traceId) noexcept {
     impl_->retireTrace(traceId);

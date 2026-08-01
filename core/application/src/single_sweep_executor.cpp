@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "single_sweep_pipeline_internal.hpp"
+#include "single_sweep_operation_internal.hpp"
 #include "single_sweep_trace_registry_internal.hpp"
 
 namespace vna::application {
@@ -72,7 +73,8 @@ public:
         // executor lock crosses cancellation or join boundaries.
         condition_.notify_all();
         for (const auto& pending : abandoned) {
-            cancel(pending.operationId);
+            internal::cancelSingleSweepOperation(
+                operations_, pending.operationId);
         }
         if (running) {
             (void)operations_.requestCancel(*running);
@@ -84,6 +86,9 @@ public:
 
     void discardTrace(display_model::TraceId traceId) noexcept {
         traceRegistry_.discardTrace(traceId);
+    }
+    void invalidateTraceFrame(display_model::TraceId traceId) noexcept {
+        traceRegistry_.invalidateTraceFrame(traceId);
     }
 
 private:
@@ -123,31 +128,38 @@ private:
             // typed stages must not terminate the sole worker or strand the
             // accepted Operation in Running.
             (void)operations_.markRunning(operationId);
-            fail(operationId, OperationFailure{
-                                  .code = SingleSweepFailureCode::UnexpectedFailure,
-                                  .cause = std::current_exception()});
+            internal::failSingleSweepOperation(
+                operations_, operationId,
+                OperationFailure{
+                    .code = SingleSweepFailureCode::UnexpectedFailure,
+                    .cause = std::current_exception()});
         }
     }
 
     void run(Pending pending, std::stop_token token) {
-        if (finishCancellation(pending.operationId, token)) {
+        if (internal::finishSingleSweepCancellation(
+                operations_, pending.operationId, token)) {
             return;
         }
         const auto running = operations_.markRunning(pending.operationId);
         if (!std::holds_alternative<OperationSnapshot>(running)) {
-            (void)finishCancellation(pending.operationId, token);
+            (void)internal::finishSingleSweepCancellation(
+                operations_, pending.operationId, token);
             return;
         }
         auto result = internal::buildSingleSweepFrame(
             pending.work, source_, token, [&] {
-                return cancellationRequested(pending.operationId, token);
+                return internal::singleSweepCancellationRequested(
+                    operations_, pending.operationId, token);
             });
         if (std::holds_alternative<internal::SweepPipelineCanceled>(result)) {
-            (void)finishCancellation(pending.operationId, token);
+            (void)internal::finishSingleSweepCancellation(
+                operations_, pending.operationId, token);
             return;
         }
         if (const auto* error = std::get_if<OperationFailure>(&result)) {
-            fail(pending.operationId, *error);
+            internal::failSingleSweepOperation(
+                operations_, pending.operationId, *error);
             return;
         }
         const auto publication = traceRegistry_.publish(
@@ -155,11 +167,13 @@ private:
             publish_,
             std::move(std::get<TraceDisplayFrame>(result)));
         if (std::holds_alternative<internal::SweepTraceRetired>(publication)) {
-            (void)finishCancellation(pending.operationId, token);
+            (void)internal::finishSingleSweepCancellation(
+                operations_, pending.operationId, token);
             return;
         }
         if (const auto* failure = std::get_if<OperationFailure>(&publication)) {
-            fail(pending.operationId, *failure);
+            internal::failSingleSweepOperation(
+                operations_, pending.operationId, *failure);
             return;
         }
         // No-throw Operation values leave no allocation window after the frame
@@ -167,40 +181,6 @@ private:
         (void)operations_.complete(
             pending.operationId,
             OperationSucceeded{pending.work.frameContext.frameId});
-    }
-
-    bool cancellationRequested(
-        OperationId operationId,
-        std::stop_token token) {
-        if (token.stop_requested()) {
-            (void)operations_.requestCancel(operationId);
-        }
-        const auto current = operations_.snapshot(operationId);
-        const auto* snapshot = std::get_if<OperationSnapshot>(&current);
-        return snapshot != nullptr && std::holds_alternative<
-                                          OperationCancelRequested>(
-                                          snapshot->state);
-    }
-
-    bool finishCancellation(
-        OperationId operationId,
-        std::stop_token token) {
-        if (!cancellationRequested(operationId, token)) {
-            return false;
-        }
-        (void)operations_.complete(operationId, OperationCanceled{});
-        return true;
-    }
-
-    void cancel(OperationId operationId) {
-        (void)operations_.requestCancel(operationId);
-        (void)operations_.complete(operationId, OperationCanceled{});
-    }
-
-    void fail(OperationId operationId, OperationFailure failure) {
-        (void)operations_.complete(
-            operationId,
-            OperationFailed{std::move(failure)});
     }
 
     const std::size_t capacity_;
@@ -238,6 +218,11 @@ SingleSweepExecutor::~SingleSweepExecutor() {
 SingleSweepSubmitResult SingleSweepExecutor::submit(
     SingleSweepWorkItem work) {
     return impl_->submit(std::move(work));
+}
+
+void SingleSweepExecutor::invalidateTraceFrame(
+    display_model::TraceId traceId) noexcept {
+    impl_->invalidateTraceFrame(traceId);
 }
 
 void SingleSweepExecutor::discardTrace(

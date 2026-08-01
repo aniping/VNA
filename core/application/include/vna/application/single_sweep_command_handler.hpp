@@ -34,6 +34,10 @@ public:
     // Thread-safe. Only an accepted executor result commits ID candidates.
     [[nodiscard]] SingleSweepCommandResult submit(CapturedSingleSweep capture);
 
+    // A format transition invalidates retained presentation data without
+    // retiring the Trace or cancelling acquisition work.
+    void invalidateFrame(display_model::TraceId traceId) noexcept;
+
     // Trace deletion is already committed before this cleanup begins. Adapter
     // failure is contained so stale frame cleanup can never restore the Trace.
     void discard(display_model::TraceId traceId) noexcept;

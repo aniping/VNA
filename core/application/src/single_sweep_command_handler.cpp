@@ -43,6 +43,11 @@ SingleSweepCommandResult SingleSweepCommandHandler::submit(
     return std::get<SingleSweepSubmitError>(submitted);
 }
 
+void SingleSweepCommandHandler::invalidateFrame(
+    display_model::TraceId traceId) noexcept {
+    execution_.invalidateTraceFrame(traceId);
+}
+
 void SingleSweepCommandHandler::discard(
     display_model::TraceId traceId) noexcept {
     execution_.discardTrace(traceId);

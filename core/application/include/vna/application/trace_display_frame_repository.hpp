@@ -48,6 +48,7 @@ private:
 
 using TraceDisplayPublisher =
     std::function<TraceDisplayFrameResult(TraceDisplayFrame)>;
+using TraceDisplayFrameWaitValidation = std::function<bool()>;
 
 class TraceDisplayFrameRepository {
 public:
@@ -62,11 +63,16 @@ public:
         display_model::TraceId traceId) const;
     // A waiter observes only its Trace. It receives the newest retained frame,
     // so a slow reader can intentionally skip intermediate display updates.
-    // Null means cancellation or a discard linearized after registration.
+    // Validation runs after waiter registration and without the repository
+    // mutex. This lets application policy revalidate control state without a
+    // lost discard between the check and the blocking wait. It must return
+    // quickly and may re-enter this repository. Null means failed validation,
+    // cancellation, or a discard linearized after registration.
     [[nodiscard]] TraceDisplayFrameHandle waitForNext(
         display_model::TraceId traceId,
         std::uint64_t afterSequence,
-        std::stop_token token = {}) const;
+        std::stop_token token = {},
+        TraceDisplayFrameWaitValidation validate = {}) const;
     // Erasing the repository's ownership releases one capacity slot. Readers
     // already holding the immutable shared frame remain valid independently.
     void discard(display_model::TraceId traceId) noexcept;
@@ -87,6 +93,7 @@ private:
     [[nodiscard]] TraceDisplayFrameHandle awaitRegistered(
         WaitRegistration registration,
         std::stop_token token) const;
+    void releaseWaitRegistration(WaitRegistration registration) const;
     void cleanWaitState(
         std::uint64_t traceId,
         const std::shared_ptr<WaitState>& state) const;

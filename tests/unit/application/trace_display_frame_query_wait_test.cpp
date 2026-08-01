@@ -123,6 +123,11 @@ private:
         return SingleSweepSubmitError{SingleSweepSubmitErrorCode::Stopped};
     }
 
+    void invalidateTraceFrame(
+        display_model::TraceId traceId) noexcept override {
+        repository_.discard(traceId);
+    }
+
     void discardTrace(display_model::TraceId traceId) noexcept override {
         repository_.discard(traceId);
     }
@@ -198,9 +203,6 @@ TEST_F(TraceDisplayFrameQueryWaitTest, RevalidatesDeletionAndFormatChange) {
     ASSERT_TRUE(changed.hasEntered());
     ASSERT_TRUE(success(dispatch(UpdateTraceFormatCommand{
         display_model::TraceId{2}, display_model::TraceFormat::Phase})));
-    auto changedFrame = frame(1);
-    changedFrame.traceId = display_model::TraceId{2};
-    ASSERT_TRUE(repository_.publish(std::move(changedFrame)).hasValue());
     expectError(changed.finish(), TraceDisplayFrameQueryErrorCode::FrameNotAvailable);
 }
 

@@ -174,6 +174,11 @@ TEST(DisabledSingleSweepExecutionTest, RejectsSubmitAndForwardsRetirement) {
     const auto firstRequested = source.waitForRequest(1);
 
     const auto result = disabled.submit(test_support::validWorkItem());
+    disabled.invalidateTraceFrame(display_model::TraceId{1});
+    const auto stateAfterInvalidation = publisher.snapshot().state;
+    const auto frameAfterInvalidation = repository.latest(
+        display_model::TraceId{1});
+    ASSERT_TRUE(repository.publish(seedFrame()).hasValue());
     disabled.discardTrace(display_model::TraceId{1});
     publisher.stop();
     const auto acquisitionSnapshot = acquisition.snapshot();
@@ -183,6 +188,8 @@ TEST(DisabledSingleSweepExecutionTest, RejectsSubmitAndForwardsRetirement) {
     ASSERT_NE(error, nullptr);
     EXPECT_EQ(error->code, SingleSweepSubmitErrorCode::Stopped);
     EXPECT_TRUE(firstRequested);
+    EXPECT_EQ(stateAfterInvalidation, ContinuousTracePublisherState::Running);
+    EXPECT_EQ(frameAfterInvalidation, nullptr);
     EXPECT_EQ(acquisitionSnapshot.state,
               acquisition::ContinuousAcquisitionState::Running);
     EXPECT_EQ(acquisitionSnapshot.lastPublishedSequence, 0U);

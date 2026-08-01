@@ -68,6 +68,14 @@ void SingleSweepTraceRegistry::finish(OperationId operationId) noexcept {
     }
 }
 
+void SingleSweepTraceRegistry::invalidateTraceFrame(
+    display_model::TraceId traceId) noexcept {
+    // The same gate spans publish, so invalidation cannot return while an
+    // older publish still owns the repository commit point.
+    const std::scoped_lock lock{mutex_};
+    invokeDiscard(traceId);
+}
+
 void SingleSweepTraceRegistry::discardTrace(
     display_model::TraceId traceId) noexcept {
     bool discardNow = true;

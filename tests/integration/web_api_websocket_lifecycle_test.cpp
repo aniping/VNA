@@ -3,7 +3,9 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
+#include <chrono>
 #include <cstdint>
+#include <future>
 #include <memory>
 #include <string>
 #include <thread>
@@ -12,24 +14,29 @@
 
 #include <vna/application/command_bus.hpp>
 #include <vna/application/factory_preset.hpp>
+#include <vna/application/single_sweep_command_handler.hpp>
 #include <vna/application/trace_display_frame_query.hpp>
-#include <vna/test/stopped_single_sweep_handler.hpp>
 #include <vna/web_api/web_api.hpp>
 
 namespace vna::web_api {
 namespace {
 
+using namespace std::chrono_literals;
+
 bool succeeded(const application::CommandResult& result) {
     return std::holds_alternative<application::CommandSuccess>(result.outcome);
 }
 
-class WebApiWebSocketLifecycleTest : public ::testing::Test {
+class WebApiWebSocketLifecycleTest
+    : public ::testing::Test,
+      private application::SingleSweepExecution {
 protected:
     WebApiWebSocketLifecycleTest()
         : traceId_(preset_.continuousTracePreset.trace.id),
+          sweepHandler_(*this),
           commandBus_(
               application::InstrumentId{"instrument-1"},
-              vna::test::stoppedSingleSweepHandler(),
+              sweepHandler_,
               std::move(preset_.commandBusState)),
           query_(commandBus_, repository_),
           webApi_(commandBus_, operations_, query_, traceId_) {}
@@ -87,13 +94,16 @@ protected:
             nlohmann::json::parse(message).at("sequenceNumber"), expected);
     }
 
-    application::CommandResult dispatch(application::CommandPayload payload) {
+    application::CommandResult dispatch(
+        application::CommandPayload payload,
+        std::uint64_t revision = 0,
+        std::string commandId = "invalidate-trace") {
         return commandBus_.dispatch(application::CommandEnvelope{
-            .commandId = application::CommandId{"invalidate-trace"},
+            .commandId = application::CommandId{std::move(commandId)},
             .sessionId = application::SessionId{"session-1"},
             .instrumentId = application::InstrumentId{"instrument-1"},
             .origin = application::CommandOrigin::Web,
-            .expectedStateRevision = 0,
+            .expectedStateRevision = revision,
             .payload = std::move(payload),
         });
     }
@@ -115,11 +125,29 @@ protected:
         EXPECT_EQ(repository_.latest(traceId_)->sequenceNumber, 2U);
     }
 
+private:
+    application::SingleSweepSubmitResult submit(
+        application::SingleSweepWorkItem) override {
+        return application::SingleSweepSubmitError{
+            .code = application::SingleSweepSubmitErrorCode::Stopped};
+    }
+
+    void invalidateTraceFrame(
+        display_model::TraceId traceId) noexcept override {
+        repository_.discard(traceId);
+    }
+
+    void discardTrace(display_model::TraceId traceId) noexcept override {
+        repository_.discard(traceId);
+    }
+
+protected:
     application::FactoryPreset preset_{application::makeFactoryPreset()};
     const display_model::TraceId traceId_;
     application::OperationManager operations_;
-    application::CommandBus commandBus_;
     application::TraceDisplayFrameRepository repository_{1};
+    application::SingleSweepCommandHandler sweepHandler_;
+    application::CommandBus commandBus_;
     application::TraceDisplayFrameQuery query_;
     WebApi webApi_;
     int port_{-1};
@@ -151,9 +179,41 @@ TEST_F(WebApiWebSocketLifecycleTest, RemovingTraceClosesActiveStream) {
 }
 
 TEST_F(WebApiWebSocketLifecycleTest, ChangingFormatClosesActiveStream) {
-    expectInvalidationCloses(application::UpdateTraceFormatCommand{
+    publish(1);
+    auto client = connect();
+    ASSERT_NE(client, nullptr);
+    expectSequence(*client, 1);
+    client->set_read_timeout(5, 0);
+    auto reading = std::async(std::launch::async, [&client] {
+        std::string ignored;
+        return client->read(ignored);
+    });
+
+    const auto changed = dispatch(application::UpdateTraceFormatCommand{
         .traceId = traceId_,
         .format = display_model::TraceFormat::Phase});
+    const auto readStatus = reading.wait_for(2s);
+    if (readStatus != std::future_status::ready) {
+        client->close();
+    }
+    const auto readResult = reading.get();
+    ASSERT_TRUE(succeeded(changed));
+    ASSERT_EQ(readStatus, std::future_status::ready);
+    EXPECT_EQ(readResult, httplib::ws::ReadResult::Fail);
+    EXPECT_EQ(repository_.latest(traceId_), nullptr);
+
+    const auto restored = dispatch(
+        application::UpdateTraceFormatCommand{
+            .traceId = traceId_,
+            .format = display_model::TraceFormat::LogMagnitude},
+        1,
+        "restore-trace-format");
+    ASSERT_TRUE(succeeded(restored));
+    publish(2);
+    auto reconnected = connect();
+    ASSERT_NE(reconnected, nullptr);
+    expectSequence(*reconnected, 2);
+    reconnected->close();
 }
 
 }  // namespace

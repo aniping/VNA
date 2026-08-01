@@ -19,6 +19,9 @@ static_assert(std::is_constructible_v<
               SingleSweepCommandHandler, SingleSweepExecution&>);
 static_assert(noexcept(std::declval<SingleSweepCommandHandler&>().discard(
     display_model::TraceId{1})));
+static_assert(noexcept(
+    std::declval<SingleSweepCommandHandler&>().invalidateFrame(
+        display_model::TraceId{1})));
 
 class RecordingExecution final : public SingleSweepExecution {
 public:
@@ -37,9 +40,14 @@ public:
     void discardTrace(display_model::TraceId traceId) noexcept override {
         discarded = traceId;
     }
+    void invalidateTraceFrame(
+        display_model::TraceId traceId) noexcept override {
+        invalidated = traceId;
+    }
 
     std::vector<SingleSweepWorkItem> submitted;
     display_model::TraceId discarded{0};
+    display_model::TraceId invalidated{0};
 
 private:
     Behavior behavior_;
@@ -156,6 +164,18 @@ TEST(SingleSweepCommandHandlerTest, DelegatesRetirementToExecutionOwner) {
     handler.discard(display_model::TraceId{7});
 
     EXPECT_EQ(execution.discarded, display_model::TraceId{7});
+}
+
+TEST(SingleSweepCommandHandlerTest, DelegatesFrameInvalidationWithoutRetirement) {
+    RecordingExecution execution{[](const auto&, std::size_t) {
+        return SingleSweepSubmitResult{OperationId{1}};
+    }};
+    SingleSweepCommandHandler handler{execution};
+
+    handler.invalidateFrame(display_model::TraceId{8});
+
+    EXPECT_EQ(execution.invalidated, display_model::TraceId{8});
+    EXPECT_EQ(execution.discarded, display_model::TraceId{0});
 }
 
 }  // namespace

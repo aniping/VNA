@@ -19,6 +19,11 @@ public:
         return SingleSweepSubmitError{SingleSweepSubmitErrorCode::Stopped};
     }
 
+    void invalidateTraceFrame(
+        display_model::TraceId traceId) noexcept override {
+        publisher_.invalidateTraceFrame(traceId);
+    }
+
     void discardTrace(display_model::TraceId traceId) noexcept override {
         publisher_.retireTrace(traceId);
     }

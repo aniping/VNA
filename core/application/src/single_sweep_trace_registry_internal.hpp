@@ -33,6 +33,7 @@ public:
         const TraceDisplayPublisher& publisher,
         TraceDisplayFrame frame) noexcept;
     void finish(OperationId operationId) noexcept;
+    void invalidateTraceFrame(display_model::TraceId traceId) noexcept;
     void discardTrace(display_model::TraceId traceId) noexcept;
 
 private:

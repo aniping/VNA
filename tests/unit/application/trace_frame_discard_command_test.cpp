@@ -84,6 +84,11 @@ private:
             .code = SingleSweepSubmitErrorCode::Stopped};
     }
 
+    void invalidateTraceFrame(
+        display_model::TraceId traceId) noexcept override {
+        repository_.discard(traceId);
+    }
+
     void discardTrace(display_model::TraceId traceId) noexcept override {
         ++discardCalls_;
         repository_.discard(traceId);

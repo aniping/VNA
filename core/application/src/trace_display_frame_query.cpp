@@ -62,10 +62,18 @@ TraceDisplayFrameQueryOutcome TraceDisplayFrameQuery::waitForNext(
         return TraceDisplayFrameQueryError{
             .code = TraceDisplayFrameQueryErrorCode::FrameNotAvailable};
     }
-    // snapshot() has returned by this point, so no CommandBus lock overlaps
-    // the blocking repository call. A second value snapshot closes the race
-    // with control-plane deletion or format changes while the wait was active.
-    const auto frame = repository_.waitForNext(traceId, afterSequence, token);
+    // The repository registers this waiter before invoking validation, and it
+    // invokes validation without its mutex. Thus this snapshot cannot nest the
+    // two module locks, while a concurrent discard cannot slip between policy
+    // validation and waiter registration.
+    const auto frame = repository_.waitForNext(
+        traceId, afterSequence, token, [this, traceId] {
+            const auto current = commandBus_.snapshot();
+            const auto* currentTrace = findTrace(current, traceId);
+            return currentTrace != nullptr &&
+                   currentTrace->format ==
+                       display_model::TraceFormat::LogMagnitude;
+        });
     return resolveFrame(commandBus_.snapshot(), traceId, frame);
 }
 

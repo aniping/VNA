@@ -14,6 +14,7 @@ public:
             .code = application::SingleSweepSubmitErrorCode::Stopped};
     }
 
+    void invalidateTraceFrame(display_model::TraceId) noexcept override {}
     void discardTrace(display_model::TraceId) noexcept override {}
 };
 

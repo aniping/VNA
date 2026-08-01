@@ -58,6 +58,8 @@ public:
     // join blocks until acquisition reaches a natural terminal state.
     void stop() noexcept;
     void join();
+    // Invalidation is linearized with publication but keeps this worker alive.
+    void invalidateTraceFrame(display_model::TraceId traceId) noexcept;
     // Retirement is trace-scoped and linearized with the final publish. It
     // requests only this worker to stop and deliberately does not join it.
     void retireTrace(display_model::TraceId traceId) noexcept;

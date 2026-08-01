@@ -1,19 +1,17 @@
 #include <vna/application/trace_display_frame_repository.hpp>
 
+#include <utility>
+
 namespace vna::application {
 
 TraceDisplayFrameHandle TraceDisplayFrameRepository::waitForNext(
     display_model::TraceId traceId,
     std::uint64_t afterSequence,
-    std::stop_token token) const {
+    std::stop_token token,
+    TraceDisplayFrameWaitValidation validate) const {
     std::unique_lock lock{mutex_};
     if (token.stop_requested()) {
         return nullptr;
-    }
-    const auto current = latestByTrace_.find(traceId.value());
-    if (current != latestByTrace_.end() &&
-        current->second->sequenceNumber > afterSequence) {
-        return current->second;
     }
     auto& entry = waitStates_[traceId.value()];
     if (entry == nullptr) {
@@ -23,9 +21,27 @@ TraceDisplayFrameHandle TraceDisplayFrameRepository::waitForNext(
     const auto generation = state->discardGeneration;
     ++state->waiters;
     lock.unlock();
-    return awaitRegistered(
-        WaitRegistration{state, traceId.value(), afterSequence, generation},
-        token);
+    auto registration =
+        WaitRegistration{state, traceId.value(), afterSequence, generation};
+    if (validate) {
+        try {
+            if (!validate()) {
+                releaseWaitRegistration(registration);
+                return nullptr;
+            }
+        } catch (...) {
+            releaseWaitRegistration(registration);
+            throw;
+        }
+    }
+    return awaitRegistered(std::move(registration), token);
+}
+
+void TraceDisplayFrameRepository::releaseWaitRegistration(
+    WaitRegistration registration) const {
+    std::lock_guard lock{mutex_};
+    --registration.state->waiters;
+    cleanWaitState(registration.traceId, registration.state);
 }
 
 TraceDisplayFrameHandle TraceDisplayFrameRepository::awaitRegistered(
