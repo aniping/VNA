@@ -57,6 +57,7 @@ gtest_discover_tests(vna_data_plane_tests)
 
 add_executable(
     vna_acquisition_tests
+    unit/acquisition/continuous_acquisition_hardening_test.cpp
     unit/acquisition/continuous_acquisition_test.cpp
 )
 target_link_libraries(
