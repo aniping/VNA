@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vna/acquisition/continuous_acquisition.hpp>
+#include <vna/application/continuous_trace_publisher.hpp>
 #include <vna/display_model/display_workspace.hpp>
 #include <vna/domain/instrument.hpp>
 
@@ -18,6 +19,7 @@ struct CommandBusInitialState {
 struct FactoryPreset {
     acquisition::ContinuousAcquisitionPlan acquisitionPlan;
     CommandBusInitialState commandBusState;
+    ContinuousTracePreset continuousTracePreset;
 };
 
 [[nodiscard]] FactoryPreset makeFactoryPreset();

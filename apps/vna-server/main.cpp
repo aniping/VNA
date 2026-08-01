@@ -1,5 +1,6 @@
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -9,10 +10,13 @@
 #include <string_view>
 #include <utility>
 
+#include <vna/acquisition/continuous_acquisition.hpp>
 #include <vna/application/command_bus.hpp>
+#include <vna/application/continuous_trace_publisher.hpp>
+#include <vna/application/disabled_single_sweep_execution.hpp>
+#include <vna/application/factory_preset.hpp>
 #include <vna/application/operation_manager.hpp>
 #include <vna/application/single_sweep_command_handler.hpp>
-#include <vna/application/single_sweep_executor.hpp>
 #include <vna/application/trace_display_frame_query.hpp>
 #include <vna/application/trace_display_frame_repository.hpp>
 #include <vna/logging/json_lines_logger.hpp>
@@ -28,6 +32,9 @@ using namespace std::chrono_literals;
 constexpr auto instrumentId = "instrument-1";
 constexpr auto lifecycleEventName = "server.lifecycle";
 constexpr auto logFlushTimeout = 2s;
+// A stable product seed makes the simulated frame sequence reproducible across
+// restarts without leaking simulation concerns into the acquisition plan.
+constexpr std::uint64_t simulationSeed = 0x564E4101ULL;
 
 enum class LifecycleStatus {
     Starting,
@@ -95,6 +102,23 @@ bool flushLogs(
     return false;
 }
 
+vna::acquisition::RawSweepSource makeSimulationSource() {
+    return [](const vna::acquisition::ContinuousAcquisitionPlan& plan,
+              std::uint64_t sequence,
+              std::stop_token) {
+        // ContinuousAcquisition is the sole source owner and supplies every
+        // authoritative hardware input plus the monotonic engine sequence.
+        return vna::simulation::simulateOpenPorts({
+            .frequencyAxis = plan.frequencyAxis,
+            .portCount = plan.portCount,
+            .ifBandwidthHz = plan.ifBandwidthHz,
+            .powerDbm = plan.powerDbm,
+            .seed = simulationSeed,
+            .sequenceNumber = sequence,
+        });
+    };
+}
+
 int serveUntilStopped(
     vna::web_api::WebApi& webApi,
     std::unique_ptr<vna::observability::Logger>& logger) {
@@ -128,22 +152,26 @@ int runServer() {
     const auto logDirectory = releaseRoot / "logs";
 
     constexpr std::size_t traceCapacity = 1024;
-    constexpr std::size_t sweepQueueCapacity = 16;
+    auto preset = vna::application::makeFactoryPreset();
+    // Declaration order is the borrowing graph. Reverse destruction stops Web
+    // access first, then CommandBus and publisher, before acquisition and repos.
     vna::application::OperationManager operationManager;
     vna::application::TraceDisplayFrameRepository frameRepository{
         traceCapacity};
-    vna::application::RawSweepSource sweepSource =
-        [](const vna::frames::FrequencyAxis& axis, std::stop_token) {
-            return vna::simulation::simulateSweep(axis);
-        };
-    vna::application::SingleSweepExecutor sweepExecutor{
-        sweepQueueCapacity,
-        std::move(sweepSource),
-        operationManager,
+    vna::acquisition::ContinuousAcquisition acquisition{
+        std::move(preset.acquisitionPlan), makeSimulationSource()};
+    vna::application::ContinuousTracePublisher tracePublisher{
+        acquisition,
+        std::move(preset.continuousTracePreset),
         frameRepository};
-    vna::application::SingleSweepCommandHandler sweepHandler{sweepExecutor};
+    vna::application::DisabledSingleSweepExecution disabledSingleSweep{
+        tracePublisher};
+    vna::application::SingleSweepCommandHandler sweepHandler{
+        disabledSingleSweep};
     vna::application::CommandBus commandBus{
-        vna::application::InstrumentId{instrumentId}, sweepHandler};
+        vna::application::InstrumentId{instrumentId},
+        sweepHandler,
+        std::move(preset.commandBusState)};
     vna::application::TraceDisplayFrameQuery displayFrameQuery{
         commandBus, frameRepository};
     // WebApi validates index.html and assets without following unsafe paths.

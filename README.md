@@ -105,16 +105,12 @@ ASCII 控制字节 `00..1F` 或 `7F`；非法 ID 返回 `400 invalidCommand`。
 Scale/Div，payload 为 `{"traceId": <id>, "scalePerDivision": <number>}`。
 `/api/v1/state` 会在每条 Trace 上返回 `scale`；Log Magnitude 包含完整 dB
 显示比例快照，尚未开放该能力的 Phase 与 Smith 返回 `null`。
-`startSingleSweep` 接受 `{"channelId": <id>}`，成功响应的 `value.operationId`
-标识异步扫频；接受任务本身不增加 `stateRevision`。
-客户端应轮询无缓存的 `GET /api/v1/operations/<operationId>` 直到终态；仅在
-`Succeeded` 后读取一次 display-frame，并核对两者 `frameId`，避免把失败、
-取消或旧帧误认为本次结果。
-`status` 使用 `Queued`、`Running`、`CancelRequested`、`Succeeded`、`Failed`
-或 `Canceled`；成功终态同时返回已发布的 `frameId`。
+当前发布版启动后由后台 `ContinuousAcquisition` 自动、持续采集，并以约 10 Hz
+的模拟节奏更新默认 S21 显示帧。生产组合不再启动第二个单扫 worker；遗留的
+`startSingleSweep` 当前返回 `409 conflict` 和 `resource-busy`。
 `GET /api/v1/traces/<traceId>/display-frame` 返回最新完整 Log Magnitude dB
 帧；Trace 存在但尚无可用帧时返回空的 `204`，Trace 不存在时返回 `404`。该
-接口用于单次扫频完成后读取一次，不作为连续曲线轮询通道。
+接口用于读取最新完整帧，不作为连续曲线高频轮询通道。
 
 ## 前端开发
 
@@ -134,8 +130,8 @@ pnpm run dev
 多个 Window 也不会补齐不存在的空白 Diagram。Softtool 默认关闭，点击 `Meas`
 可打开或重新关闭 Measurement Softtool；已有 Channel 时可在 S 参数区创建 Trace。
 默认 S21 Trace 的色块和曲线为绿色，活动 Diagram 仍使用独立的黄色边框。尚无
-测量帧时 Diagram 显示空态；活动 Log Magnitude Trace 可使用 Toolbar 的
-`Restart Sweep` 发起单次扫频，操作成功后读取一次最新帧并绘制 dB 曲线。
+测量帧时 Diagram 显示空态；后台连续采集会自动更新显示帧，Toolbar 的
+`Restart Sweep` 在当前发布版中暂不可用并按禁用处理。
 `Maximize Diagram` 可切换活动 Diagram 的最大化状态；其余尚未实现的 Toolbar
 项保持禁用。
 底部 `File` 至 `Help` 菜单尚未接通并保持禁用；连接、revision 和实体计数仍

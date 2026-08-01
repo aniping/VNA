@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -11,6 +12,7 @@
 
 namespace vna::application {
 namespace {
+using namespace std::chrono_literals;
 
 CommandEnvelope command(
     std::string commandId,
@@ -31,7 +33,7 @@ Value successValue(const CommandResult& result) {
     return std::get<Value>(std::get<CommandSuccess>(result.outcome).value);
 }
 
-TEST(FactoryPresetTest, CreatesCorrelatedS21StateAtRevisionZero) {
+TEST(FactoryPresetTest, CreatesPacedTwoPortPlanAndContinuousS21Target) {
     auto preset = makeFactoryPreset();
     const auto& plan = preset.acquisitionPlan;
     EXPECT_EQ(plan.frequencyAxis.startFrequencyHz, 10'000'000U);
@@ -39,11 +41,29 @@ TEST(FactoryPresetTest, CreatesCorrelatedS21StateAtRevisionZero) {
     EXPECT_EQ(plan.frequencyAxis.points, 201U);
     EXPECT_EQ(plan.frequencyAxis.id, frames::FrequencyAxisId{1});
     EXPECT_EQ(plan.portCount, 2U);
+    EXPECT_EQ(plan.minimumSweepPeriod, 100ms);
     EXPECT_EQ(plan.ifBandwidthHz, 10'000U);
     EXPECT_DOUBLE_EQ(plan.powerDbm, -10.0);
     ASSERT_EQ(plan.sourcePorts.size(), 2U);
     EXPECT_EQ(plan.sourcePorts[0], 1U);
     EXPECT_EQ(plan.sourcePorts[1], 2U);
+
+    const auto& target = preset.continuousTracePreset;
+    EXPECT_EQ(target.stateRevision, 0U);
+    EXPECT_EQ(target.measurement.id, domain::MeasurementId{1});
+    EXPECT_EQ(target.measurement.channelId, domain::ChannelId{1});
+    EXPECT_EQ(target.measurement.type, domain::MeasurementType::S21);
+    EXPECT_EQ(target.trace.id, display_model::TraceId{1});
+    EXPECT_EQ(target.trace.windowId, display_model::WindowId{1});
+    EXPECT_EQ(target.trace.measurementId, target.measurement.id);
+    EXPECT_EQ(target.trace.format, display_model::TraceFormat::LogMagnitude);
+    ASSERT_TRUE(target.trace.scale.has_value());
+    EXPECT_DOUBLE_EQ(target.trace.scale->scalePerDivision, 10.0);
+}
+
+TEST(FactoryPresetTest, CreatesCorrelatedS21StateAtRevisionZero) {
+    auto preset = makeFactoryPreset();
+    const auto& plan = preset.acquisitionPlan;
 
     CommandBus bus{
         InstrumentId{"instrument-1"},
