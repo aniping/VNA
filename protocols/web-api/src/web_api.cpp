@@ -1,21 +1,17 @@
 #include <vna/web_api/web_api.hpp>
 
-#include "display_frame_json_codec.hpp"
+#include "display_frame_http_handler.hpp"
 #include "json_codec.hpp"
 #include "operation_http_handler.hpp"
 #include "web_asset_path.hpp"
 
 #include <httplib.h>
 
-#include <charconv>
-#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
-#include <string_view>
 #include <utility>
-#include <variant>
 
 namespace vna::web_api {
 namespace {
@@ -38,59 +34,6 @@ void handleCommand(
         commandBus.dispatch(*command));
     response.status = result.httpStatus;
     response.set_content(result.body, "application/json");
-}
-
-std::optional<display_model::TraceId> parseTraceId(std::string_view text) {
-    std::uint64_t value{};
-    const auto [end, error] = std::from_chars(
-        text.data(), text.data() + text.size(), value);
-    if (error != std::errc{} || end != text.data() + text.size() ||
-        value == 0) {
-        return std::nullopt;
-    }
-    return display_model::TraceId{value};
-}
-
-void handleDisplayFrame(
-    const application::TraceDisplayFrameQuery& displayFrames,
-    const httplib::Request& request,
-    httplib::Response& response) {
-    const auto traceId = parseTraceId(request.matches[1].str());
-    if (!traceId) {
-        response.status = httplib::StatusCode::BadRequest_400;
-        response.set_content(
-            R"({"error":"invalid-trace-id"})", "application/json");
-        return;
-    }
-
-    response.set_header("Cache-Control", "no-store");
-    const auto outcome = displayFrames.latest(*traceId);
-    const auto* frame = std::get_if<application::TraceDisplayFrameHandle>(
-        &outcome);
-    if (frame == nullptr) {
-        const auto error = std::get<
-            application::TraceDisplayFrameQueryError>(outcome);
-        if (error.code == application::
-                              TraceDisplayFrameQueryErrorCode::TraceNotFound) {
-            response.status = httplib::StatusCode::NotFound_404;
-            response.set_content(
-                R"({"error":"trace-not-found"})", "application/json");
-        } else {
-            response.status = httplib::StatusCode::NoContent_204;
-        }
-        return;
-    }
-    constexpr std::size_t maximumResponseBytes = 131'072;
-    const auto body = detail::encodeDisplayFrame(**frame);
-    if (body.size() > maximumResponseBytes) {
-        // The repository's 2048-point contract should keep this unreachable.
-        // Fail closed if a future codec change breaks the wire-size boundary.
-        response.status = httplib::StatusCode::InternalServerError_500;
-        response.set_content(
-            R"({"error":"internal-error"})", "application/json");
-        return;
-    }
-    response.set_content(body, "application/json");
 }
 
 void serveIndex(
@@ -121,7 +64,6 @@ void serveAsset(
 }
 
 }  // namespace
-
 class WebApi::Impl {
 public:
     Impl(
@@ -138,7 +80,6 @@ public:
             installAssets(*webRoot / "assets");
         }
     }
-
     void installRoutes();
     void installIndexRoutes(std::filesystem::path indexPath);
     void installAssets(const std::filesystem::path& assetsPath);
@@ -161,7 +102,6 @@ WebApi::WebApi(
       }()) {}
 
 WebApi::~WebApi() = default;
-
 void WebApi::Impl::installRoutes() {
     server_.Get(
         "/api/v1/health",
@@ -188,7 +128,7 @@ void WebApi::Impl::installRoutes() {
     server_.Get(
         R"(/api/v1/traces/([^/]*)/display-frame)",
         [this](const httplib::Request& request, httplib::Response& response) {
-            handleDisplayFrame(displayFrames_, request, response);
+            detail::handleDisplayFrame(displayFrames_, request, response);
         });
 }
 
@@ -220,19 +160,15 @@ void WebApi::Impl::installAssets(const std::filesystem::path& assetsPath) {
 bool WebApi::listen(const std::string& address, int port) {
     return impl_->server_.listen(address, port);
 }
-
 int WebApi::bindToAnyPort(const std::string& address) {
     return impl_->server_.bind_to_any_port(address);
 }
-
 bool WebApi::listenAfterBind() {
     return impl_->server_.listen_after_bind();
 }
-
 void WebApi::waitUntilReady() {
     impl_->server_.wait_until_ready();
 }
-
 void WebApi::stop() {
     impl_->server_.stop();
 }
