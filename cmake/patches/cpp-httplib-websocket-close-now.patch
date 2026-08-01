@@ -19,9 +19,10 @@ diff --git a/httplib.h b/httplib.h
 -        max_missed_pongs_(max_missed_pongs) {
 +        max_missed_pongs_(max_missed_pongs),
 +        transport_closed_(transport_closed) {
-@@ -3937,0 +3946,2 @@ private:
+@@ -3937,0 +3946,3 @@ private:
 +  void close_impl(CloseStatus status, const std::string &reason,
 +                  bool wait_for_peer);
++  void shutdown_transport();
 @@ -3944,0 +3955 @@ private:
 +  std::atomic<bool> *transport_closed_ = nullptr;
 @@ -12505 +12516,2 @@ Server::process_request(Stream &strm, const std::string &remote_addr,
@@ -64,7 +65,16 @@ diff --git a/httplib.h b/httplib.h
 -            [&](Request &req) { req.ssl = session; }, &websocket_upgraded);
 +            [&](Request &req) { req.ssl = session; }, &websocket_upgraded,
 +            &websocket_transport_closed);
-@@ -20636,0 +20661,11 @@ inline void WebSocket::close(CloseStatus status, const std::string &reason) {
+@@ -20635,0 +20661,8 @@ inline bool WebSocket::send(const char *data, size_t len) {
++inline void WebSocket::shutdown_transport() {
++  if (!transport_closed_ || !transport_closed_->exchange(true)) {
++    const auto socket = strm_.socket();
++    detail::shutdown_socket(socket);
++    if (transport_closed_) { detail::close_socket(socket); }
++  }
++}
++
+@@ -20636,0 +20670,11 @@ inline void WebSocket::close(CloseStatus status, const std::string &reason) {
 +  close_impl(status, reason, true);
 +}
 +
@@ -76,13 +86,24 @@ diff --git a/httplib.h b/httplib.h
 +inline void WebSocket::close_impl(CloseStatus status,
 +                                  const std::string &reason,
 +                                  bool wait_for_peer) {
-@@ -20651,0 +20687,9 @@ inline void WebSocket::close(CloseStatus status, const std::string &reason) {
-+  if (!wait_for_peer) {
-+    if (!transport_closed_ || !transport_closed_->exchange(true)) {
-+      const auto socket = strm_.socket();
-+      detail::shutdown_socket(socket);
-+      if (transport_closed_) { detail::close_socket(socket); }
+@@ -20646,5 +20690,12 @@ inline void WebSocket::close(CloseStatus status, const std::string &reason) {
+-  {
+-    std::lock_guard<std::mutex> lock(write_mutex_);
++  {
++    std::unique_lock<std::mutex> lock(write_mutex_, std::defer_lock);
++    if (wait_for_peer) {
++      lock.lock();
++    } else if (!lock.try_lock() ||
++               detail::select_write(strm_.socket(), 0, 0) <= 0) {
++      shutdown_transport();
++      return;
 +    }
+     detail::write_websocket_frame(strm_, Opcode::Close, payload.data(),
+                                   payload.size(), true, !is_server_);
+-  }
++  }
+@@ -20651,0 +20703,4 @@ inline void WebSocket::close(CloseStatus status, const std::string &reason) {
++  if (!wait_for_peer) {
++    shutdown_transport();
 +    return;
 +  }
-+

@@ -53,6 +53,7 @@ protected:
                 socket.close(httplib::ws::CloseStatus::Normal, "complete");
                 regularCloseReturned_.set_value();
             });
+        installBlockedSendRoute();
 
         port_ = server_.bind_to_any_port("127.0.0.1");
         ASSERT_GT(port_, 0);
@@ -60,6 +61,28 @@ protected:
             server_.listen_after_bind();
         });
         server_.wait_until_ready();
+    }
+
+    void installBlockedSendRoute() {
+        server_.WebSocket(
+            "/blocked-send",
+            [this](const httplib::Request&, httplib::ws::WebSocket& socket) {
+                const std::string payload(1024U * 1024U, 'x');
+                std::thread closer{[this, &socket] {
+                    blockedCloseAllowed_.wait();
+                    socket.close_now(
+                        httplib::ws::CloseStatus::GoingAway,
+                        "server stopping");
+                    blockedCloseReturned_.set_value();
+                }};
+                blockedSendStarted_.set_value();
+                auto sent = true;
+                while (sent) {
+                    sent = socket.send(payload);
+                }
+                blockedSendReturned_.set_value(sent);
+                closer.join();
+            });
     }
 
     void TearDown() override {
@@ -76,6 +99,12 @@ protected:
     std::shared_future<void> closeAllowed_{allowClose_.get_future()};
     std::promise<void> closeHandlerReturned_;
     std::promise<void> regularCloseReturned_;
+    std::promise<void> allowBlockedClose_;
+    std::shared_future<void> blockedCloseAllowed_{
+        allowBlockedClose_.get_future()};
+    std::promise<void> blockedSendStarted_;
+    std::promise<void> blockedCloseReturned_;
+    std::promise<bool> blockedSendReturned_;
     std::promise<httplib::ws::ReadResult> readResult_;
     std::atomic<int> closeCallsReturned_{0};
     int port_{-1};
@@ -152,6 +181,42 @@ TEST_F(HttplibCompatibilityTest, ConcurrentImmediateCloseWakesReader) {
         const auto response = healthClient.Get("/health");
         ASSERT_TRUE(response);
         EXPECT_EQ(response->status, httplib::StatusCode::OK_200);
+    }
+}
+
+TEST_F(HttplibCompatibilityTest, ImmediateCloseInterruptsBlockedWriter) {
+    auto sendStarted = blockedSendStarted_.get_future();
+    auto closeReturned = blockedCloseReturned_.get_future();
+    auto sendReturned = blockedSendReturned_.get_future();
+    httplib::ws::WebSocketClient client{
+        "ws://127.0.0.1:" + std::to_string(port_) + "/blocked-send"};
+    client.set_read_timeout(1, 0);
+    client.set_socket_options([](socket_t socket) {
+        const int bufferBytes = 1024;
+        static_cast<void>(::setsockopt(
+            socket, SOL_SOCKET, SO_RCVBUF,
+            reinterpret_cast<const char*>(&bufferBytes),
+            sizeof(bufferBytes)));
+    });
+    const auto connected = client.connect();
+    const auto startedStatus = connected
+        ? sendStarted.wait_for(2s)
+        : std::future_status::timeout;
+
+    const auto wasBlocked = startedStatus == std::future_status::ready &&
+        sendReturned.wait_for(100ms) == std::future_status::timeout;
+    allowBlockedClose_.set_value();
+
+    EXPECT_TRUE(connected);
+    EXPECT_EQ(startedStatus, std::future_status::ready);
+    if (!connected) {
+        return;
+    }
+    EXPECT_TRUE(wasBlocked);
+    EXPECT_EQ(closeReturned.wait_for(2s), std::future_status::ready);
+    EXPECT_EQ(sendReturned.wait_for(2s), std::future_status::ready);
+    if (sendReturned.wait_for(0s) == std::future_status::ready) {
+        EXPECT_FALSE(sendReturned.get());
     }
 }
 
