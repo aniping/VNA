@@ -55,7 +55,7 @@ protected:
               catalog_,
               std::move(preset_.commandBusState)),
           query_(commandBus_, repository_),
-          webApi_(commandBus_, operations_, query_, traceId_) {}
+          webApi_(commandBus_, operations_, query_, repository_) {}
 
     void SetUp() override {
         port_ = webApi_.bindToAnyPort("127.0.0.1");
@@ -73,14 +73,16 @@ protected:
         }
     }
 
-    application::TraceDisplayFrame frame(std::uint64_t sequence) const {
+    application::TraceDisplayFrame frame(
+        std::uint64_t sequence,
+        std::uint64_t generation = 1) const {
         return {
             .frameId = frames::FrameId{sequence},
             .traceId = traceId_,
             .measurementId = domain::MeasurementId{1},
             .measurementType = domain::MeasurementType::S21,
             .stateRevision = 0,
-            .generation = 1,
+            .generation = generation,
             .sequenceNumber = sequence,
             .format = display_model::TraceFormat::LogMagnitude,
             .frequenciesHz = {10'000'000.0, 10'100'000.0},
@@ -90,8 +92,14 @@ protected:
         };
     }
 
-    void publish(std::uint64_t sequence) {
-        ASSERT_TRUE(repository_.publish(frame(sequence)).hasValue());
+    void publish(std::uint64_t sequence, std::uint64_t generation = 1) {
+        const auto result = repository_.publishFrameSet({
+            .generation = generation,
+            .sequenceNumber = sequence,
+            .frames = {frame(sequence, generation)},
+        });
+        ASSERT_TRUE(std::holds_alternative<
+                    application::TraceDisplayFrameSetHandle>(result));
     }
 
     std::unique_ptr<httplib::ws::WebSocketClient> connect() const {
@@ -107,11 +115,13 @@ protected:
 
     void expectSequence(
         httplib::ws::WebSocketClient& client,
-        std::uint64_t expected) const {
+        std::uint64_t expected,
+        std::uint64_t generation = 1) const {
         std::string message;
         ASSERT_EQ(client.read(message), httplib::ws::ReadResult::Text);
-        EXPECT_EQ(
-            nlohmann::json::parse(message).at("sequenceNumber"), expected);
+        const auto body = nlohmann::json::parse(message);
+        EXPECT_EQ(body.at("generation"), generation);
+        EXPECT_EQ(body.at("sequenceNumber"), expected);
     }
 
     application::CommandResult dispatch(
@@ -128,7 +138,7 @@ protected:
         });
     }
 
-    void expectInvalidationCloses(application::CommandPayload payload) {
+    void expectInvalidationAdvances(application::CommandPayload payload) {
         publish(1);
         auto client = connect();
         ASSERT_NE(client, nullptr);
@@ -137,12 +147,24 @@ protected:
         const auto result = dispatch(std::move(payload));
         ASSERT_TRUE(succeeded(result));
         EXPECT_EQ(result.stateRevision, 1U);
-        publish(2);
+        auto reading = std::async(std::launch::async, [&client] {
+            std::string message;
+            const auto read = client->read(message);
+            return std::pair{read, std::move(message)};
+        });
+        publish(1, 2);
 
-        std::string ignored;
-        EXPECT_EQ(client->read(ignored), httplib::ws::ReadResult::Fail);
-        ASSERT_NE(repository_.latest(traceId_), nullptr);
-        EXPECT_EQ(repository_.latest(traceId_)->sequenceNumber, 2U);
+        const auto readStatus = reading.wait_for(2s);
+        if (readStatus != std::future_status::ready) {
+            client->close();
+        }
+        ASSERT_EQ(readStatus, std::future_status::ready);
+        const auto [read, message] = reading.get();
+        ASSERT_EQ(read, httplib::ws::ReadResult::Text);
+        const auto body = nlohmann::json::parse(message);
+        EXPECT_EQ(body.at("generation"), 2U);
+        EXPECT_EQ(body.at("sequenceNumber"), 1U);
+        client->close();
     }
 
 private:
@@ -194,47 +216,15 @@ TEST_F(WebApiWebSocketLifecycleTest, SequentialDisconnectsReuseCapacity) {
     EXPECT_EQ(health->status, httplib::StatusCode::OK_200);
 }
 
-TEST_F(WebApiWebSocketLifecycleTest, RemovingTraceClosesActiveStream) {
-    expectInvalidationCloses(
+TEST_F(WebApiWebSocketLifecycleTest, RemovingTraceAdvancesActiveStream) {
+    expectInvalidationAdvances(
         application::RemoveTraceCommand{.traceId = traceId_});
 }
 
-TEST_F(WebApiWebSocketLifecycleTest, ChangingFormatClosesActiveStream) {
-    publish(1);
-    auto client = connect();
-    ASSERT_NE(client, nullptr);
-    expectSequence(*client, 1);
-    client->set_read_timeout(5, 0);
-    auto reading = std::async(std::launch::async, [&client] {
-        std::string ignored;
-        return client->read(ignored);
-    });
-
-    const auto changed = dispatch(application::UpdateTraceFormatCommand{
+TEST_F(WebApiWebSocketLifecycleTest, ChangingFormatAdvancesActiveStream) {
+    expectInvalidationAdvances(application::UpdateTraceFormatCommand{
         .traceId = traceId_,
         .format = display_model::TraceFormat::Phase});
-    const auto readStatus = reading.wait_for(2s);
-    if (readStatus != std::future_status::ready) {
-        client->close();
-    }
-    const auto readResult = reading.get();
-    ASSERT_TRUE(succeeded(changed));
-    ASSERT_EQ(readStatus, std::future_status::ready);
-    EXPECT_EQ(readResult, httplib::ws::ReadResult::Fail);
-    EXPECT_EQ(repository_.latest(traceId_), nullptr);
-
-    const auto restored = dispatch(
-        application::UpdateTraceFormatCommand{
-            .traceId = traceId_,
-            .format = display_model::TraceFormat::LogMagnitude},
-        1,
-        "restore-trace-format");
-    ASSERT_TRUE(succeeded(restored));
-    publish(2);
-    auto reconnected = connect();
-    ASSERT_NE(reconnected, nullptr);
-    expectSequence(*reconnected, 2);
-    reconnected->close();
 }
 
 }  // namespace

@@ -84,12 +84,12 @@ public:
         application::CommandBus& commandBus,
         application::OperationManager& operations,
         const application::TraceDisplayFrameQuery& displayFrames,
-        display_model::TraceId defaultTraceId,
+        const application::TraceDisplayFrameRepository& displayRepository,
         const std::optional<std::filesystem::path>& webRoot)
         : commandBus_(commandBus),
           operations_(operations),
           displayFrames_(displayFrames),
-          displayStream_(displayFrames, defaultTraceId) {
+          displayStream_(displayRepository) {
         installRoutes();
         displayStream_.install(server_);
         if (webRoot) {
@@ -114,12 +114,16 @@ WebApi::WebApi(
     application::CommandBus& commandBus,
     application::OperationManager& operations,
     const application::TraceDisplayFrameQuery& displayFrames,
-    display_model::TraceId defaultTraceId,
+    const application::TraceDisplayFrameRepository& displayRepository,
     std::optional<std::filesystem::path> webRoot)
     : impl_([&] {
           const auto validated = detail::validateWebRoot(webRoot);
           return std::make_unique<Impl>(
-              commandBus, operations, displayFrames, defaultTraceId, validated);
+              commandBus,
+              operations,
+              displayFrames,
+              displayRepository,
+              validated);
       }()) {}
 
 WebApi::~WebApi() {

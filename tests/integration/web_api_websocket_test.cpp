@@ -29,7 +29,7 @@ protected:
               application::InstrumentId{"instrument-1"},
               std::move(preset_.commandBusState)),
           query_(commandBus_, repository_),
-          webApi_(commandBus_, operations_, query_, traceId_) {}
+          webApi_(commandBus_, operations_, query_, repository_) {}
 
     void SetUp() override {
         port_ = webApi_.bindToAnyPort("127.0.0.1");
@@ -65,7 +65,13 @@ protected:
     }
 
     void publish(std::uint64_t sequence) {
-        ASSERT_TRUE(repository_.publish(frame(sequence)).hasValue());
+        const auto result = repository_.publishFrameSet({
+            .generation = 1,
+            .sequenceNumber = sequence,
+            .frames = {frame(sequence)},
+        });
+        ASSERT_TRUE(std::holds_alternative<
+                    application::TraceDisplayFrameSetHandle>(result));
     }
 
     void expectFrame(
@@ -74,14 +80,21 @@ protected:
         std::string message;
         ASSERT_EQ(client.read(message), httplib::ws::ReadResult::Text);
         const auto body = nlohmann::json::parse(message);
-        EXPECT_EQ(body.at("frameId"), sequence);
-        EXPECT_EQ(body.at("traceId"), traceId_.value());
-        EXPECT_EQ(body.at("stateRevision"), 0U);
+        EXPECT_EQ(body.at("generation"), 1U);
         EXPECT_EQ(body.at("sequenceNumber"), sequence);
-        EXPECT_EQ(body.at("format"), "logMagnitude");
-        EXPECT_EQ(body.at("valueUnit"), "dB");
-        EXPECT_EQ(body.at("frequenciesHz").size(), 3U);
-        EXPECT_EQ(body.at("values").at(1), -11.0);
+        ASSERT_EQ(body.at("frames").size(), 1U);
+        const auto& frame = body.at("frames").at(0);
+        EXPECT_EQ(frame.at("frameId"), sequence);
+        EXPECT_EQ(frame.at("traceId"), traceId_.value());
+        EXPECT_EQ(frame.at("measurementId"), 1U);
+        EXPECT_EQ(frame.at("measurementType"), "S21");
+        EXPECT_EQ(frame.at("generation"), 1U);
+        EXPECT_EQ(frame.at("stateRevision"), 0U);
+        EXPECT_EQ(frame.at("sequenceNumber"), sequence);
+        EXPECT_EQ(frame.at("format"), "logMagnitude");
+        EXPECT_EQ(frame.at("valueUnit"), "dB");
+        EXPECT_EQ(frame.at("frequenciesHz").size(), 3U);
+        EXPECT_EQ(frame.at("values").at(1), -11.0);
     }
 
     std::unique_ptr<httplib::ws::WebSocketClient> makeClient() const {
@@ -126,7 +139,7 @@ TEST_F(WebApiWebSocketTest, StopWakesAReaderWithoutWaitingForAFrame) {
     EXPECT_EQ(reading.get(), httplib::ws::ReadResult::Fail);
 }
 
-TEST_F(WebApiWebSocketTest, PublishingWakesWaitingClientWithRestJsonShape) {
+TEST_F(WebApiWebSocketTest, PublishingWakesWaitingClientWithFrameSetShape) {
     auto client = makeClient();
     ASSERT_TRUE(client->connect());
     auto reading = std::async(std::launch::async, [&client] {
@@ -146,8 +159,10 @@ TEST_F(WebApiWebSocketTest, PublishingWakesWaitingClientWithRestJsonShape) {
     ASSERT_EQ(result, httplib::ws::ReadResult::Text);
     const auto body = nlohmann::json::parse(message);
     EXPECT_EQ(body.at("sequenceNumber"), 1U);
-    EXPECT_EQ(body.at("frequenciesHz").at(2), 10'200'000.0);
-    EXPECT_EQ(body.at("values").at(0), -10.0);
+    ASSERT_EQ(body.at("frames").size(), 1U);
+    EXPECT_EQ(body.at("frames").at(0).at("frequenciesHz").at(2),
+              10'200'000.0);
+    EXPECT_EQ(body.at("frames").at(0).at("values").at(0), -10.0);
     client->close();
 }
 

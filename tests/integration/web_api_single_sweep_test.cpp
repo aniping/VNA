@@ -72,7 +72,7 @@ protected:
               commandBus_,
               operations_,
               query_,
-              display_model::TraceId{1}) {}
+              repository_) {}
 
     void SetUp() override {
         port_ = webApi_.bindToAnyPort("127.0.0.1");

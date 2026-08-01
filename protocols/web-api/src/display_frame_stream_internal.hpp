@@ -46,10 +46,9 @@ struct DisplayFrameStreamSession {
 class DisplayFrameStream::Impl {
 public:
     static constexpr std::size_t maximumSessions = 32;
-    Impl(
-        const application::TraceDisplayFrameQuery& query,
-        display_model::TraceId traceId)
-        : query_(query), traceId_(traceId) {}
+    explicit Impl(
+        const application::TraceDisplayFrameRepository& repository)
+        : repository_(repository) {}
 
     void install(httplib::Server& server);
     [[nodiscard]] bool beginListen() noexcept;
@@ -69,8 +68,7 @@ private:
     void streamFrames(
         httplib::ws::WebSocket& socket,
         std::stop_token token) noexcept;
-    const application::TraceDisplayFrameQuery& query_;
-    const display_model::TraceId traceId_;
+    const application::TraceDisplayFrameRepository& repository_;
     std::mutex mutex_;
     std::condition_variable sessionsChanged_;
     std::unordered_map<

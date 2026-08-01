@@ -90,30 +90,38 @@ void DisplayFrameStream::Impl::streamFrames(
     DisplayStreamClose action{
         httplib::ws::CloseStatus::GoingAway, "display stream ended"};
     try {
-        std::uint64_t lastSent = 0;
+        // A connection owns only a cursor, never a Trace worker or history.
+        // Starting before generation 1 makes retained current data visible on
+        // every fresh connection without consulting a separate snapshot API.
+        application::TraceDisplayFrameSetCursor cursor{0, 0};
         while (!token.stop_requested()) {
-            const auto outcome = query_.waitForNext(traceId_, lastSent, token);
+            const auto event = repository_.waitForNextSet(cursor, token);
             if (token.stop_requested()) {
                 action.reason = "server stopping";
                 break;
             }
-            const auto* frame =
-                std::get_if<application::TraceDisplayFrameHandle>(&outcome);
-            if (frame == nullptr || (*frame)->sequenceNumber <= lastSent) {
-                action = {httplib::ws::CloseStatus::PolicyViolation,
-                          "display trace unavailable"};
+            if (!event) {
                 break;
             }
-            const auto message = encodeDisplayFrame(**frame);
-            if (message.size() > maximumDisplayFrameResponseBytes) {
+            if (const auto* advanced =
+                    std::get_if<application::GenerationAdvanced>(&*event)) {
+                // A generation without a frame is a normal configuration
+                // transition. Keep the socket and wait for its first set.
+                cursor = {advanced->generation, 0};
+                continue;
+            }
+            const auto& frameSet =
+                *std::get<application::FrameSetAvailable>(*event).frameSet;
+            const auto message = encodeDisplayFrameSet(frameSet);
+            if (message.size() > maximumDisplayFrameSetMessageBytes) {
                 action = {httplib::ws::CloseStatus::MessageTooBig,
-                          "display frame too large"};
+                          "display frame set too large"};
                 break;
             }
             if (!socket.send(message)) {
                 break;
             }
-            lastSent = (*frame)->sequenceNumber;
+            cursor = {frameSet.generation, frameSet.sequenceNumber};
         }
     } catch (...) {
         action = {httplib::ws::CloseStatus::InternalError,

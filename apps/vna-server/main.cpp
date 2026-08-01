@@ -191,7 +191,6 @@ int runServer() {
     const auto paths = serverPaths();
 
     auto preset = vna::application::makeFactoryPreset();
-    const auto defaultTraceId = preset.defaultTraceId;
     // Declaration order is the borrowing graph. Reverse destruction stops Web
     // access first, then CommandBus and publisher, before acquisition and repos.
     vna::application::OperationManager operationManager;
@@ -216,7 +215,7 @@ int runServer() {
         commandBus,
         operationManager,
         displayFrameQuery,
-        defaultTraceId,
+        publication.repository,
         paths.webRoot};
     auto logger = makeServerLogger(paths.logDirectory);
     try {

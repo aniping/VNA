@@ -28,7 +28,7 @@ protected:
               application::InstrumentId{"instrument-1"},
               std::move(preset_.commandBusState)),
           query_(commandBus_, repository_),
-          webApi_(commandBus_, operations_, query_, traceId_) {}
+          webApi_(commandBus_, operations_, query_, repository_) {}
 
     void SetUp() override {
         port_ = webApi_.bindToAnyPort("127.0.0.1");
@@ -75,7 +75,13 @@ protected:
     }
 
     void publish(std::uint64_t sequence) {
-        ASSERT_TRUE(repository_.publish(largeFrame(sequence)).hasValue());
+        const auto result = repository_.publishFrameSet({
+            .generation = 1,
+            .sequenceNumber = sequence,
+            .frames = {largeFrame(sequence)},
+        });
+        ASSERT_TRUE(std::holds_alternative<
+                    application::TraceDisplayFrameSetHandle>(result));
     }
 
     std::unique_ptr<httplib::ws::WebSocketClient> makeClient(
@@ -120,7 +126,7 @@ protected:
     std::thread serverThread_;
 };
 
-TEST_F(WebApiWebSocketLatestTest, MaximumValidFrameStaysWithinWireLimit) {
+TEST_F(WebApiWebSocketLatestTest, MaximumValidFrameStaysWithinSetWireLimit) {
     publish(1);
     auto client = makeClient();
     ASSERT_TRUE(client->connect());
@@ -130,7 +136,7 @@ TEST_F(WebApiWebSocketLatestTest, MaximumValidFrameStaysWithinWireLimit) {
 
     ASSERT_TRUE(sequence.has_value());
     EXPECT_EQ(*sequence, 1U);
-    EXPECT_LE(messageBytes, 131'072U);
+    EXPECT_LE(messageBytes, 1'048'576U);
     client->close();
 }
 

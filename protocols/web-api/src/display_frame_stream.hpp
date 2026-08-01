@@ -2,7 +2,7 @@
 
 #include <memory>
 
-#include <vna/application/trace_display_frame_query.hpp>
+#include <vna/application/trace_display_frame_repository.hpp>
 
 namespace httplib {
 class Server;
@@ -14,9 +14,8 @@ namespace vna::web_api::detail {
 // must outlive this adapter; stopping a session never stops frame production.
 class DisplayFrameStream {
 public:
-    DisplayFrameStream(
-        const application::TraceDisplayFrameQuery& query,
-        display_model::TraceId traceId);
+    explicit DisplayFrameStream(
+        const application::TraceDisplayFrameRepository& repository);
     ~DisplayFrameStream();
 
     DisplayFrameStream(const DisplayFrameStream&) = delete;

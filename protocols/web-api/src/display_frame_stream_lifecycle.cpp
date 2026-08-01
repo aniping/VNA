@@ -69,9 +69,8 @@ void DisplayFrameStream::Impl::waitUntilStopped() noexcept {
 }
 
 DisplayFrameStream::DisplayFrameStream(
-    const application::TraceDisplayFrameQuery& query,
-    display_model::TraceId traceId)
-    : impl_(std::make_unique<Impl>(query, traceId)) {}
+    const application::TraceDisplayFrameRepository& repository)
+    : impl_(std::make_unique<Impl>(repository)) {}
 
 DisplayFrameStream::~DisplayFrameStream() {
     requestStop();

@@ -5,6 +5,32 @@
 #include <utility>
 
 namespace vna::web_api::detail {
+const char* measurementTypeName(domain::MeasurementType type) noexcept {
+    switch (type) {
+        case domain::MeasurementType::S11:
+            return "S11";
+        case domain::MeasurementType::S21:
+            return "S21";
+        case domain::MeasurementType::S12:
+            return "S12";
+        case domain::MeasurementType::S22:
+            return "S22";
+    }
+    return "unknown";
+}
+
+const char* traceFormatName(display_model::TraceFormat format) noexcept {
+    switch (format) {
+        case display_model::TraceFormat::LogMagnitude:
+            return "logMagnitude";
+        case display_model::TraceFormat::Phase:
+            return "phase";
+        case display_model::TraceFormat::Smith:
+            return "smith";
+    }
+    return "unknown";
+}
+
 namespace {
 
 using Json = nlohmann::json;
@@ -44,38 +70,12 @@ Json channelToJson(const domain::ChannelSnapshot& channel) {
     };
 }
 
-const char* measurementTypeName(domain::MeasurementType type) {
-    switch (type) {
-        case domain::MeasurementType::S11:
-            return "S11";
-        case domain::MeasurementType::S21:
-            return "S21";
-        case domain::MeasurementType::S12:
-            return "S12";
-        case domain::MeasurementType::S22:
-            return "S22";
-    }
-    return "unknown";
-}
-
 Json measurementToJson(const domain::MeasurementSnapshot& measurement) {
     return {
         {"id", measurement.id.value()},
         {"channelId", measurement.channelId.value()},
         {"type", measurementTypeName(measurement.type)},
     };
-}
-
-const char* traceFormatName(display_model::TraceFormat format) {
-    switch (format) {
-        case display_model::TraceFormat::LogMagnitude:
-            return "logMagnitude";
-        case display_model::TraceFormat::Phase:
-            return "phase";
-        case display_model::TraceFormat::Smith:
-            return "smith";
-    }
-    return "unknown";
 }
 
 const char* scaleUnitName(display_model::ScaleUnit unit) {

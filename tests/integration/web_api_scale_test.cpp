@@ -141,7 +141,7 @@ protected:
     vna::test::StoppedCommandBus commandBus_{application::InstrumentId{"instrument-1"}};
     application::TraceDisplayFrameRepository repository_{1};
     application::TraceDisplayFrameQuery query_{commandBus_, repository_};
-    WebApi webApi_{commandBus_, operations_, query_, display_model::TraceId{1}};
+    WebApi webApi_{commandBus_, operations_, query_, repository_};
     int port_{-1};
     std::thread serverThread_;
     std::uint64_t revision_{0};

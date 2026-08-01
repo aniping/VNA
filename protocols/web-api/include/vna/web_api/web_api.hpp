@@ -8,6 +8,7 @@
 #include <vna/application/command_bus.hpp>
 #include <vna/application/operation_manager.hpp>
 #include <vna/application/trace_display_frame_query.hpp>
+#include <vna/application/trace_display_frame_repository.hpp>
 
 namespace vna::web_api {
 
@@ -21,7 +22,7 @@ public:
         application::CommandBus& commandBus,
         application::OperationManager& operations,
         const application::TraceDisplayFrameQuery& displayFrames,
-        display_model::TraceId defaultTraceId,
+        const application::TraceDisplayFrameRepository& displayRepository,
         std::optional<std::filesystem::path> webRoot = std::nullopt);
     ~WebApi();
 

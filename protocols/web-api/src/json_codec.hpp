@@ -13,6 +13,10 @@ struct CommandResponse {
     std::string body;
 };
 
+[[nodiscard]] const char* measurementTypeName(
+    domain::MeasurementType type) noexcept;
+[[nodiscard]] const char* traceFormatName(
+    display_model::TraceFormat format) noexcept;
 std::string encodeState(const application::StateSnapshot& state);
 std::optional<application::CommandEnvelope> decodeCommand(
     std::string_view body);

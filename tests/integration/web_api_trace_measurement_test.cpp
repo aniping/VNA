@@ -74,7 +74,7 @@ protected:
     application::TraceDisplayFrameRepository repository_{4};
     application::TraceDisplayFrameQuery query_{commandBus_, repository_};
     WebApi webApi_{
-        commandBus_, operations_, query_, preset_.defaultTraceId};
+        commandBus_, operations_, query_, repository_};
     int port_{-1};
     std::thread serverThread_;
 };
