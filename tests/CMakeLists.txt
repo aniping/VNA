@@ -145,6 +145,7 @@ add_executable(
     unit/application/trace_display_frame_repository_test.cpp
     unit/application/trace_display_frame_set_test.cpp
     unit/application/trace_display_frame_set_wait_test.cpp
+    unit/application/trace_publication_catalog_test.cpp
     unit/application/trace_display_frame_repository_wait_test.cpp
     unit/application/trace_frame_discard_command_test.cpp
     unit/application/trace_command_test.cpp

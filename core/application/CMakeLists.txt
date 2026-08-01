@@ -24,6 +24,7 @@ add_library(
     src/trace_display_frame_set_wait.cpp
     src/trace_display_frame_wait.cpp
     src/trace_format_command.cpp
+    src/trace_publication_catalog.cpp
 )
 add_library(vna::application ALIAS vna_application)
 
