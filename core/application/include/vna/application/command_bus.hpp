@@ -93,6 +93,7 @@ struct CommandBusStats {
 };
 
 class SingleSweepCommandHandler;
+class TracePublicationCatalog;
 struct CommandBusInitialState;
 
 class CommandBus {
@@ -102,10 +103,12 @@ public:
     explicit CommandBus(
         InstrumentId instrumentId,
         SingleSweepCommandHandler& singleSweepHandler,
+        TracePublicationCatalog& tracePublicationCatalog,
         std::size_t idempotencyCapacity = 1024);
     explicit CommandBus(
         InstrumentId instrumentId,
         SingleSweepCommandHandler& singleSweepHandler,
+        TracePublicationCatalog& tracePublicationCatalog,
         CommandBusInitialState initialState,
         std::size_t idempotencyCapacity = 1024);
     ~CommandBus();
@@ -155,6 +158,9 @@ private:
     InstrumentId instrumentId_;
     // Non-owning; the composition root keeps the handler alive past this bus.
     SingleSweepCommandHandler& singleSweepHandler_;
+    // The repository-backed catalog is the single publication identity owner.
+    // Composition keeps it alive past both CommandBus and every publisher.
+    TracePublicationCatalog& tracePublicationCatalog_;
     mutable std::mutex mutex_;
     domain::Instrument instrument_;
     display_model::DisplayWorkspace displayWorkspace_;

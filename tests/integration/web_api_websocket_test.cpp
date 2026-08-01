@@ -27,7 +27,6 @@ protected:
         : traceId_(preset_.continuousTracePreset.trace.id),
           commandBus_(
               application::InstrumentId{"instrument-1"},
-              vna::test::stoppedSingleSweepHandler(),
               std::move(preset_.commandBusState)),
           query_(commandBus_, repository_),
           webApi_(commandBus_, operations_, query_, traceId_) {}
@@ -96,7 +95,7 @@ protected:
     application::FactoryPreset preset_{application::makeFactoryPreset()};
     const display_model::TraceId traceId_;
     application::OperationManager operations_;
-    application::CommandBus commandBus_;
+    vna::test::StoppedCommandBus commandBus_;
     application::TraceDisplayFrameRepository repository_{1};
     application::TraceDisplayFrameQuery query_;
     WebApi webApi_;

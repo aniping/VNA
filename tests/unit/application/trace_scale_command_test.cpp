@@ -90,7 +90,7 @@ protected:
                 scalePerDivision}));
     }
 
-    CommandBus commandBus_{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus_{InstrumentId{"instrument-1"}};
     std::uint64_t revision_{0};
 };
 

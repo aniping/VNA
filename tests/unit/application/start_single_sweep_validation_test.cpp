@@ -31,8 +31,7 @@ const ApplicationError* applicationError(const CommandResult& result) {
 class ValidationHarness {
 public:
     ValidationHarness()
-        : bus_(InstrumentId{"instrument-1"},
-               vna::test::stoppedSingleSweepHandler()) {}
+        : bus_(InstrumentId{"instrument-1"}) {}
 
     void configure(UnsupportedScenario scenario) {
         channel_ = successValue<domain::ChannelId>(dispatch(
@@ -104,7 +103,7 @@ private:
     }
 
     domain::ChannelId channel_{0};
-    CommandBus bus_;
+    vna::test::StoppedCommandBus bus_;
 };
 
 class UnsupportedSweepConfigurationTest

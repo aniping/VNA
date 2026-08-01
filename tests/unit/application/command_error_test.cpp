@@ -52,8 +52,8 @@ TEST(CommandErrorTest, PreservesApplicationCauseDuringClassification) {
 }
 
 TEST(CommandErrorTest, PreservesInvalidSweepDomainError) {
-    CommandBus commandBus{
-        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{
+        InstrumentId{"instrument-1"}};
     const CommandEnvelope command{
         .commandId = CommandId{"invalid-sweep"},
         .sessionId = SessionId{"session-1"},
@@ -82,8 +82,8 @@ TEST(CommandErrorTest, PreservesInvalidSweepDomainError) {
 }
 
 TEST(CommandErrorTest, ReportsMissingTraceWhenUpdatingFormat) {
-    CommandBus commandBus{
-        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{
+        InstrumentId{"instrument-1"}};
 
     const auto result = commandBus.dispatch(traceCommand(
         "update-missing-trace",
@@ -101,8 +101,8 @@ TEST(CommandErrorTest, ReportsMissingTraceWhenUpdatingFormat) {
 }
 
 TEST(CommandErrorTest, ReportsMissingTraceWhenRemoving) {
-    CommandBus commandBus{
-        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{
+        InstrumentId{"instrument-1"}};
 
     const auto result = commandBus.dispatch(traceCommand(
         "remove-missing-trace",

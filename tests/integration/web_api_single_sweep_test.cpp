@@ -15,6 +15,7 @@
 #include <vna/application/single_sweep_command_handler.hpp>
 #include <vna/application/single_sweep_executor.hpp>
 #include <vna/application/trace_display_frame_query.hpp>
+#include <vna/application/trace_publication_catalog.hpp>
 #include <vna/simulation/simulation_sweep.hpp>
 #include <vna/web_api/web_api.hpp>
 
@@ -52,7 +53,11 @@ Json sweepPayload() {
 class WebApiSingleSweepTest : public ::testing::Test {
 protected:
     WebApiSingleSweepTest()
-        : executor_(
+        : catalog_(
+              domain::ChannelId{1},
+              repository_,
+              application::StateSnapshot{0, {}, {}, {}}),
+          executor_(
               2,
               [](const frames::FrequencyAxis& axis, std::stop_token) {
                   return simulation::simulateSweep(axis);
@@ -60,7 +65,8 @@ protected:
               operations_,
               repository_),
           handler_(executor_),
-          commandBus_(application::InstrumentId{"instrument-1"}, handler_),
+          commandBus_(
+              application::InstrumentId{"instrument-1"}, handler_, catalog_),
           query_(commandBus_, repository_),
           webApi_(
               commandBus_,
@@ -131,6 +137,7 @@ protected:
 
     application::OperationManager operations_;
     application::TraceDisplayFrameRepository repository_{1};
+    application::TracePublicationCatalog catalog_;
     application::SingleSweepExecutor executor_;
     application::SingleSweepCommandHandler handler_;
     application::CommandBus commandBus_;

@@ -65,9 +65,8 @@ TEST(FactoryPresetTest, CreatesCorrelatedS21StateAtRevisionZero) {
     auto preset = makeFactoryPreset();
     const auto& plan = preset.acquisitionPlan;
 
-    CommandBus bus{
+    vna::test::StoppedCommandBus bus{
         InstrumentId{"instrument-1"},
-        vna::test::stoppedSingleSweepHandler(),
         std::move(preset.commandBusState)};
     const auto snapshot = bus.snapshot();
 
@@ -106,9 +105,8 @@ TEST(FactoryPresetTest, CreatesCorrelatedS21StateAtRevisionZero) {
 
 TEST(FactoryPresetTest, FirstMutationsUseRevisionOneAndNextIdentifiers) {
     auto preset = makeFactoryPreset();
-    CommandBus bus{
+    vna::test::StoppedCommandBus bus{
         InstrumentId{"instrument-1"},
-        vna::test::stoppedSingleSweepHandler(),
         std::move(preset.commandBusState)};
     const domain::SweepSettings sweep{
         .startFrequencyHz = 20'000'000,
@@ -155,9 +153,8 @@ TEST(FactoryPresetTest, FirstMutationsUseRevisionOneAndNextIdentifiers) {
 }
 
 TEST(FactoryPresetTest, ExplicitEmptyStateRemainsAvailable) {
-    CommandBus bus{
+    vna::test::StoppedCommandBus bus{
         InstrumentId{"instrument-1"},
-        vna::test::stoppedSingleSweepHandler(),
         CommandBusInitialState{}};
 
     const auto snapshot = bus.snapshot();

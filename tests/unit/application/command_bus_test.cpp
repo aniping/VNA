@@ -77,7 +77,7 @@ display_model::TraceId createTrace(CommandBus& commandBus) {
 }
 
 TEST(CommandBusTest, SuccessfulCommandIncrementsRevisionOnce) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{InstrumentId{"instrument-1"}};
     const auto command =
         makeCommand("command-1", 0, CreateChannelCommand{validSweep()});
 
@@ -91,7 +91,7 @@ TEST(CommandBusTest, SuccessfulCommandIncrementsRevisionOnce) {
 }
 
 TEST(CommandBusTest, InvalidCommandDoesNotChangeStateOrRevision) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{InstrumentId{"instrument-1"}};
     const auto command = makeCommand(
         "command-1",
         0,
@@ -113,7 +113,7 @@ TEST(CommandBusTest, InvalidCommandDoesNotChangeStateOrRevision) {
 }
 
 TEST(CommandBusTest, StaleRevisionIsRejectedWithoutChangingState) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{InstrumentId{"instrument-1"}};
     const auto firstCommand =
         makeCommand("command-1", 0, CreateChannelCommand{validSweep()});
     ASSERT_TRUE(isSuccess(commandBus.dispatch(firstCommand)));
@@ -133,7 +133,7 @@ TEST(CommandBusTest, StaleRevisionIsRejectedWithoutChangingState) {
 }
 
 TEST(CommandBusTest, CommandForAnotherInstrumentIsRejected) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{InstrumentId{"instrument-1"}};
     const auto command = makeCommand(
         "command-1",
         0,
@@ -151,7 +151,7 @@ TEST(CommandBusTest, CommandForAnotherInstrumentIsRejected) {
 }
 
 TEST(CommandBusTest, CreatesMeasurementAndTraceThroughUnifiedEntryPoint) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{InstrumentId{"instrument-1"}};
     const auto channelResult = commandBus.dispatch(makeCommand(
         "command-1",
         0,
@@ -194,7 +194,7 @@ TEST(CommandBusTest, CreatesMeasurementAndTraceThroughUnifiedEntryPoint) {
 }
 
 TEST(CommandBusTest, RemovesTraceThroughUnifiedEntryPoint) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{InstrumentId{"instrument-1"}};
     const auto traceId = createTrace(commandBus);
 
     const auto result = commandBus.dispatch(
@@ -211,7 +211,7 @@ TEST(CommandBusTest, RemovesTraceThroughUnifiedEntryPoint) {
 
 TEST(CommandBusTest, SerializesCommandsThatExpectTheSameRevision) {
     constexpr int commandCount = 16;
-    CommandBus commandBus{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{InstrumentId{"instrument-1"}};
     std::atomic<int> ready{0};
     std::promise<void> startPromise;
     const auto startSignal = startPromise.get_future().share();

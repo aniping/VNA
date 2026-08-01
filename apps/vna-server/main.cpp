@@ -19,6 +19,7 @@
 #include <vna/application/single_sweep_command_handler.hpp>
 #include <vna/application/trace_display_frame_query.hpp>
 #include <vna/application/trace_display_frame_repository.hpp>
+#include <vna/application/trace_publication_catalog.hpp>
 #include <vna/logging/json_lines_logger.hpp>
 #include <vna/observability/logger.hpp>
 #include <vna/platform/executable_path.hpp>
@@ -32,6 +33,7 @@ using namespace std::chrono_literals;
 constexpr auto instrumentId = "instrument-1";
 constexpr auto lifecycleEventName = "server.lifecycle";
 constexpr auto logFlushTimeout = 2s;
+constexpr std::size_t traceCapacity = 1024;
 // A stable product seed makes the simulated frame sequence reproducible across
 // restarts without leaking simulation concerns into the acquisition plan.
 constexpr std::uint64_t simulationSeed = 0x564E4101ULL;
@@ -119,6 +121,27 @@ vna::acquisition::RawSweepSource makeSimulationSource() {
     };
 }
 
+vna::application::StateSnapshot presetSnapshot(
+    const vna::application::FactoryPreset& preset) {
+    return {
+        .stateRevision = 0,
+        .control = {},
+        .instrument = preset.commandBusState.instrument.snapshot(),
+        .display = preset.commandBusState.displayWorkspace.snapshot(),
+    };
+}
+
+struct PublicationState {
+    explicit PublicationState(const vna::application::FactoryPreset& preset)
+        : repository{traceCapacity},
+          catalog{preset.continuousTracePreset.measurement.channelId,
+                  repository,
+                  presetSnapshot(preset)} {}
+
+    vna::application::TraceDisplayFrameRepository repository;
+    vna::application::TracePublicationCatalog catalog;
+};
+
 int serveUntilStopped(
     vna::web_api::WebApi& webApi,
     std::unique_ptr<vna::observability::Logger>& logger) {
@@ -159,20 +182,18 @@ int runServer() {
     const auto webRoot = releaseRoot / "web";
     const auto logDirectory = releaseRoot / "logs";
 
-    constexpr std::size_t traceCapacity = 1024;
     auto preset = vna::application::makeFactoryPreset();
     const auto defaultTraceId = preset.continuousTracePreset.trace.id;
     // Declaration order is the borrowing graph. Reverse destruction stops Web
     // access first, then CommandBus and publisher, before acquisition and repos.
     vna::application::OperationManager operationManager;
-    vna::application::TraceDisplayFrameRepository frameRepository{
-        traceCapacity};
+    PublicationState publication{preset};
     vna::acquisition::ContinuousAcquisition acquisition{
         std::move(preset.acquisitionPlan), makeSimulationSource()};
     vna::application::ContinuousTracePublisher tracePublisher{
         acquisition,
         std::move(preset.continuousTracePreset),
-        frameRepository};
+        publication.repository};
     vna::application::DisabledSingleSweepExecution disabledSingleSweep{
         tracePublisher};
     vna::application::SingleSweepCommandHandler sweepHandler{
@@ -180,9 +201,10 @@ int runServer() {
     vna::application::CommandBus commandBus{
         vna::application::InstrumentId{instrumentId},
         sweepHandler,
+        publication.catalog,
         std::move(preset.commandBusState)};
     vna::application::TraceDisplayFrameQuery displayFrameQuery{
-        commandBus, frameRepository};
+        commandBus, publication.repository};
     // WebApi validates index.html and assets without following unsafe paths.
     // Construct it before the logger so a broken release never creates logs.
     vna::web_api::WebApi webApi{

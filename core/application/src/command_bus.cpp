@@ -8,6 +8,7 @@
 #include <type_traits>
 
 #include <vna/application/single_sweep_command_handler.hpp>
+#include <vna/application/trace_publication_catalog.hpp>
 
 namespace vna::application {
 
@@ -61,19 +62,23 @@ CommandErrorCode commandErrorCode(const ApplicationError& error) noexcept {
 CommandBus::CommandBus(
     InstrumentId instrumentId,
     SingleSweepCommandHandler& singleSweepHandler,
+    TracePublicationCatalog& tracePublicationCatalog,
     std::size_t idempotencyCapacity)
     : CommandBus(std::move(instrumentId),
           singleSweepHandler,
+          tracePublicationCatalog,
           CommandBusInitialState{},
           idempotencyCapacity) {}
 
 CommandBus::CommandBus(
     InstrumentId instrumentId,
     SingleSweepCommandHandler& singleSweepHandler,
+    TracePublicationCatalog& tracePublicationCatalog,
     CommandBusInitialState initialState,
     std::size_t idempotencyCapacity)
     : instrumentId_(std::move(instrumentId)),
       singleSweepHandler_(singleSweepHandler),
+      tracePublicationCatalog_(tracePublicationCatalog),
       instrument_(std::move(initialState.instrument)),
       displayWorkspace_(std::move(initialState.displayWorkspace)),
       idempotency_(

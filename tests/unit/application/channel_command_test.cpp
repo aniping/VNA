@@ -26,8 +26,8 @@ CommandEnvelope command(
 }
 
 TEST(ChannelCommandTest, UpdatesExistingChannelSweep) {
-    CommandBus commandBus{
-        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{
+        InstrumentId{"instrument-1"}};
     const domain::SweepSettings initial{
         .startFrequencyHz = 10'000'000,
         .stopFrequencyHz = 26'500'000'000,
@@ -63,8 +63,8 @@ TEST(ChannelCommandTest, UpdatesExistingChannelSweep) {
 }
 
 TEST(ChannelCommandTest, InvalidUpdateKeepsChannelAndRevisionUnchanged) {
-    CommandBus commandBus{
-        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{
+        InstrumentId{"instrument-1"}};
     const domain::SweepSettings initial{
         .startFrequencyHz = 10'000'000,
         .stopFrequencyHz = 26'500'000'000,
@@ -90,8 +90,8 @@ TEST(ChannelCommandTest, InvalidUpdateKeepsChannelAndRevisionUnchanged) {
 }
 
 TEST(ChannelCommandTest, RejectsUpdateForMissingChannel) {
-    CommandBus commandBus{
-        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{
+        InstrumentId{"instrument-1"}};
     const domain::SweepSettings sweep{
         .startFrequencyHz = 10'000'000,
         .stopFrequencyHz = 26'500'000'000,

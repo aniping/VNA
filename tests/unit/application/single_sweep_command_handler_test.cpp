@@ -14,7 +14,10 @@ namespace {
 
 static_assert(!std::is_constructible_v<CommandBus, InstrumentId>);
 static_assert(std::is_constructible_v<
-              CommandBus, InstrumentId, SingleSweepCommandHandler&>);
+              CommandBus,
+              InstrumentId,
+              SingleSweepCommandHandler&,
+              TracePublicationCatalog&>);
 static_assert(std::is_constructible_v<
               SingleSweepCommandHandler, SingleSweepExecution&>);
 static_assert(noexcept(std::declval<SingleSweepCommandHandler&>().discard(

@@ -138,7 +138,7 @@ protected:
         return body.at("value").at("traceId").get<std::uint64_t>();
     }
     application::OperationManager operations_;
-    application::CommandBus commandBus_{application::InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus_{application::InstrumentId{"instrument-1"}};
     application::TraceDisplayFrameRepository repository_{1};
     application::TraceDisplayFrameQuery query_{commandBus_, repository_};
     WebApi webApi_{commandBus_, operations_, query_, display_model::TraceId{1}};

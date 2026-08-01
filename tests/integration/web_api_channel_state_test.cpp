@@ -71,9 +71,8 @@ protected:
     }
 
     application::OperationManager operations_;
-    application::CommandBus commandBus_{
+    vna::test::StoppedCommandBus commandBus_{
         application::InstrumentId{"instrument-1"},
-        vna::test::stoppedSingleSweepHandler(),
         application::makeFactoryPreset().commandBusState};
     application::TraceDisplayFrameRepository repository_{2};
     application::TraceDisplayFrameQuery query_{commandBus_, repository_};

@@ -83,8 +83,8 @@ protected:
         ASSERT_TRUE(isSuccess(trace));
     }
 
-    CommandBus commandBus_{
-        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus_{
+        InstrumentId{"instrument-1"}};
     TraceDisplayFrameRepository repository_{1};
     TraceDisplayFrameQuery query_{commandBus_, repository_};
 };

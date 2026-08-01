@@ -68,7 +68,7 @@ const ApplicationError* applicationError(const CommandResult& result) {
 
 TEST(CommandIdempotencyHardeningTest, ConcurrentSameKeyExecutesOnce) {
     constexpr std::size_t requestCount = 8;
-    CommandBus commandBus{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{InstrumentId{"instrument-1"}};
     const auto command = windowCommand("shared-command");
     StartGate gate{requestCount};
     std::vector<std::optional<CommandResult>> results(requestCount);
@@ -145,7 +145,7 @@ protected:
             UpdateTraceScalePerDivisionCommand{traceId_, scale});
     }
 
-    CommandBus commandBus_{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus_{InstrumentId{"instrument-1"}};
     display_model::TraceId traceId_{0};
 };
 
@@ -201,7 +201,7 @@ TEST_F(ScaleIdempotencyHardeningTest, DistinguishesZeroSignAndReplaysNan) {
 }
 
 TEST(CommandIdempotencyHardeningTest, TransientPathsDoNotRefreshFullFifo) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler(), 2};
+    vna::test::StoppedCommandBus commandBus{InstrumentId{"instrument-1"}, 2};
     const auto oldest = windowCommand("oldest", 0);
     const auto newest = windowCommand("newest", 1);
     ASSERT_NE(success(commandBus.dispatch(oldest)), nullptr);

@@ -16,6 +16,7 @@
 #include <vna/application/factory_preset.hpp>
 #include <vna/application/single_sweep_command_handler.hpp>
 #include <vna/application/trace_display_frame_query.hpp>
+#include <vna/application/trace_publication_catalog.hpp>
 #include <vna/web_api/web_api.hpp>
 
 namespace vna::web_api {
@@ -27,16 +28,31 @@ bool succeeded(const application::CommandResult& result) {
     return std::holds_alternative<application::CommandSuccess>(result.outcome);
 }
 
+application::StateSnapshot initialSnapshot(
+    const application::FactoryPreset& preset) {
+    return {
+        .stateRevision = 0,
+        .control = {},
+        .instrument = preset.commandBusState.instrument.snapshot(),
+        .display = preset.commandBusState.displayWorkspace.snapshot(),
+    };
+}
+
 class WebApiWebSocketLifecycleTest
     : public ::testing::Test,
       private application::SingleSweepExecution {
 protected:
     WebApiWebSocketLifecycleTest()
         : traceId_(preset_.continuousTracePreset.trace.id),
+          catalog_(
+              preset_.continuousTracePreset.measurement.channelId,
+              repository_,
+              initialSnapshot(preset_)),
           sweepHandler_(*this),
           commandBus_(
               application::InstrumentId{"instrument-1"},
               sweepHandler_,
+              catalog_,
               std::move(preset_.commandBusState)),
           query_(commandBus_, repository_),
           webApi_(commandBus_, operations_, query_, traceId_) {}
@@ -150,6 +166,7 @@ protected:
     const display_model::TraceId traceId_;
     application::OperationManager operations_;
     application::TraceDisplayFrameRepository repository_{1};
+    application::TracePublicationCatalog catalog_;
     application::SingleSweepCommandHandler sweepHandler_;
     application::CommandBus commandBus_;
     application::TraceDisplayFrameQuery query_;

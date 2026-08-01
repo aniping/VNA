@@ -19,7 +19,6 @@ protected:
           measurementType_(preset_.continuousTracePreset.measurement.type),
           bus_(
               InstrumentId{"instrument-1"},
-              vna::test::stoppedSingleSweepHandler(),
               std::move(preset_.commandBusState)),
           query_(bus_, repository_) {}
 
@@ -75,7 +74,7 @@ protected:
     const display_model::TraceId traceId_;
     const domain::MeasurementId measurementId_;
     const domain::MeasurementType measurementType_;
-    CommandBus bus_;
+    vna::test::StoppedCommandBus bus_;
     TraceDisplayFrameRepository repository_{1};
     TraceDisplayFrameQuery query_;
     std::uint64_t nextCommand_{1};

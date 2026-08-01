@@ -7,6 +7,7 @@
 
 #include <vna/application/command_bus.hpp>
 #include <vna/application/single_sweep_command_handler.hpp>
+#include <vna/test/stopped_single_sweep_handler.hpp>
 
 namespace vna::application {
 namespace {
@@ -35,7 +36,10 @@ class StartSingleSweepHarness : private SingleSweepExecution {
 public:
     explicit StartSingleSweepHarness(std::size_t idempotencyCapacity = 1024)
         : handler_(*this),
-          bus_(InstrumentId{"instrument-1"}, handler_, idempotencyCapacity) {}
+          bus_(InstrumentId{"instrument-1"},
+               handler_,
+               catalogOwner_.catalog(),
+               idempotencyCapacity) {}
 
     CommandResult createChannel() {
         return bus_.dispatch(envelope(
@@ -112,6 +116,7 @@ private:
 
     std::vector<SingleSweepWorkItem> submitted_;
     std::deque<SingleSweepSubmitErrorCode> rejections_;
+    vna::test::CommandBusCatalogOwner catalogOwner_;
     SingleSweepCommandHandler handler_;
     CommandBus bus_;
 };

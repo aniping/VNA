@@ -59,8 +59,8 @@ void createTrace(CommandBus& commandBus) {
 }
 
 TEST(TraceCommandTest, UpdatesTraceFormatAndIncrementsRevisionOnce) {
-    CommandBus commandBus{
-        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{
+        InstrumentId{"instrument-1"}};
     createTrace(commandBus);
 
     const auto result = commandBus.dispatch(command(
@@ -85,8 +85,8 @@ TEST(TraceCommandTest, UpdatesTraceFormatAndIncrementsRevisionOnce) {
 }
 
 TEST(TraceCommandTest, RejectsTraceForMissingMeasurement) {
-    CommandBus commandBus{
-        InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{
+        InstrumentId{"instrument-1"}};
     ASSERT_TRUE(isSuccess(commandBus.dispatch(
         command("create-window", 0, CreateWindowCommand{}))));
 

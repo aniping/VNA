@@ -130,7 +130,7 @@ private:
 };
 
 TEST(ControlAuthorityConcurrencyTest, RevokingRemainsClosedUntilOwnerDetach) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{InstrumentId{"instrument-1"}};
     BlockedTakeover takeover;
     const auto attached = commandBus.tryAttachScpiSession(SessionId{"owner"}, takeover.revoker());
     const auto remote = commandBus.activateScpiControl(SessionId{"owner"});
@@ -179,7 +179,7 @@ TEST(ControlAuthorityConcurrencyTest, RevokingRemainsClosedUntilOwnerDetach) {
 }
 
 TEST(ControlAuthorityConcurrencyTest, DetachCompletesBeforeTakeoverWithoutRevoking) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{InstrumentId{"instrument-1"}};
     std::atomic<int> revocations{0};
     const auto attached = commandBus.tryAttachScpiSession(
         SessionId{"owner"}, [&] { ++revocations; });
@@ -216,7 +216,7 @@ TEST(ControlAuthorityConcurrencyTest, DetachCompletesBeforeTakeoverWithoutRevoki
 }
 
 TEST(ControlAuthorityConcurrencyTest, ConcurrentAttachAdmitsExactlyOneSession) {
-    CommandBus commandBus{InstrumentId{"instrument-1"}, vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus{InstrumentId{"instrument-1"}};
     StartGate gate;
     std::optional<ControlResult> firstResult;
     std::optional<ControlResult> secondResult;

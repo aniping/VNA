@@ -128,9 +128,8 @@ protected:
     }
 
     application::OperationManager operations_;
-    application::CommandBus commandBus_{
-        application::InstrumentId{"instrument-1"},
-        vna::test::stoppedSingleSweepHandler()};
+    vna::test::StoppedCommandBus commandBus_{
+        application::InstrumentId{"instrument-1"}};
     application::TraceDisplayFrameRepository repository_{2};
     application::TraceDisplayFrameQuery query_{commandBus_, repository_};
     WebApi webApi_{
