@@ -1,6 +1,8 @@
 #include <vna/measurement/s11_synthesizer.hpp>
 
 #include <algorithm>
+#include <array>
+#include <map>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -66,57 +68,84 @@ std::optional<frames::FrameError> divideResponses(
     return std::nullopt;
 }
 
-}  // namespace
-
-frames::Result<frames::MeasurementFrame> synthesizeSParameter(
-    frames::RawReceiverFrame rawFrame,
-    domain::MeasurementSnapshot measurement) {
-    // Re-enter the public frame factory before doing arithmetic. Raw frame
-    // structs remain aggregate-friendly at adapter boundaries, so synthesis
-    // must not assume a caller bypassing the factory supplied valid samples.
-    auto validated = frames::makeRawReceiverFrame(
-        rawFrame.context,
-        rawFrame.frequencyAxis,
-        std::move(rawFrame.payload));
-    if (!validated.hasValue()) {
-        return frames::Result<frames::MeasurementFrame>{validated.error()};
-    }
-    const auto ports = portsFor(measurement.type);
+std::optional<frames::FrameError> calculateRatios(
+    const frames::RawReceiverFrame& rawFrame,
+    domain::MeasurementType type,
+    std::vector<frames::ComplexSample>& ratios) {
+    const auto ports = portsFor(type);
     if (!ports) {
-        return frames::Result<frames::MeasurementFrame>{frames::FrameError{
-            .code = frames::FrameErrorCode::UnsupportedMeasurementType}};
+        return frames::FrameError{
+            .code = frames::FrameErrorCode::UnsupportedMeasurementType};
     }
-    if (measurement.channelId != validated.value().context.channelId) {
-        return frames::Result<frames::MeasurementFrame>{frames::FrameError{
-            .code = frames::FrameErrorCode::MeasurementChannelMismatch}};
+    if (ports->responsePort > rawFrame.payload.portCount) {
+        return frames::FrameError{
+            .code = frames::FrameErrorCode::InvalidPortCount};
     }
-
-    if (ports->responsePort > validated.value().payload.portCount) {
-        return frames::Result<frames::MeasurementFrame>{frames::FrameError{
-            .code = frames::FrameErrorCode::InvalidPortCount}};
-    }
-    const auto& states = validated.value().payload.sourceStates;
+    const auto& states = rawFrame.payload.sourceStates;
     const auto source = std::find_if(
         states.cbegin(), states.cend(), [ports](const auto& state) {
             return state.sourcePort == ports->sourcePort;
         });
     if (source == states.cend()) {
-        return frames::Result<frames::MeasurementFrame>{frames::FrameError{
-            .code = frames::FrameErrorCode::InvalidSourcePort}};
+        return frames::FrameError{
+            .code = frames::FrameErrorCode::InvalidSourcePort};
     }
+    return divideResponses(*source, ports->responsePort, ratios);
+}
 
-    std::vector<frames::ComplexSample> ratios;
-    if (const auto error =
-            divideResponses(*source, ports->responsePort, ratios)) {
-        return frames::Result<frames::MeasurementFrame>{*error};
+}  // namespace
+
+frames::Result<std::vector<frames::MeasurementFrame>> synthesizeSParameters(
+    const frames::RawReceiverFrame& rawFrame,
+    std::span<const domain::MeasurementSnapshot> measurements) {
+    // Aggregate-friendly adapter input is revalidated exactly once per batch.
+    auto validated = frames::makeRawReceiverFrame(
+        rawFrame.context, rawFrame.frequencyAxis, rawFrame.payload);
+    if (!validated.hasValue()) {
+        return frames::Result<std::vector<frames::MeasurementFrame>>{
+            validated.error()};
     }
+    std::map<domain::MeasurementType, std::vector<frames::ComplexSample>> cache;
+    std::vector<frames::MeasurementFrame> output;
+    output.reserve(measurements.size());
+    for (const auto& measurement : measurements) {
+        if (measurement.channelId != validated.value().context.channelId) {
+            return frames::Result<std::vector<frames::MeasurementFrame>>{
+                frames::FrameError{.code =
+                    frames::FrameErrorCode::MeasurementChannelMismatch}};
+        }
+        auto cached = cache.find(measurement.type);
+        if (cached == cache.end()) {
+            std::vector<frames::ComplexSample> ratios;
+            if (const auto error = calculateRatios(
+                    validated.value(), measurement.type, ratios)) {
+                return frames::Result<std::vector<frames::MeasurementFrame>>{
+                    *error};
+            }
+            cached = cache.emplace(measurement.type, std::move(ratios)).first;
+        }
+        auto frame = frames::makeMeasurementFrame(
+            validated.value().context, validated.value().frequencyAxis,
+            measurement.id, measurement.type, cached->second);
+        if (!frame.hasValue()) {
+            return frames::Result<std::vector<frames::MeasurementFrame>>{
+                frame.error()};
+        }
+        output.push_back(frame.value());
+    }
+    return frames::Result<std::vector<frames::MeasurementFrame>>{
+        std::move(output)};
+}
 
-    return frames::makeMeasurementFrame(
-        validated.value().context,
-        validated.value().frequencyAxis,
-        measurement.id,
-        measurement.type,
-        std::move(ratios));
+frames::Result<frames::MeasurementFrame> synthesizeSParameter(
+    frames::RawReceiverFrame rawFrame,
+    domain::MeasurementSnapshot measurement) {
+    const std::array measurements{measurement};
+    const auto batch = synthesizeSParameters(rawFrame, measurements);
+    if (!batch.hasValue()) {
+        return frames::Result<frames::MeasurementFrame>{batch.error()};
+    }
+    return frames::Result<frames::MeasurementFrame>{batch.value().front()};
 }
 
 frames::Result<frames::MeasurementFrame> synthesizeS11(

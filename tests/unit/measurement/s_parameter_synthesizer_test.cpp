@@ -155,5 +155,64 @@ TEST(SParameterSynthesizerTest, RejectsNonFiniteReceiverData) {
     EXPECT_EQ(result.error().code, frames::FrameErrorCode::NonFiniteSample);
 }
 
+TEST(SParameterBatchSynthesizerTest, EmptyRequestProducesAnEmptyBatch) {
+    const std::vector<domain::MeasurementSnapshot> measurements;
+
+    const auto result = synthesizeSParameters(twoPortFrame(), measurements);
+
+    ASSERT_TRUE(result.hasValue());
+    EXPECT_TRUE(result.value().empty());
+}
+
+TEST(SParameterBatchSynthesizerTest, ReusesOneRatioForDifferentMeasurementIds) {
+    auto first = measurement(domain::MeasurementType::S12);
+    auto second = first;
+    first.id = domain::MeasurementId{21};
+    second.id = domain::MeasurementId{22};
+    const std::array measurements{first, second};
+
+    const auto result = synthesizeSParameters(twoPortFrame(), measurements);
+
+    ASSERT_TRUE(result.hasValue());
+    ASSERT_EQ(result.value().size(), 2U);
+    EXPECT_EQ(result.value()[0].measurementId, domain::MeasurementId{21});
+    EXPECT_EQ(result.value()[1].measurementId, domain::MeasurementId{22});
+    EXPECT_EQ(result.value()[0].samples, result.value()[1].samples);
+}
+
+TEST(SParameterBatchSynthesizerTest, PreservesRequestedFourTypeOrder) {
+    const std::array measurements{
+        measurement(domain::MeasurementType::S22),
+        measurement(domain::MeasurementType::S11),
+        measurement(domain::MeasurementType::S12),
+        measurement(domain::MeasurementType::S21),
+    };
+
+    const auto result = synthesizeSParameters(twoPortFrame(), measurements);
+
+    ASSERT_TRUE(result.hasValue());
+    ASSERT_EQ(result.value().size(), measurements.size());
+    for (std::size_t index = 0; index < measurements.size(); ++index) {
+        EXPECT_EQ(result.value()[index].type, measurements[index].type);
+    }
+}
+
+TEST(SParameterBatchSynthesizerTest, AnyInvalidMeasurementFailsTheWholeBatch) {
+    auto wrongChannel = measurement(domain::MeasurementType::S12);
+    wrongChannel.channelId = domain::ChannelId{99};
+    const std::array measurements{
+        measurement(domain::MeasurementType::S11),
+        wrongChannel,
+        measurement(domain::MeasurementType::S21),
+    };
+
+    const auto result = synthesizeSParameters(twoPortFrame(), measurements);
+
+    ASSERT_FALSE(result.hasValue());
+    EXPECT_EQ(
+        result.error().code,
+        frames::FrameErrorCode::MeasurementChannelMismatch);
+}
+
 }  // namespace
 }  // namespace vna::measurement
