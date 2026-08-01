@@ -10,7 +10,7 @@ import LogMagnitudeCurve from './LogMagnitudeCurve.vue'
 import { traceColorForMeasurement } from './traceVisual'
 
 const props = defineProps<{
-  paneNumber: number
+  windowId: number
   kind: 'cartesian' | 'smith'
   channel?: ChannelSnapshot
   measurement?: MeasurementSnapshot
@@ -73,21 +73,27 @@ function selectTrace(): void {
 <template>
   <article
     class="diagram-pane"
-    :class="{ active }"
     :style="{ '--trace-color': traceColor }"
-    :aria-label="`Diagram ${paneNumber}`"
+    :aria-label="`Diagram ${windowId}${active ? ', active' : ''}`"
+    :aria-current="active ? 'true' : undefined"
     :role="trace ? 'button' : undefined"
     :tabindex="trace ? 0 : undefined"
     @click="selectTrace"
     @keydown.enter="selectTrace"
     @keydown.space.prevent="selectTrace"
   >
-    <header class="trace-strip">
+    <header class="trace-strip" :class="{ active }">
       <span class="trace-index">{{ trace ? `Trc${trace.id}` : 'Trc —' }}</span>
       <span v-if="measurement" class="measurement-chip">{{ measurement.type }}</span>
       <span class="trace-name">{{ traceLabel }}</span>
       <span class="strip-spacer" />
-      <span aria-hidden="true">▼</span>
+      <span
+        class="diagram-identifier"
+        :class="{ active }"
+        aria-hidden="true"
+      >
+        <b>{{ windowId }}</b><span aria-hidden="true">▼</span>
+      </span>
     </header>
 
     <div class="plot-area" :class="kind">
@@ -109,7 +115,9 @@ function selectTrace(): void {
     </div>
 
     <footer class="channel-row">
-      <span class="channel-id">{{ channel ? `Ch${channel.id}` : 'No Ch' }}</span>
+      <span class="channel-id" :class="{ active }">
+        {{ channel ? `Ch${channel.id}` : 'No Ch' }}
+      </span>
       <span>Start {{ frequency(channel?.sweep.startFrequencyHz) }}</span>
       <span>Pwr {{ channel ? `${channel.sweep.powerDbm} dBm` : '—' }}</span>
       <span>Bw {{ frequency(channel?.sweep.ifBandwidthHz) }}</span>
@@ -120,13 +128,15 @@ function selectTrace(): void {
 
 <style scoped>
 .diagram-pane { display: grid; grid-template-rows: 25px 1fr 23px; min-width: 0; min-height: 0; border: 1px solid #60717a; background: #050707; }
-.diagram-pane.active { border: 2px solid #f2db24; }
-.diagram-pane.active .trace-strip { background: #168fda; box-shadow: inset 0 -3px #f2db24; }
+.trace-strip.active { background: #168fda; }
 .trace-strip { display: flex; align-items: center; gap: 5px; padding: 0 5px; overflow: hidden; color: #dce5e8; background: #243138; font-size: 12px; white-space: nowrap; }
 .trace-index { padding: 3px 5px; color: #dce5e8; background: transparent; }
 .measurement-chip { padding: 2px 5px; color: #1b1b11; background: var(--trace-color); font-weight: 700; }
 .trace-name { overflow: hidden; text-overflow: ellipsis; }
 .strip-spacer { flex: 1; }
+.diagram-identifier { align-self: stretch; display: flex; align-items: center; gap: 5px; min-width: 31px; margin-right: -5px; padding: 0 5px; background: #33454d; }
+.diagram-identifier.active { background: #168fda; }
+.diagram-identifier b { font-weight: 700; }
 .plot-area { position: relative; overflow: hidden; background-color: #020404; color: #8ca0a8; }
 .plot-area.cartesian { background-image: linear-gradient(#40515a 1px, transparent 1px), linear-gradient(90deg, #40515a 1px, transparent 1px), linear-gradient(#26343a 1px, transparent 1px), linear-gradient(90deg, #26343a 1px, transparent 1px); background-size: 100% 20%, 12.5% 100%, 100% 10%, 6.25% 100%; }
 .scale-top, .scale-bottom { position: absolute; left: 4px; z-index: 2; font-size: 10px; }
@@ -143,5 +153,6 @@ function selectTrace(): void {
 .arc-top { bottom: 50%; }
 .arc-bottom { top: 50%; }
 .channel-row { display: flex; align-items: center; justify-content: space-between; gap: 5px; padding: 0 4px; overflow: hidden; color: #d7e0e3; background: #202c32; font-size: 10px; white-space: nowrap; }
-.channel-id { padding: 3px 4px; color: #fff; background: #397cb4; font-weight: 700; }
+.channel-id { padding: 3px 4px; color: #fff; background: #2c3c43; font-weight: 700; }
+.channel-id.active { background: #397cb4; }
 </style>

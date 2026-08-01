@@ -39,11 +39,12 @@ const snapshot: StateSnapshot = {
 }
 
 test('one real Window produces exactly one Diagram with its related S21 Trace', () => {
-  const diagrams = selectDisplayDiagrams(snapshot, 41)
+  const diagrams = selectDisplayDiagrams(snapshot)
 
   assert.equal(diagrams.length, 1)
   assert.deepEqual(diagrams[0], {
     windowId: 31,
+    active: true,
     trace: snapshot.instrument.traces[0],
     measurement: snapshot.instrument.measurements[0],
     channel: snapshot.instrument.channels[0],
@@ -64,4 +65,21 @@ test('multiple real Windows remain ordered without synthesizing placeholder Diag
       { windowId: 32, traceId: undefined },
     ],
   )
+})
+
+test('active Diagram follows its selected Trace without changing Window order', () => {
+  const state = structuredClone(snapshot)
+  state.instrument.windows.push({ id: 32 })
+  state.instrument.traces.push({ ...state.instrument.traces[0], id: 42, windowId: 32 })
+
+  const activeByWindow = (traceId: number) => selectDisplayDiagrams(state, traceId)
+    .map(({ windowId, active }) => ({ windowId, active }))
+
+  assert.deepEqual({
+    first: activeByWindow(41),
+    second: activeByWindow(42),
+  }, {
+    first: [{ windowId: 31, active: true }, { windowId: 32, active: false }],
+    second: [{ windowId: 31, active: false }, { windowId: 32, active: true }],
+  })
 })

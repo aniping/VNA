@@ -31,18 +31,18 @@ function kindForTrace(format?: string): 'cartesian' | 'smith' {
     aria-label="Measurement diagrams"
   >
     <DiagramPane
-      v-for="(diagram, index) in diagrams"
+      v-for="diagram in diagrams"
       :key="diagram.windowId"
       :class="{
-        'pane-hidden': maximized && diagram.trace?.id !== activeTraceId,
+        'pane-hidden': maximized && !diagram.active,
       }"
-      :pane-number="index + 1"
+      :window-id="diagram.windowId"
       :kind="kindForTrace(diagram.trace?.format)"
       :channel="diagram.channel"
       :trace="diagram.trace"
       :frame="frameForTrace(diagram.trace?.id)"
       :measurement="diagram.measurement"
-      :active="activeTraceId !== undefined && diagram.trace?.id === activeTraceId"
+      :active="diagram.active"
       @select="emit('selectTrace', $event)"
     />
   </section>

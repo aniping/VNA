@@ -155,8 +155,10 @@ pnpm run dev
 当前单窗口界面只渲染服务快照中真实存在的 Window：一个 Window 对应一个主图，
 多个 Window 也不会补齐不存在的空白 Diagram。Softtool 默认关闭，点击 `Meas`
 可打开或重新关闭 Measurement Softtool；已有 Channel 时可在 S 参数区创建 Trace。
-默认 S21 Trace 的色块和曲线为绿色，活动 Diagram 仍使用独立的黄色边框。尚无
-测量帧时 Diagram 显示空态；后台连续采集会自动更新显示帧，Toolbar 的
+默认 S21 Trace 的色块和曲线为绿色；活动 Trace 信息条、活动 Channel 和右上角
+真实 WindowId 使用蓝/青蓝色高亮，所有 Diagram 外框保持统一细深灰蓝（手册
+第 112、127–129、935–936 页）。尚无测量帧时 Diagram 显示空态；后台连续采集
+会自动更新显示帧，Toolbar 的
 `Restart Sweep` 在当前发布版中暂不可用并按禁用处理。
 `Maximize Diagram` 可切换活动 Diagram 的最大化状态；其余尚未实现的 Toolbar
 项保持禁用。
