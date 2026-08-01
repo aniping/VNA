@@ -120,11 +120,14 @@ TEST(ContinuousTracePublisherTest, PublishesKnownS21FrameAndCorrelation) {
     EXPECT_EQ(frame->stateRevision, 7U);
     EXPECT_EQ(frame->sequenceNumber, 1U);
     EXPECT_EQ(frame->format, display_model::TraceFormat::LogMagnitude);
-    EXPECT_EQ(frame->valueUnit, display_model::ScaleUnit::Decibel);
+    EXPECT_EQ(frame->measurementId, domain::MeasurementId{1});
+    const auto& samples =
+        std::get<CartesianTraceDisplaySamples>(frame->samples);
+    EXPECT_EQ(samples.unit, TraceDisplayUnit::Decibel);
     EXPECT_EQ(frame->frequenciesHz,
               (std::vector<double>{1'000'000, 1'500'000, 2'000'000}));
-    ASSERT_EQ(frame->values.size(), 3U);
-    EXPECT_NEAR(frame->values[0], 1.583624921, 1e-9);
+    ASSERT_EQ(samples.values.size(), 3U);
+    EXPECT_NEAR(samples.values[0], 1.583624921, 1e-9);
 }
 
 TEST(ContinuousTracePublisherTest, RejectsOneFrameThenRecovers) {

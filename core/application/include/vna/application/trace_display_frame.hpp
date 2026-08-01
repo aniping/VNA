@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <variant>
 #include <vector>
 
 #include <vna/display_model/display_workspace.hpp>
@@ -8,18 +9,42 @@
 
 namespace vna::application {
 
+// Units live beside their matching sample payload so an application frame
+// cannot accidentally pair scalar and complex data through parallel fields.
+enum class TraceDisplayUnit {
+    Decibel,
+    Degree,
+    Unitless,
+};
+
+struct CartesianTraceDisplaySamples {
+    TraceDisplayUnit unit;
+    std::vector<double> values;
+};
+
+struct ComplexTraceDisplaySamples {
+    TraceDisplayUnit unit;
+    std::vector<frames::ComplexSample> values;
+};
+
+using TraceDisplaySamples = std::variant<
+    CartesianTraceDisplaySamples,
+    ComplexTraceDisplaySamples>;
+
 // Once published, this DTO is the immutable handoff consumed by display
-// queries. It owns derived values only; raw receiver and complex measurement
-// samples stay below the application boundary.
+// queries. Smith values remain synthesized complex Sij; this boundary neither
+// converts them to impedance nor clips them to a unit circle.
 struct TraceDisplayFrame {
     frames::FrameId frameId;
     display_model::TraceId traceId;
+    domain::MeasurementId measurementId;
+    domain::MeasurementType measurementType;
     std::uint64_t stateRevision;
+    std::uint64_t generation;
     std::uint64_t sequenceNumber;
     display_model::TraceFormat format;
-    display_model::ScaleUnit valueUnit;
     std::vector<double> frequenciesHz;
-    std::vector<double> values;
+    TraceDisplaySamples samples;
 };
 
 }  // namespace vna::application

@@ -57,8 +57,10 @@ TEST(SingleSweepExecutorTest, PublishesFivePointGoldenBeforeSuccess) {
     EXPECT_EQ(visibleAtCompletion->sequenceNumber, 1U);
     EXPECT_EQ(visibleAtCompletion->format,
               display_model::TraceFormat::LogMagnitude);
-    EXPECT_EQ(visibleAtCompletion->valueUnit,
-              display_model::ScaleUnit::Decibel);
+    EXPECT_EQ(visibleAtCompletion->measurementId, domain::MeasurementId{1});
+    const auto& samples = std::get<CartesianTraceDisplaySamples>(
+        visibleAtCompletion->samples);
+    EXPECT_EQ(samples.unit, TraceDisplayUnit::Decibel);
     EXPECT_EQ(visibleAtCompletion->frequenciesHz,
               (std::vector<double>{
                   1'000'000.0, 1'250'000.0, 1'500'000.0,
@@ -66,9 +68,9 @@ TEST(SingleSweepExecutorTest, PublishesFivePointGoldenBeforeSuccess) {
     const double expected[] = {
         -6.020599913279624, -10.102999566398122, -12.041199826559248,
         -10.102999566398122, -6.020599913279624};
-    ASSERT_EQ(visibleAtCompletion->values.size(), std::size(expected));
+    ASSERT_EQ(samples.values.size(), std::size(expected));
     for (std::size_t index = 0; index < std::size(expected); ++index) {
-        EXPECT_NEAR(visibleAtCompletion->values[index], expected[index], 1e-12);
+        EXPECT_NEAR(samples.values[index], expected[index], 1e-12);
     }
 }
 

@@ -88,26 +88,34 @@ protected:
         application::TraceDisplayFrame result{
             .frameId = frames::FrameId{1},
             .traceId = display_model::TraceId{1},
+            .measurementId = domain::MeasurementId{1},
+            .measurementType = domain::MeasurementType::S11,
             .stateRevision = 4,
+            .generation = 1,
             .sequenceNumber = 1,
             .format = display_model::TraceFormat::LogMagnitude,
-            .valueUnit = display_model::ScaleUnit::Decibel,
+            .samples = application::CartesianTraceDisplaySamples{
+                .unit = application::TraceDisplayUnit::Decibel},
         };
         result.frequenciesHz.reserve(points);
-        result.values.reserve(points);
+        auto& values = std::get<application::CartesianTraceDisplaySamples>(
+            result.samples).values;
+        values.reserve(points);
         for (std::uint32_t index = 0; index < points; ++index) {
             result.frequenciesHz.push_back(1'000'000.0 + index);
-            result.values.push_back(-static_cast<double>(index) / 10.0);
+            values.push_back(-static_cast<double>(index) / 10.0);
         }
         return result;
     }
 
     application::TraceDisplayFrame maximumTextFrame() const {
         auto result = frame(frames::kMaxSweepPoints);
+        auto& values = std::get<application::CartesianTraceDisplaySamples>(
+            result.samples).values;
         auto frequency = std::numeric_limits<double>::max();
         for (std::size_t index = result.frequenciesHz.size(); index-- > 0;) {
             result.frequenciesHz[index] = frequency;
-            result.values[index] = index % 2 == 0
+            values[index] = index % 2 == 0
                 ? std::numeric_limits<double>::max()
                 : std::numeric_limits<double>::lowest();
             frequency = std::nextafter(frequency, 0.0);

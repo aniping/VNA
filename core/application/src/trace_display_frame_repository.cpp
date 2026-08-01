@@ -4,10 +4,20 @@
 #include <cmath>
 #include <optional>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 namespace vna::application {
 namespace {
+
+bool isSupportedMeasurementType(domain::MeasurementType type) {
+    switch (type) {
+        case domain::MeasurementType::S11:
+        case domain::MeasurementType::S21:
+            return true;
+    }
+    return false;
+}
 
 std::optional<TraceDisplayFrameError> validateIdentity(
     const TraceDisplayFrame& frame) {
@@ -19,6 +29,18 @@ std::optional<TraceDisplayFrameError> validateIdentity(
         return TraceDisplayFrameError{
             .code = TraceDisplayFrameErrorCode::InvalidTraceId};
     }
+    if (frame.measurementId.value() == 0) {
+        return TraceDisplayFrameError{
+            .code = TraceDisplayFrameErrorCode::InvalidMeasurementId};
+    }
+    if (!isSupportedMeasurementType(frame.measurementType)) {
+        return TraceDisplayFrameError{
+            .code = TraceDisplayFrameErrorCode::InvalidMeasurementType};
+    }
+    if (frame.generation == 0) {
+        return TraceDisplayFrameError{
+            .code = TraceDisplayFrameErrorCode::InvalidGeneration};
+    }
     if (frame.sequenceNumber == 0) {
         return TraceDisplayFrameError{
             .code = TraceDisplayFrameErrorCode::InvalidSequenceNumber};
@@ -28,15 +50,43 @@ std::optional<TraceDisplayFrameError> validateIdentity(
 
 std::optional<TraceDisplayFrameError> validatePresentation(
     const TraceDisplayFrame& frame) {
-    if (frame.format != display_model::TraceFormat::LogMagnitude) {
-        return TraceDisplayFrameError{
-            .code = TraceDisplayFrameErrorCode::UnsupportedFormat};
+    const auto* cartesian =
+        std::get_if<CartesianTraceDisplaySamples>(&frame.samples);
+    const auto* complex =
+        std::get_if<ComplexTraceDisplaySamples>(&frame.samples);
+    if (frame.format == display_model::TraceFormat::LogMagnitude &&
+        cartesian != nullptr) {
+        return cartesian->unit == TraceDisplayUnit::Decibel
+            ? std::nullopt
+            : std::optional{TraceDisplayFrameError{
+                  .code = TraceDisplayFrameErrorCode::UnsupportedValueUnit}};
     }
-    if (frame.valueUnit != display_model::ScaleUnit::Decibel) {
-        return TraceDisplayFrameError{
-            .code = TraceDisplayFrameErrorCode::UnsupportedValueUnit};
+    if (frame.format == display_model::TraceFormat::Phase &&
+        cartesian != nullptr) {
+        return cartesian->unit == TraceDisplayUnit::Degree
+            ? std::nullopt
+            : std::optional{TraceDisplayFrameError{
+                  .code = TraceDisplayFrameErrorCode::UnsupportedValueUnit}};
     }
-    return std::nullopt;
+    if (frame.format == display_model::TraceFormat::Smith && complex != nullptr) {
+        return complex->unit == TraceDisplayUnit::Unitless
+            ? std::nullopt
+            : std::optional{TraceDisplayFrameError{
+                  .code = TraceDisplayFrameErrorCode::UnsupportedValueUnit}};
+    }
+    if (frame.format == display_model::TraceFormat::LogMagnitude ||
+        frame.format == display_model::TraceFormat::Phase ||
+        frame.format == display_model::TraceFormat::Smith) {
+        return TraceDisplayFrameError{
+            .code = TraceDisplayFrameErrorCode::SamplePayloadMismatch};
+    }
+    return TraceDisplayFrameError{
+        .code = TraceDisplayFrameErrorCode::UnsupportedFormat};
+}
+
+std::size_t sampleCount(const TraceDisplaySamples& samples) {
+    return std::visit(
+        [](const auto& payload) { return payload.values.size(); }, samples);
 }
 
 std::optional<TraceDisplayFrameError> validateShape(
@@ -46,7 +96,7 @@ std::optional<TraceDisplayFrameError> validateShape(
         return TraceDisplayFrameError{
             .code = TraceDisplayFrameErrorCode::InvalidPointCount};
     }
-    if (frame.values.size() != points) {
+    if (sampleCount(frame.samples) != points) {
         return TraceDisplayFrameError{
             .code = TraceDisplayFrameErrorCode::SampleCountMismatch};
     }
@@ -56,9 +106,23 @@ std::optional<TraceDisplayFrameError> validateShape(
 std::optional<TraceDisplayFrameError> validateValues(
     const TraceDisplayFrame& frame) {
     const auto finite = [](double value) { return std::isfinite(value); };
+    const auto finiteSamples = std::visit(
+        [finite](const auto& payload) {
+            return std::all_of(
+                payload.values.cbegin(),
+                payload.values.cend(),
+                [finite](const auto& value) {
+                    if constexpr (std::is_same_v<decltype(value), const double&>) {
+                        return finite(value);
+                    } else {
+                        return finite(value.real) && finite(value.imaginary);
+                    }
+                });
+        },
+        frame.samples);
     if (!std::all_of(
             frame.frequenciesHz.cbegin(), frame.frequenciesHz.cend(), finite) ||
-        !std::all_of(frame.values.cbegin(), frame.values.cend(), finite)) {
+        !finiteSamples) {
         return TraceDisplayFrameError{
             .code = TraceDisplayFrameErrorCode::NonFiniteValue};
     }

@@ -50,14 +50,19 @@ std::optional<TraceDisplayFrame> buildDisplayFrame(
     // frames::Result intentionally exposes const values; this bounded copy is
     // explicit rather than disguised as a move from const storage.
     return TraceDisplayFrame{
-        frames::FrameId{raw.context.frameId.value()},
-        preset.trace.id,
-        preset.stateRevision,
-        raw.context.sequenceNumber,
-        display_model::TraceFormat::LogMagnitude,
-        display_model::ScaleUnit::Decibel,
-        std::move(frequencies.value()),
-        values.value()};
+        .frameId = frames::FrameId{raw.context.frameId.value()},
+        .traceId = preset.trace.id,
+        .measurementId = preset.measurement.id,
+        .measurementType = preset.measurement.type,
+        .stateRevision = preset.stateRevision,
+        .generation = 1,
+        .sequenceNumber = raw.context.sequenceNumber,
+        .format = display_model::TraceFormat::LogMagnitude,
+        .frequenciesHz = std::move(frequencies.value()),
+        .samples = CartesianTraceDisplaySamples{
+            .unit = TraceDisplayUnit::Decibel,
+            .values = values.value()},
+    };
 }
 
 }  // namespace

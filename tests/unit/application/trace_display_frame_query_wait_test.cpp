@@ -109,12 +109,16 @@ protected:
         return {
             .frameId = frames::FrameId{sequence + 10},
             .traceId = display_model::TraceId{1},
+            .measurementId = domain::MeasurementId{1},
+            .measurementType = domain::MeasurementType::S11,
             .stateRevision = 3,
+            .generation = 1,
             .sequenceNumber = sequence,
             .format = display_model::TraceFormat::LogMagnitude,
-            .valueUnit = display_model::ScaleUnit::Decibel,
             .frequenciesHz = {1'000'000.0, 2'000'000.0},
-            .values = {-3.0, -6.0},
+            .samples = CartesianTraceDisplaySamples{
+                .unit = TraceDisplayUnit::Decibel,
+                .values = {-3.0, -6.0}},
         };
     }
 

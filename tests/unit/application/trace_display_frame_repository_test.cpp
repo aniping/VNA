@@ -21,12 +21,16 @@ TraceDisplayFrame validFrame(
     return TraceDisplayFrame{
         .frameId = frameId,
         .traceId = traceId,
+        .measurementId = domain::MeasurementId{7},
+        .measurementType = domain::MeasurementType::S11,
         .stateRevision = 19,
+        .generation = 1,
         .sequenceNumber = sequenceNumber,
         .format = display_model::TraceFormat::LogMagnitude,
-        .valueUnit = display_model::ScaleUnit::Decibel,
         .frequenciesHz = {1'000'000.0, 1'500'000.0, 2'000'000.0},
-        .values = {-6.020599913, -12.0, -3.0},
+        .samples = CartesianTraceDisplaySamples{
+            .unit = TraceDisplayUnit::Decibel,
+            .values = {-6.020599913, -12.0, -3.0}},
     };
 }
 
@@ -52,9 +56,11 @@ TEST(TraceDisplayFrameRepositoryTest, PublishesAndReturnsLatestImmutableFrame) {
     EXPECT_EQ(latest->stateRevision, 19U);
     EXPECT_EQ(latest->sequenceNumber, 5U);
     EXPECT_EQ(latest->format, display_model::TraceFormat::LogMagnitude);
-    EXPECT_EQ(latest->valueUnit, display_model::ScaleUnit::Decibel);
+    EXPECT_EQ(latest->measurementId, domain::MeasurementId{7});
     EXPECT_EQ(latest->frequenciesHz.size(), 3U);
-    EXPECT_DOUBLE_EQ(latest->values[0], -6.020599913);
+    const auto& samples = std::get<CartesianTraceDisplaySamples>(latest->samples);
+    EXPECT_EQ(samples.unit, TraceDisplayUnit::Decibel);
+    EXPECT_DOUBLE_EQ(samples.values[0], -6.020599913);
 }
 
 TEST(TraceDisplayFrameRepositoryTest, RejectsZeroCapacity) {
@@ -81,37 +87,23 @@ TEST(TraceDisplayFrameRepositoryTest, RejectsZeroFrameTraceAndSequenceIds) {
     EXPECT_EQ(repository.latest(display_model::TraceId{3}), nullptr);
 }
 
-TEST(TraceDisplayFrameRepositoryTest, RejectsUnsupportedFormatAndValueUnit) {
-    TraceDisplayFrameRepository repository{2};
-    auto phase = validFrame();
-    phase.format = display_model::TraceFormat::Phase;
-    expectPublishError(
-        repository, std::move(phase),
-        TraceDisplayFrameErrorCode::UnsupportedFormat);
-    auto invalidUnit = validFrame();
-    invalidUnit.valueUnit = static_cast<display_model::ScaleUnit>(99);
-    expectPublishError(
-        repository, std::move(invalidUnit),
-        TraceDisplayFrameErrorCode::UnsupportedValueUnit);
-    EXPECT_EQ(repository.latest(display_model::TraceId{3}), nullptr);
-}
-
 TEST(TraceDisplayFrameRepositoryTest, RejectsInvalidPointCountsAndMismatch) {
     TraceDisplayFrameRepository repository{2};
     auto tooShort = validFrame();
     tooShort.frequenciesHz.resize(1);
-    tooShort.values.resize(1);
+    std::get<CartesianTraceDisplaySamples>(tooShort.samples).values.resize(1);
     expectPublishError(
         repository, std::move(tooShort),
         TraceDisplayFrameErrorCode::InvalidPointCount);
     auto tooLong = validFrame();
     tooLong.frequenciesHz.assign(frames::kMaxSweepPoints + 1, 1.0);
-    tooLong.values.assign(frames::kMaxSweepPoints + 1, 1.0);
+    std::get<CartesianTraceDisplaySamples>(tooLong.samples).values.assign(
+        frames::kMaxSweepPoints + 1, 1.0);
     expectPublishError(
         repository, std::move(tooLong),
         TraceDisplayFrameErrorCode::InvalidPointCount);
     auto mismatch = validFrame();
-    mismatch.values.pop_back();
+    std::get<CartesianTraceDisplaySamples>(mismatch.samples).values.pop_back();
     expectPublishError(
         repository, std::move(mismatch),
         TraceDisplayFrameErrorCode::SampleCountMismatch);
@@ -127,7 +119,8 @@ TEST(TraceDisplayFrameRepositoryTest, RejectsNonFiniteOrUnorderedSamples) {
         repository, std::move(nonFiniteFrequency),
         TraceDisplayFrameErrorCode::NonFiniteValue);
     auto nonFiniteValue = validFrame();
-    nonFiniteValue.values[1] = std::numeric_limits<double>::quiet_NaN();
+    std::get<CartesianTraceDisplaySamples>(nonFiniteValue.samples).values[1] =
+        std::numeric_limits<double>::quiet_NaN();
     expectPublishError(
         repository, std::move(nonFiniteValue),
         TraceDisplayFrameErrorCode::NonFiniteValue);
@@ -149,14 +142,16 @@ TEST(TraceDisplayFrameRepositoryTest, ReplaysSameFrameAndSequenceIdempotently) {
     const auto first = repository.publish(validFrame());
     ASSERT_TRUE(first.hasValue());
     auto replay = validFrame();
-    replay.values[0] = -99.0;
+    std::get<CartesianTraceDisplaySamples>(replay.samples).values[0] = -99.0;
 
     const auto repeated = repository.publish(std::move(replay));
 
     ASSERT_TRUE(repeated.hasValue());
     EXPECT_EQ(repeated.value(), first.value());
-    EXPECT_DOUBLE_EQ(repository.latest(display_model::TraceId{3})->values[0],
-                     -6.020599913);
+    const auto replayed = repository.latest(display_model::TraceId{3});
+    EXPECT_DOUBLE_EQ(
+        std::get<CartesianTraceDisplaySamples>(replayed->samples).values[0],
+        -6.020599913);
 }
 
 TEST(TraceDisplayFrameRepositoryTest, RejectsSequenceRegressionAtomically) {
@@ -200,7 +195,8 @@ TEST(TraceDisplayFrameRepositoryTest, KeepsMaximumFramesIndependentPerTrace) {
     TraceDisplayFrameRepository repository{2};
     auto maximum = validFrame();
     maximum.frequenciesHz.resize(frames::kMaxSweepPoints);
-    maximum.values.assign(frames::kMaxSweepPoints, -3.0);
+    std::get<CartesianTraceDisplaySamples>(maximum.samples).values.assign(
+        frames::kMaxSweepPoints, -3.0);
     for (std::size_t index = 0; index < frames::kMaxSweepPoints; ++index) {
         maximum.frequenciesHz[index] = 1'000'000.0 + index;
     }
@@ -230,7 +226,9 @@ TEST(TraceDisplayFrameRepositoryTest, DiscardReleasesCapacityAndKeepsReaders) {
 
     EXPECT_EQ(repository.latest(display_model::TraceId{3}), nullptr);
     EXPECT_EQ(reader->traceId, display_model::TraceId{3});
-    EXPECT_DOUBLE_EQ(reader->values[0], -6.020599913);
+    EXPECT_DOUBLE_EQ(
+        std::get<CartesianTraceDisplaySamples>(reader->samples).values[0],
+        -6.020599913);
     const auto replacement = repository.publish(
         validFrame(display_model::TraceId{4}, frames::FrameId{21}, 1));
     EXPECT_TRUE(replacement.hasValue());

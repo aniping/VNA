@@ -51,17 +51,23 @@ protected:
         application::TraceDisplayFrame result{
             .frameId = frames::FrameId{sequence},
             .traceId = traceId_,
+            .measurementId = preset_.continuousTracePreset.measurement.id,
+            .measurementType = preset_.continuousTracePreset.measurement.type,
             .stateRevision = 0,
+            .generation = 1,
             .sequenceNumber = sequence,
             .format = display_model::TraceFormat::LogMagnitude,
-            .valueUnit = display_model::ScaleUnit::Decibel,
+            .samples = application::CartesianTraceDisplaySamples{
+                .unit = application::TraceDisplayUnit::Decibel},
         };
         result.frequenciesHz.resize(frames::kMaxSweepPoints);
-        result.values.resize(frames::kMaxSweepPoints);
+        auto& values = std::get<application::CartesianTraceDisplaySamples>(
+            result.samples).values;
+        values.resize(frames::kMaxSweepPoints);
         auto frequency = std::numeric_limits<double>::max();
         for (std::size_t index = frames::kMaxSweepPoints; index-- > 0;) {
             result.frequenciesHz[index] = frequency;
-            result.values[index] = index % 2 == 0
+            values[index] = index % 2 == 0
                 ? std::numeric_limits<double>::max()
                 : std::numeric_limits<double>::lowest();
             frequency = std::nextafter(frequency, 0.0);

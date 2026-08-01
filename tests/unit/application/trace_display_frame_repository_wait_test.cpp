@@ -20,12 +20,16 @@ TraceDisplayFrame frameFor(
     return {
         .frameId = frames::FrameId{sequence + 10},
         .traceId = traceId,
+        .measurementId = domain::MeasurementId{1},
+        .measurementType = domain::MeasurementType::S11,
         .stateRevision = 7,
+        .generation = 1,
         .sequenceNumber = sequence,
         .format = display_model::TraceFormat::LogMagnitude,
-        .valueUnit = display_model::ScaleUnit::Decibel,
         .frequenciesHz = {1'000'000.0, 2'000'000.0},
-        .values = {-3.0, -6.0},
+        .samples = CartesianTraceDisplaySamples{
+            .unit = TraceDisplayUnit::Decibel,
+            .values = {-3.0, -6.0}},
     };
 }
 
@@ -170,7 +174,9 @@ TEST(TraceDisplayFrameRepositoryWaitTest, DiscardKeepsExistingReaderAlive) {
 
     EXPECT_EQ(repository.latest(display_model::TraceId{1}), nullptr);
     EXPECT_EQ(reader->sequenceNumber, 1U);
-    EXPECT_DOUBLE_EQ(reader->values.front(), -3.0);
+    EXPECT_DOUBLE_EQ(
+        std::get<CartesianTraceDisplaySamples>(reader->samples).values.front(),
+        -3.0);
 }
 
 TEST(TraceDisplayFrameRepositoryWaitTest, DiscardStartRaceCannotHang) {

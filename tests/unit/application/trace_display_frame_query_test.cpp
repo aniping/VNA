@@ -44,12 +44,16 @@ TraceDisplayFrame validFrame(
     return {
         .frameId = frames::FrameId{11},
         .traceId = traceId,
+        .measurementId = domain::MeasurementId{1},
+        .measurementType = domain::MeasurementType::S11,
         .stateRevision = stateRevision,
+        .generation = 1,
         .sequenceNumber = 1,
         .format = display_model::TraceFormat::LogMagnitude,
-        .valueUnit = display_model::ScaleUnit::Decibel,
         .frequenciesHz = {1'000'000.0, 1'500'000.0, 2'000'000.0},
-        .values = {-6.0, -12.0, -3.0},
+        .samples = CartesianTraceDisplaySamples{
+            .unit = TraceDisplayUnit::Decibel,
+            .values = {-6.0, -12.0, -3.0}},
     };
 }
 

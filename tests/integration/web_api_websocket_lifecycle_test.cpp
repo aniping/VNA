@@ -61,12 +61,16 @@ protected:
         return {
             .frameId = frames::FrameId{sequence},
             .traceId = traceId_,
+            .measurementId = preset_.continuousTracePreset.measurement.id,
+            .measurementType = preset_.continuousTracePreset.measurement.type,
             .stateRevision = 0,
+            .generation = 1,
             .sequenceNumber = sequence,
             .format = display_model::TraceFormat::LogMagnitude,
-            .valueUnit = display_model::ScaleUnit::Decibel,
             .frequenciesHz = {10'000'000.0, 10'100'000.0},
-            .values = {-10.0, -11.0},
+            .samples = application::CartesianTraceDisplaySamples{
+                .unit = application::TraceDisplayUnit::Decibel,
+                .values = {-10.0, -11.0}},
         };
     }
 

@@ -69,12 +69,16 @@ protected:
         return TraceDisplayFrame{
             .frameId = frames::FrameId{frameId},
             .traceId = traceId,
+            .measurementId = measurementId_,
+            .measurementType = domain::MeasurementType::S11,
             .stateRevision = bus_.snapshot().stateRevision,
+            .generation = 1,
             .sequenceNumber = 1,
             .format = display_model::TraceFormat::LogMagnitude,
-            .valueUnit = display_model::ScaleUnit::Decibel,
             .frequenciesHz = {1'000'000.0, 2'000'000.0},
-            .values = {-6.0, -3.0},
+            .samples = CartesianTraceDisplaySamples{
+                .unit = TraceDisplayUnit::Decibel,
+                .values = {-6.0, -3.0}},
         };
     }
 

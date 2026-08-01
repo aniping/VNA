@@ -141,12 +141,16 @@ TEST(SingleSweepExecutorFailureTest, PublishFailureKeepsExistingFrame) {
     const auto existing = repository.publish(TraceDisplayFrame{
         .frameId = frames::FrameId{40},
         .traceId = display_model::TraceId{9},
+        .measurementId = domain::MeasurementId{9},
+        .measurementType = domain::MeasurementType::S11,
         .stateRevision = 6,
+        .generation = 1,
         .sequenceNumber = 1,
         .format = display_model::TraceFormat::LogMagnitude,
-        .valueUnit = display_model::ScaleUnit::Decibel,
         .frequenciesHz = {1.0, 2.0},
-        .values = {-1.0, -2.0},
+        .samples = CartesianTraceDisplaySamples{
+            .unit = TraceDisplayUnit::Decibel,
+            .values = {-1.0, -2.0}},
     });
     ASSERT_TRUE(existing.hasValue());
     SingleSweepExecutor executor{

@@ -83,14 +83,19 @@ SweepPipelineResult buildSingleSweepFrame(
         return SweepPipelineCanceled{};
     }
     return TraceDisplayFrame{
-        work.frameContext.frameId,
-        work.traceId,
-        work.frameContext.stateRevision,
-        work.frameContext.sequenceNumber,
-        display_model::TraceFormat::LogMagnitude,
-        display_model::ScaleUnit::Decibel,
-        std::move(frequencies.value()),
-        values.value()};
+        .frameId = work.frameContext.frameId,
+        .traceId = work.traceId,
+        .measurementId = work.measurement.id,
+        .measurementType = work.measurement.type,
+        .stateRevision = work.frameContext.stateRevision,
+        .generation = 1,
+        .sequenceNumber = work.frameContext.sequenceNumber,
+        .format = display_model::TraceFormat::LogMagnitude,
+        .frequenciesHz = std::move(frequencies.value()),
+        .samples = CartesianTraceDisplaySamples{
+            .unit = TraceDisplayUnit::Decibel,
+            .values = values.value()},
+    };
 }
 
 }  // namespace vna::application::internal

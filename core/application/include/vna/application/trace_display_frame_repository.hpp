@@ -16,6 +16,9 @@ namespace vna::application {
 enum class TraceDisplayFrameErrorCode {
     InvalidFrameId,
     InvalidTraceId,
+    InvalidMeasurementId,
+    InvalidMeasurementType,
+    InvalidGeneration,
     InvalidSequenceNumber,
     InvalidPointCount,
     SampleCountMismatch,
@@ -23,6 +26,7 @@ enum class TraceDisplayFrameErrorCode {
     FrequencyNotStrictlyIncreasing,
     UnsupportedFormat,
     UnsupportedValueUnit,
+    SamplePayloadMismatch,
     SequenceRegression,
     CapacityExceeded,
 };
