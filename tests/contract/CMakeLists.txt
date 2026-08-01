@@ -1,0 +1,12 @@
+add_executable(
+    vna_platform_contract_tests
+    platform/executable_path_contract_test.cpp
+    platform/state_directory_contract_test.cpp
+)
+target_link_libraries(
+    vna_platform_contract_tests
+    PRIVATE
+        vna::platform
+        GTest::gtest_main
+)
+gtest_discover_tests(vna_platform_contract_tests)

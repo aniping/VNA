@@ -1,0 +1,29 @@
+add_executable(
+    vna_web_api_tests
+    ../web_api_channel_state_test.cpp
+    ../web_api_display_frame_test.cpp
+    ../web_api_error_test.cpp
+    ../web_api_idempotency_test.cpp
+    ../web_api_operation_test.cpp
+    ../web_api_scale_test.cpp
+    ../web_api_single_sweep_test.cpp
+    ../web_api_static_files_test.cpp
+    ../web_api_text_id_test.cpp
+    ../web_api_test.cpp
+    ../web_api_websocket_latest_test.cpp
+    ../web_api_websocket_lifecycle_test.cpp
+    ../web_api_websocket_test.cpp
+)
+target_link_libraries(
+    vna_web_api_tests
+    PRIVATE
+        vna::web_api
+        vna::simulation
+        httplib::httplib
+        nlohmann_json::nlohmann_json
+        GTest::gtest_main
+)
+target_include_directories(
+    vna_web_api_tests PRIVATE ${PROJECT_SOURCE_DIR}/tests/support/include
+)
+gtest_discover_tests(vna_web_api_tests PROPERTIES TIMEOUT 10)
