@@ -66,6 +66,38 @@ TEST(DisplayWorkspaceTest, UpdatesTraceFormat) {
     EXPECT_EQ(workspace.snapshot().traces[0].format, TraceFormat::Phase);
 }
 
+TEST(DisplayWorkspaceTest, RebindsOnlyTargetTraceMeasurement) {
+    DisplayWorkspace workspace;
+    const auto windowId = workspace.createWindow();
+    const auto first = workspace.createTrace(
+        windowId, domain::MeasurementId{7}, TraceFormat::LogMagnitude);
+    const auto second = workspace.createTrace(
+        windowId, domain::MeasurementId{8}, TraceFormat::Phase);
+    ASSERT_TRUE(first.hasValue());
+    ASSERT_TRUE(second.hasValue());
+
+    const auto updated = workspace.updateTraceMeasurement(
+        first.value(), domain::MeasurementId{9});
+
+    ASSERT_TRUE(updated.hasValue());
+    EXPECT_EQ(updated.value(), first.value());
+    const auto snapshot = workspace.snapshot();
+    ASSERT_EQ(snapshot.traces.size(), 2U);
+    EXPECT_EQ(snapshot.traces[0].measurementId, domain::MeasurementId{9});
+    EXPECT_EQ(snapshot.traces[1].measurementId, domain::MeasurementId{8});
+}
+
+TEST(DisplayWorkspaceTest, RejectsMeasurementRebindForMissingTrace) {
+    DisplayWorkspace workspace;
+
+    const auto updated = workspace.updateTraceMeasurement(
+        TraceId{42}, domain::MeasurementId{9});
+
+    ASSERT_FALSE(updated.hasValue());
+    EXPECT_EQ(updated.error().code, DisplayErrorCode::TraceNotFound);
+    EXPECT_TRUE(workspace.snapshot().traces.empty());
+}
+
 TEST(DisplayWorkspaceTest, RemovesOnlyTargetTrace) {
     DisplayWorkspace workspace;
     const auto windowId = workspace.createWindow();

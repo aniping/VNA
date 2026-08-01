@@ -107,6 +107,9 @@ public:
     [[nodiscard]] Result<TraceId> updateTraceFormat(
         TraceId traceId,
         TraceFormat format);
+    [[nodiscard]] Result<TraceId> updateTraceMeasurement(
+        TraceId traceId,
+        domain::MeasurementId measurementId);
     [[nodiscard]] Result<TraceId> updateTraceScalePerDivision(
         TraceId traceId,
         double scalePerDivision);

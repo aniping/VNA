@@ -87,6 +87,24 @@ Result<TraceId> DisplayWorkspace::updateTraceFormat(
     return Result<TraceId>{traceId};
 }
 
+Result<TraceId> DisplayWorkspace::updateTraceMeasurement(
+    TraceId traceId,
+    domain::MeasurementId measurementId) {
+    const auto trace = std::find_if(
+        traces_.begin(),
+        traces_.end(),
+        [traceId](const TraceState& candidate) {
+            return candidate.id == traceId;
+        });
+    if (trace == traces_.end()) {
+        return Result<TraceId>{
+            DisplayError{.code = DisplayErrorCode::TraceNotFound}};
+    }
+
+    trace->measurementId = measurementId;
+    return Result<TraceId>{traceId};
+}
+
 Result<TraceId> DisplayWorkspace::updateTraceScalePerDivision(
     TraceId traceId,
     double scalePerDivision) {
