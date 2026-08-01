@@ -2,10 +2,16 @@
 
 #include <httplib.h>
 
+#include <atomic>
+#include <chrono>
+#include <functional>
+#include <future>
 #include <string>
 #include <thread>
 
 namespace {
+
+using namespace std::chrono_literals;
 
 class HttplibCompatibilityTest : public ::testing::Test {
 protected:
@@ -20,6 +26,32 @@ protected:
                 while (socket.read(message)) {
                     socket.send(message);
                 }
+            });
+        server_.WebSocket(
+            "/close-now",
+            [this](const httplib::Request&, httplib::ws::WebSocket& socket) {
+                auto close = [this, &socket](std::promise<void>& ready) {
+                    ready.set_value();
+                    closeAllowed_.wait();
+                    socket.close_now(
+                        httplib::ws::CloseStatus::GoingAway,
+                        "server stopping");
+                    closeCallsReturned_.fetch_add(1);
+                };
+                std::thread firstCloser(close, std::ref(firstCloserReady_));
+                std::thread secondCloser(close, std::ref(secondCloserReady_));
+                socket.send("reader-ready");
+                std::string ignored;
+                readResult_.set_value(socket.read(ignored));
+                firstCloser.join();
+                secondCloser.join();
+                closeHandlerReturned_.set_value();
+            });
+        server_.WebSocket(
+            "/regular-close",
+            [this](const httplib::Request&, httplib::ws::WebSocket& socket) {
+                socket.close(httplib::ws::CloseStatus::Normal, "complete");
+                regularCloseReturned_.set_value();
             });
 
         port_ = server_.bind_to_any_port("127.0.0.1");
@@ -38,6 +70,14 @@ protected:
     }
 
     httplib::Server server_;
+    std::promise<void> firstCloserReady_;
+    std::promise<void> secondCloserReady_;
+    std::promise<void> allowClose_;
+    std::shared_future<void> closeAllowed_{allowClose_.get_future()};
+    std::promise<void> closeHandlerReturned_;
+    std::promise<void> regularCloseReturned_;
+    std::promise<httplib::ws::ReadResult> readResult_;
+    std::atomic<int> closeCallsReturned_{0};
     int port_{-1};
     std::thread serverThread_;
 };
@@ -63,6 +103,56 @@ TEST_F(HttplibCompatibilityTest, WebSocketRoundTripCompletesOnCurrentToolchain) 
 
     EXPECT_EQ(response, "frame-1");
     client.close();
+}
+
+TEST_F(HttplibCompatibilityTest, ServerCloseCompletesNormalHandshake) {
+    auto returned = regularCloseReturned_.get_future();
+    httplib::ws::WebSocketClient client{
+        "ws://127.0.0.1:" + std::to_string(port_) + "/regular-close"};
+    ASSERT_TRUE(client.connect());
+    auto readResult = std::async(std::launch::async, [&client]() {
+        std::string ignored;
+        return client.read(ignored);
+    });
+
+    ASSERT_EQ(returned.wait_for(2s), std::future_status::ready);
+    ASSERT_EQ(readResult.wait_for(2s), std::future_status::ready);
+    EXPECT_EQ(readResult.get(), httplib::ws::ReadResult::Fail);
+}
+
+TEST_F(HttplibCompatibilityTest, ConcurrentImmediateCloseWakesReader) {
+    auto firstReady = firstCloserReady_.get_future();
+    auto secondReady = secondCloserReady_.get_future();
+    auto returned = closeHandlerReturned_.get_future();
+    auto readResult = readResult_.get_future();
+    httplib::ws::WebSocketClient client{
+        "ws://127.0.0.1:" + std::to_string(port_) + "/close-now"};
+    client.set_read_timeout(2, 0);
+    ASSERT_TRUE(client.connect());
+    std::string readiness;
+    const auto readinessResult = client.read(readiness);
+    const auto firstStatus = firstReady.wait_for(2s);
+    const auto secondStatus = secondReady.wait_for(2s);
+
+    allowClose_.set_value();
+
+    EXPECT_EQ(readinessResult, httplib::ws::ReadResult::Text);
+    EXPECT_EQ(readiness, "reader-ready");
+    ASSERT_EQ(firstStatus, std::future_status::ready);
+    ASSERT_EQ(secondStatus, std::future_status::ready);
+    ASSERT_EQ(returned.wait_for(2s), std::future_status::ready);
+    ASSERT_EQ(readResult.wait_for(2s), std::future_status::ready);
+    EXPECT_EQ(readResult.get(), httplib::ws::ReadResult::Fail);
+    EXPECT_EQ(closeCallsReturned_.load(), 2);
+
+    // Repeated new transports exercise descriptor reuse after the server-owned
+    // close claim; a double close could otherwise terminate a later client.
+    for (int request = 0; request < 64; ++request) {
+        httplib::Client healthClient{"127.0.0.1", port_};
+        const auto response = healthClient.Get("/health");
+        ASSERT_TRUE(response);
+        EXPECT_EQ(response->status, httplib::StatusCode::OK_200);
+    }
 }
 
 }  // namespace
