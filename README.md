@@ -139,6 +139,12 @@ Scale/Div，payload 为 `{"traceId": <id>, "scalePerDivision": <number>}`。
 帧；Trace 存在但尚无可用帧时返回空的 `204`，Trace 不存在时返回 `404`。该
 接口用于读取最新完整帧，不作为连续曲线高频轮询通道。
 
+`WS /api/v1/display-frames` 是连续显示通道，固定推送 FactoryPreset 的唯一默认
+Trace。每次连接（包括重连）都从新的 sequence baseline 开始；若已有 retained
+latest 帧会立即发送。之后采用 latest-only 语义，慢客户端可以跳过中间帧但不会
+倒退 sequence，服务端不保存每连接历史队列。客户端发来的 WebSocket 消息不作为
+业务命令；连续曲线必须使用该推送通道，不得轮询上面的 REST 诊断接口。
+
 ## 前端开发
 
 需要 Node.js 20.19 或更高版本和 pnpm 11.9.0。保持 `vna-server` 运行，另开
