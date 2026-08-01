@@ -21,6 +21,7 @@ public:
         application::CommandBus& commandBus,
         application::OperationManager& operations,
         const application::TraceDisplayFrameQuery& displayFrames,
+        display_model::TraceId defaultTraceId,
         std::optional<std::filesystem::path> webRoot = std::nullopt);
     ~WebApi();
 

@@ -62,7 +62,11 @@ protected:
           handler_(executor_),
           commandBus_(application::InstrumentId{"instrument-1"}, handler_),
           query_(commandBus_, repository_),
-          webApi_(commandBus_, operations_, query_) {}
+          webApi_(
+              commandBus_,
+              operations_,
+              query_,
+              display_model::TraceId{1}) {}
 
     void SetUp() override {
         port_ = webApi_.bindToAnyPort("127.0.0.1");

@@ -73,7 +73,11 @@ protected:
 
     void startServer(const std::filesystem::path& root) {
         webApi_ = std::make_unique<WebApi>(
-            commandBus_, operations_, query_, root);
+            commandBus_,
+            operations_,
+            query_,
+            display_model::TraceId{1},
+            root);
         port_ = webApi_->bindToAnyPort("127.0.0.1");
         ASSERT_GT(port_, 0);
         serverThread_ = std::thread([this] {
@@ -88,7 +92,12 @@ protected:
 
     void expectInvalidRoot(const std::filesystem::path& root) {
         EXPECT_THROW(
-            WebApi(commandBus_, operations_, query_, root),
+            WebApi(
+                commandBus_,
+                operations_,
+                query_,
+                display_model::TraceId{1},
+                root),
             std::invalid_argument);
     }
 

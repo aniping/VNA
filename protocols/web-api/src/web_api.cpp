@@ -70,10 +70,12 @@ public:
         application::CommandBus& commandBus,
         application::OperationManager& operations,
         const application::TraceDisplayFrameQuery& displayFrames,
+        display_model::TraceId defaultTraceId,
         const std::optional<std::filesystem::path>& webRoot)
         : commandBus_(commandBus),
           operations_(operations),
-          displayFrames_(displayFrames) {
+          displayFrames_(displayFrames),
+          defaultTraceId_(defaultTraceId) {
         installRoutes();
         if (webRoot) {
             installIndexRoutes(*webRoot);
@@ -87,6 +89,9 @@ public:
     application::CommandBus& commandBus_;
     const application::OperationManager& operations_;
     const application::TraceDisplayFrameQuery& displayFrames_;
+    // This mandatory target is composed from FactoryPreset; a later adapter
+    // uses it without guessing or scanning display state.
+    const display_model::TraceId defaultTraceId_;
     httplib::Server server_;
 };
 
@@ -94,11 +99,12 @@ WebApi::WebApi(
     application::CommandBus& commandBus,
     application::OperationManager& operations,
     const application::TraceDisplayFrameQuery& displayFrames,
+    display_model::TraceId defaultTraceId,
     std::optional<std::filesystem::path> webRoot)
     : impl_([&] {
           const auto validated = detail::validateWebRoot(webRoot);
           return std::make_unique<Impl>(
-              commandBus, operations, displayFrames, validated);
+              commandBus, operations, displayFrames, defaultTraceId, validated);
       }()) {}
 
 WebApi::~WebApi() = default;

@@ -153,6 +153,7 @@ int runServer() {
 
     constexpr std::size_t traceCapacity = 1024;
     auto preset = vna::application::makeFactoryPreset();
+    const auto defaultTraceId = preset.continuousTracePreset.trace.id;
     // Declaration order is the borrowing graph. Reverse destruction stops Web
     // access first, then CommandBus and publisher, before acquisition and repos.
     vna::application::OperationManager operationManager;
@@ -177,7 +178,11 @@ int runServer() {
     // WebApi validates index.html and assets without following unsafe paths.
     // Construct it before the logger so a broken release never creates logs.
     vna::web_api::WebApi webApi{
-        commandBus, operationManager, displayFrameQuery, webRoot};
+        commandBus,
+        operationManager,
+        displayFrameQuery,
+        defaultTraceId,
+        webRoot};
     auto logOptions = vna::logging::JsonLinesLoggerOptions{logDirectory};
     // The portable launcher owns the human console; JSONL remains authoritative.
     logOptions.console = nullptr;

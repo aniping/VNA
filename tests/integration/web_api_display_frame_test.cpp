@@ -125,7 +125,8 @@ protected:
         vna::test::stoppedSingleSweepHandler()};
     application::TraceDisplayFrameRepository repository_{2};
     application::TraceDisplayFrameQuery query_{commandBus_, repository_};
-    WebApi webApi_{commandBus_, operations_, query_};
+    WebApi webApi_{
+        commandBus_, operations_, query_, display_model::TraceId{1}};
     int port_{-1};
     std::thread serverThread_;
 };
