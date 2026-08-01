@@ -33,7 +33,7 @@ test('Meas exposes only the four supported S-Parameter command buttons', () => {
 test('production UI has no create Channel, Measurement, Trace, or Window path', () => {
   const productionSources = `${app}\n${mainScreen}`
   const handler = app.match(
-    /async function handleUpdateTraceMeasurementType[\s\S]*?\n}\n\nfunction replaceFrame/,
+    /async function handleUpdateTraceMeasurementType[\s\S]*?\r?\n}\r?\n\r?\nfunction replaceFrame/,
   )?.[0] ?? ''
   assert.doesNotMatch(productionSources, /createChannel|createMeasurement|createTrace|createWindow/)
   assert.match(mainScreen, /<MeasurementSofttool[\s\S]*?:measurement-type=[\s\S]*?:busy=/)
