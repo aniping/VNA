@@ -161,8 +161,9 @@ pnpm run dev
 
 当前单窗口界面只渲染服务快照中真实存在的 Window：一个 Window 对应一个主图，
 多个 Window 也不会补齐不存在的空白 Diagram。Softtool 默认关闭，点击 `Meas`
-可打开或重新关闭 Measurement Softtool。Meas 只呈现活动 Trace 的 S 参数测量量；
-修改测量量的命令契约尚未开放，因此相关入口保持禁用，不创建本地 Trace 或 Window。
+可打开或重新关闭 Measurement Softtool。后端 `setTraceMeasurementType` 命令可将
+活动 Trace 切换到 S11、S12、S21 或 S22；当前前端入口尚未接线，因此仍保持禁用，
+不创建本地 Trace 或 Window。
 默认 S21 Trace 的色块和曲线为绿色；活动 Trace 信息条、活动 Channel 和右上角
 真实 WindowId 使用蓝/青蓝色高亮，所有 Diagram 外框保持统一细深灰蓝（手册
 第 112、127–129、935–936 页，ZNA v41 补充）。尚无测量帧时 Diagram 显示空态；后台连续采集

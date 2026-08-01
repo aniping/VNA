@@ -19,13 +19,21 @@ std::optional<std::uint64_t> expectedRevision(const Json& request) {
     return request.at("expectedStateRevision").get<std::uint64_t>();
 }
 
-domain::MeasurementType measurementTypeFromJson(const Json& payload) {
-    const auto type = payload.at("type").get<std::string>();
+domain::MeasurementType measurementTypeFromJson(
+    const Json& payload,
+    const char* field) {
+    const auto type = payload.at(field).get<std::string>();
     if (type == "S11") {
         return domain::MeasurementType::S11;
     }
     if (type == "S21") {
         return domain::MeasurementType::S21;
+    }
+    if (type == "S12") {
+        return domain::MeasurementType::S12;
+    }
+    if (type == "S22") {
+        return domain::MeasurementType::S22;
     }
     throw std::invalid_argument{"unsupported measurement type"};
 }
@@ -42,6 +50,11 @@ display_model::TraceFormat traceFormatFromJson(const Json& payload) {
         return display_model::TraceFormat::Smith;
     }
     throw std::invalid_argument{"unsupported trace format"};
+}
+
+display_model::TraceId traceIdFromJson(const Json& payload) {
+    return display_model::TraceId{
+        payload.at("traceId").get<std::uint64_t>()};
 }
 
 domain::SweepSettings sweepSettingsFromJson(const Json& payload) {
@@ -74,7 +87,7 @@ application::CommandPayload commandPayloadFromJson(
     if (type == "createMeasurement") {
         return application::CreateMeasurementCommand{
             domain::ChannelId{payload.at("channelId").get<std::uint64_t>()},
-            measurementTypeFromJson(payload)};
+            measurementTypeFromJson(payload, "type")};
     }
     if (type == "createWindow") {
         return application::CreateWindowCommand{};
@@ -89,14 +102,17 @@ application::CommandPayload commandPayloadFromJson(
     }
     if (type == "updateTraceFormat") {
         return application::UpdateTraceFormatCommand{
-            display_model::TraceId{
-                payload.at("traceId").get<std::uint64_t>()},
+            traceIdFromJson(payload),
             traceFormatFromJson(payload)};
+    }
+    if (type == "setTraceMeasurementType") {
+        return application::SetTraceMeasurementTypeCommand{
+            traceIdFromJson(payload),
+            measurementTypeFromJson(payload, "measurementType")};
     }
     if (type == "updateTraceScalePerDivision") {
         return application::UpdateTraceScalePerDivisionCommand{
-            display_model::TraceId{
-                payload.at("traceId").get<std::uint64_t>()},
+            traceIdFromJson(payload),
             payload.at("scalePerDivision").get<double>()};
     }
     if (type == "startSingleSweep") {
