@@ -37,6 +37,11 @@ bool isFinite(const RawReceiverSample& sample) {
                [](const ComplexSample& response) { return isFinite(response); });
 }
 
+bool isSupportedMeasurement(domain::MeasurementType type) {
+    return type == domain::MeasurementType::S11 ||
+           type == domain::MeasurementType::S21;
+}
+
 std::optional<FrameError> validatePayload(
     const RawReceiverPayload& payload,
     std::uint32_t points) {
@@ -111,7 +116,7 @@ Result<MeasurementFrame> makeMeasurementFrame(
         return Result<MeasurementFrame>{
             FrameError{.code = FrameErrorCode::InvalidMeasurementId}};
     }
-    if (type != domain::MeasurementType::S11) {
+    if (!isSupportedMeasurement(type)) {
         return Result<MeasurementFrame>{
             FrameError{.code = FrameErrorCode::UnsupportedMeasurementType}};
     }

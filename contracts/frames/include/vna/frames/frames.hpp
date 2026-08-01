@@ -27,7 +27,7 @@ struct RawReceiverFrame {
 };
 
 // MeasurementFrame owns synthesized complex values, not display-formatted
-// values. The first slice accepts S11 only and makes S21 rejection explicit.
+// values, so every supported Sij can feed the same display processors.
 struct MeasurementFrame {
     FrameContext context;
     FrequencyAxis frequencyAxis;

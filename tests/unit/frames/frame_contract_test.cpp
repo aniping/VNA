@@ -229,7 +229,8 @@ std::vector<InvalidMeasurementCase> invalidMeasurements() {
     return {
         {"MissingId", domain::MeasurementId{0}, domain::MeasurementType::S11,
          {{0.5, 0.0}, {-0.5, 0.25}}, FrameErrorCode::InvalidMeasurementId},
-        {"S21", domain::MeasurementId{17}, domain::MeasurementType::S21,
+        {"UnknownType", domain::MeasurementId{17},
+         static_cast<domain::MeasurementType>(99),
          {{0.5, 0.0}, {-0.5, 0.25}},
          FrameErrorCode::UnsupportedMeasurementType},
         {"WrongCount", domain::MeasurementId{17}, domain::MeasurementType::S11,

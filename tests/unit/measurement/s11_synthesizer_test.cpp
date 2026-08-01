@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <vna/measurement/s_parameter_synthesizer.hpp>
 #include <vna/measurement/s11_synthesizer.hpp>
 
 namespace vna::measurement {
@@ -61,6 +62,33 @@ TEST(S11SynthesizerTest, ProducesComplexRatiosWithSourceCorrelation) {
     EXPECT_DOUBLE_EQ(result.value().samples[1].imaginary, 1.0);
 }
 
+TEST(SParameterSynthesizerTest, SelectsS11AndS21FromOneSourceState) {
+    const auto input = rawFrame({
+        {.reference = {1.0, 0.0},
+         .responses = {{0.5, 0.25}, {0.01, -0.02}}},
+        {.reference = {1.0, 1.0},
+         .responses = {{0.0, 2.0}, {0.2, 0.4}}},
+    });
+    auto s21 = s11Measurement();
+    s21.type = domain::MeasurementType::S21;
+
+    const auto reflection = synthesizeSParameter(input, s11Measurement());
+    const auto transmission = synthesizeSParameter(input, s21);
+
+    ASSERT_TRUE(reflection.hasValue());
+    ASSERT_TRUE(transmission.hasValue());
+    EXPECT_EQ(reflection.value().type, domain::MeasurementType::S11);
+    EXPECT_EQ(transmission.value().type, domain::MeasurementType::S21);
+    EXPECT_EQ(reflection.value().samples[0],
+              (frames::ComplexSample{0.5, 0.25}));
+    EXPECT_EQ(transmission.value().samples[0],
+              (frames::ComplexSample{0.01, -0.02}));
+    EXPECT_EQ(reflection.value().samples[1],
+              (frames::ComplexSample{1.0, 1.0}));
+    EXPECT_DOUBLE_EQ(transmission.value().samples[1].real, 0.3);
+    EXPECT_DOUBLE_EQ(transmission.value().samples[1].imaginary, 0.1);
+}
+
 TEST(S11SynthesizerTest, RejectsZeroReferenceBeforeDivision) {
     const auto result = synthesizeS11(
         rawFrame({
@@ -94,7 +122,7 @@ TEST(S11SynthesizerTest, RejectsMeasurementFromAnotherChannel) {
         frames::FrameErrorCode::MeasurementChannelMismatch);
 }
 
-TEST(S11SynthesizerTest, RejectsUnsupportedMeasurementType) {
+TEST(S11SynthesizerTest, LegacyEntryRejectsNonS11Measurement) {
     auto measurement = s11Measurement();
     measurement.type = domain::MeasurementType::S21;
 
