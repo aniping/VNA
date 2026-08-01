@@ -7,6 +7,7 @@ add_library(
     src/control_authority.cpp
     src/completion_fence.cpp
     src/completion_fence_handles.cpp
+    src/factory_preset.cpp
     src/operation_manager.cpp
     src/single_sweep_command_handler.cpp
     src/single_sweep_executor.cpp
@@ -27,7 +28,7 @@ target_include_directories(
 )
 target_link_libraries(
     vna_application
-    PUBLIC vna::display_model vna::domain vna::frame_contracts
+    PUBLIC vna::acquisition vna::display_model vna::domain vna::frame_contracts
     PRIVATE Threads::Threads vna::data_plane vna::measurement
 )
 target_compile_options(vna_application PRIVATE -Wall -Wextra -Wpedantic)

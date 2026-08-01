@@ -93,12 +93,20 @@ struct CommandBusStats {
 };
 
 class SingleSweepCommandHandler;
+struct CommandBusInitialState;
 
 class CommandBus {
 public:
+    // This compatibility constructor explicitly starts empty; production may
+    // opt into a fully assembled state through the overload below.
     explicit CommandBus(
         InstrumentId instrumentId,
         SingleSweepCommandHandler& singleSweepHandler,
+        std::size_t idempotencyCapacity = 1024);
+    explicit CommandBus(
+        InstrumentId instrumentId,
+        SingleSweepCommandHandler& singleSweepHandler,
+        CommandBusInitialState initialState,
         std::size_t idempotencyCapacity = 1024);
     ~CommandBus();
 

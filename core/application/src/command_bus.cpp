@@ -1,4 +1,5 @@
 #include <vna/application/command_bus.hpp>
+#include <vna/application/factory_preset.hpp>
 
 #include "control_authority_internal.hpp"
 #include "command_idempotency_internal.hpp"
@@ -61,8 +62,20 @@ CommandBus::CommandBus(
     InstrumentId instrumentId,
     SingleSweepCommandHandler& singleSweepHandler,
     std::size_t idempotencyCapacity)
+    : CommandBus(std::move(instrumentId),
+          singleSweepHandler,
+          CommandBusInitialState{},
+          idempotencyCapacity) {}
+
+CommandBus::CommandBus(
+    InstrumentId instrumentId,
+    SingleSweepCommandHandler& singleSweepHandler,
+    CommandBusInitialState initialState,
+    std::size_t idempotencyCapacity)
     : instrumentId_(std::move(instrumentId)),
       singleSweepHandler_(singleSweepHandler),
+      instrument_(std::move(initialState.instrument)),
+      displayWorkspace_(std::move(initialState.displayWorkspace)),
       idempotency_(
           std::make_unique<IdempotencyStore>(idempotencyCapacity)),
       controlAuthority_(std::make_unique<ControlAuthority>()) {}

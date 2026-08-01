@@ -93,6 +93,7 @@ add_executable(
     unit/application/completion_fence_hardening_test.cpp
     unit/application/control_authority_test.cpp
     unit/application/control_authority_concurrency_test.cpp
+    unit/application/factory_preset_test.cpp
     unit/application/operation_manager_test.cpp
     unit/application/single_sweep_command_handler_test.cpp
     unit/application/single_sweep_executor_failure_test.cpp
