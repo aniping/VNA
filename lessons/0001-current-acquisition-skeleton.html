@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>第 1 课：从组合根看懂采集骨架</title>
+  <link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<main>
+  <p class="eyebrow">VNA Acquisition · Lesson 0001</p>
+  <h1>先找到发动机，再追一帧数据</h1>
+  <p class="lead">本节唯一目标：不用搜索全仓库，只看组合根就能说出采集何时开始，以及五段主链各由谁负责。</p>
+
+  <aside class="status">
+    <strong>2026-08-01 当前主线：</strong>原始层已经采集二端口完整 receiver 数据；已接通的发布层仍固定输出默认 S21、Log Magnitude、单 Trace。多 Trace/Phase/Smith 的动态发布器尚未集成。
+  </aside>
+
+  <h2>先记住这张骨架</h2>
+  <section class="flow" aria-label="当前采集主链">
+    <div class="node"><strong>1. Source</strong><small>仿真生成 reference 与全部 response receiver</small></div>
+    <div class="node"><strong>2. Acquisition</strong><small>唯一 worker 校验并覆盖 latest 原始帧</small></div>
+    <div class="node"><strong>3. Publisher</strong><small>等待新 sequence，合成 S21 并投影 dB</small></div>
+    <div class="node"><strong>4. Repository</strong><small>只保留每条 Trace 最新完整显示帧</small></div>
+    <div class="node"><strong>5. Web + Vue</strong><small>WebSocket 推送，前端按 sequence 替换曲线</small></div>
+  </section>
+
+  <p>这不是五次采集。只有第 2 段拥有原始数据源；后面四段都是消费、转换或传输。</p>
+
+  <h2>证据一：浏览器没有启动采集</h2>
+  <p>入口在 <a href="../apps/vna-server/main.cpp">apps/vna-server/main.cpp</a> 的 <code>runServer()</code>。对象按以下顺序构造：</p>
+  <dl class="code-map">
+    <dt>179–189</dt><dd>准备 preset、仓库与发布目录。</dd>
+    <dt>191–192</dt><dd>构造 <code>ContinuousAcquisition</code>。</dd>
+    <dt>193–196</dt><dd>构造 <code>ContinuousTracePublisher</code>。</dd>
+    <dt>205–213</dt><dd>最后才构造并监听 <code>WebApi</code>。</dd>
+  </dl>
+  <p><code>ContinuousAcquisition</code> 的构造函数在 <a href="../core/acquisition/src/continuous_acquisition.cpp">continuous_acquisition.cpp</a> 72–79 行立即创建 <code>std::jthread</code>。因此，服务对象一创建，采集就开始；有没有浏览器连接不影响它。</p>
+
+  <h2>证据二：一次循环到底做什么</h2>
+  <ol>
+    <li><code>run()</code> 从 sequence 1 开始循环。</li>
+    <li><code>source_(plan, sequence, token)</code> 调用仿真源。</li>
+    <li>采集层校验端口数、源端口、点数、response 数和有限值。</li>
+    <li>校验成功后附加 frame/sweep/sequence 身份。</li>
+    <li><code>publish()</code> 覆盖唯一的 <code>latest_</code>，再唤醒等待者。</li>
+    <li>以 preset 的 100 ms 最短周期节拍进入下一轮。</li>
+  </ol>
+  <p>关键词是“覆盖”。原始采集层没有历史队列；处理线程慢时允许跳过中间帧，但 sequence 绝不倒退。</p>
+
+  <h2>原始数据此时长什么样</h2>
+  <p><a href="../contracts/frames/include/vna/frames/raw_receiver.hpp">raw_receiver.hpp</a> 把一帧组织为 <code>RawReceiverPayload → RawSourceState → RawReceiverSample</code>。每个 sample 同时保存激励端参考接收机 <code>reference</code> 和所有响应端 <code>responses</code>。</p>
+  <p>它故意没有 Channel、Measurement 或 Trace 身份。原因是同一份二端口原始数据以后可以派生 S11、S21、S12、S22，不应为每条 Trace 重扫一次。</p>
+
+  <aside class="checkpoint">
+    <strong>停下来回忆：</strong>如果页面完全没有打开，服务会不会持续采集？请指出“组合根证据”和“构造函数证据”各一个。
+    <details>
+      <summary>回答后再展开</summary>
+      <p>会。组合根先构造 <code>ContinuousAcquisition</code>，后构造并监听 <code>WebApi</code>；而 <code>ContinuousAcquisition::Impl</code> 的构造函数立即启动 worker。</p>
+    </details>
+  </aside>
+
+  <p class="next">下一课：跟着 sequence 从 <code>waitForNext()</code> 进入 S21 复数除法，再变成 dB 显示值。</p>
+  <p>不清楚的地方可以直接问我；也可以先看<a href="../reference/acquisition-path-map.html">采集路径速查图</a>。</p>
+</main>
+</body>
+</html>
