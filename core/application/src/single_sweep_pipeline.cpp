@@ -1,8 +1,7 @@
 #include "single_sweep_pipeline_internal.hpp"
+#include "frequency_axis_materialization_internal.hpp"
 
-#include <cmath>
 #include <utility>
-#include <vector>
 
 #include <vna/data_plane/log_magnitude_projector.hpp>
 #include <vna/measurement/s11_synthesizer.hpp>
@@ -13,9 +12,6 @@ namespace {
 using RawResult = std::variant<
     frames::RawReceiverFrame,
     OperationFailure>;
-using FrequencyResult = std::variant<
-    std::vector<double>,
-    SingleSweepFailureCode>;
 
 RawResult acquireRaw(
     const SingleSweepWorkItem& work,
@@ -43,31 +39,6 @@ RawResult acquireRaw(
             .code = SingleSweepFailureCode::RawSweepFailed,
             .cause = std::current_exception()};
     }
-}
-
-FrequencyResult materializeFrequencies(const frames::FrequencyAxis& axis) {
-    std::vector<double> values;
-    values.reserve(axis.points);
-    const auto start = static_cast<long double>(axis.startFrequencyHz);
-    const auto stop = static_cast<long double>(axis.stopFrequencyHz);
-    const auto intervals = static_cast<long double>(axis.points - 1);
-    for (std::uint32_t index = 0; index < axis.points; ++index) {
-        // Force both endpoints, then interpolate in long double so rounding is
-        // deferred until the final display value conversion.
-        const auto exact = index == 0
-                               ? start
-                               : (index + 1 == axis.points
-                                      ? stop
-                                      : start + (stop - start) * index /
-                                                    intervals);
-        const auto frequency = static_cast<double>(exact);
-        if (!std::isfinite(frequency) ||
-            (!values.empty() && frequency <= values.back())) {
-            return SingleSweepFailureCode::FrequencyMaterializationFailed;
-        }
-        values.push_back(frequency);
-    }
-    return values;
 }
 
 }  // namespace
@@ -104,9 +75,9 @@ SweepPipelineResult buildSingleSweepFrame(
             .cause = values.error()};
     }
     auto frequencies = materializeFrequencies(work.frequencyAxis);
-    if (const auto* error =
-            std::get_if<SingleSweepFailureCode>(&frequencies)) {
-        return OperationFailure{.code = *error};
+    if (!frequencies.has_value()) {
+        return OperationFailure{
+            .code = SingleSweepFailureCode::FrequencyMaterializationFailed};
     }
     if (canceled()) {
         return SweepPipelineCanceled{};
@@ -118,7 +89,7 @@ SweepPipelineResult buildSingleSweepFrame(
         work.frameContext.sequenceNumber,
         display_model::TraceFormat::LogMagnitude,
         display_model::ScaleUnit::Decibel,
-        std::move(std::get<std::vector<double>>(frequencies)),
+        std::move(frequencies.value()),
         values.value()};
 }
 
