@@ -40,6 +40,18 @@ TEST(InstrumentTest, SweepRequiresAtLeastTwoPoints) {
     EXPECT_TRUE(instrument.snapshot().channels.empty());
 }
 
+TEST(InstrumentTest, NewChannelsExposeContinuousSweepWithNoTriggerSource) {
+    Instrument instrument;
+
+    const auto channel = instrument.createChannel(validSweep());
+
+    ASSERT_TRUE(channel.hasValue());
+    const auto snapshot = instrument.snapshot();
+    ASSERT_EQ(snapshot.channels.size(), 1U);
+    EXPECT_EQ(snapshot.channels[0].sweepMode, SweepMode::Continuous);
+    EXPECT_EQ(snapshot.channels[0].triggerSource, TriggerSource::None);
+}
+
 TEST(InstrumentTest, MeasurementCannotReferenceMissingChannel) {
     Instrument instrument;
 

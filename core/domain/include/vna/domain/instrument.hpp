@@ -65,6 +65,17 @@ struct SweepSettings {
     double powerDbm;
 };
 
+// These enums describe the Channel's configured sweep behavior. They do not
+// report whether the acquisition worker is running, healthy, or producing a
+// frame; those runtime facts belong to the acquisition lifecycle.
+enum class SweepMode {
+    Continuous,
+};
+
+enum class TriggerSource {
+    None,
+};
+
 enum class MeasurementType {
     S11,
     S21,
@@ -73,6 +84,8 @@ enum class MeasurementType {
 struct ChannelSnapshot {
     ChannelId id;
     SweepSettings sweep;
+    SweepMode sweepMode{SweepMode::Continuous};
+    TriggerSource triggerSource{TriggerSource::None};
 };
 
 struct MeasurementSnapshot {

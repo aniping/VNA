@@ -19,8 +19,29 @@ Json sweepToJson(const domain::SweepSettings& sweep) {
     };
 }
 
+const char* sweepModeName(domain::SweepMode mode) {
+    switch (mode) {
+        case domain::SweepMode::Continuous:
+            return "continuous";
+    }
+    return "unknown";
+}
+
+const char* triggerSourceName(domain::TriggerSource source) {
+    switch (source) {
+        case domain::TriggerSource::None:
+            return "none";
+    }
+    return "unknown";
+}
+
 Json channelToJson(const domain::ChannelSnapshot& channel) {
-    return {{"id", channel.id.value()}, {"sweep", sweepToJson(channel.sweep)}};
+    return {
+        {"id", channel.id.value()},
+        {"sweep", sweepToJson(channel.sweep)},
+        {"sweepMode", sweepModeName(channel.sweepMode)},
+        {"triggerSource", triggerSourceName(channel.triggerSource)},
+    };
 }
 
 const char* measurementTypeName(domain::MeasurementType type) {

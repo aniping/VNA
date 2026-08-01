@@ -60,6 +60,8 @@ TEST(FactoryPresetTest, CreatesCorrelatedS21StateAtRevisionZero) {
     EXPECT_EQ(channel.sweep.points, plan.frequencyAxis.points);
     EXPECT_EQ(channel.sweep.ifBandwidthHz, plan.ifBandwidthHz);
     EXPECT_DOUBLE_EQ(channel.sweep.powerDbm, plan.powerDbm);
+    EXPECT_EQ(channel.sweepMode, domain::SweepMode::Continuous);
+    EXPECT_EQ(channel.triggerSource, domain::TriggerSource::None);
 
     ASSERT_EQ(snapshot.instrument.measurements.size(), 1U);
     const auto& measurement = snapshot.instrument.measurements[0];
@@ -100,6 +102,10 @@ TEST(FactoryPresetTest, FirstMutationsUseRevisionOneAndNextIdentifiers) {
         command("create-channel", 0, CreateChannelCommand{sweep}));
     EXPECT_EQ(channel.stateRevision, 1U);
     EXPECT_EQ(successValue<domain::ChannelId>(channel), domain::ChannelId{2});
+    const auto channels = bus.snapshot().instrument.channels;
+    ASSERT_EQ(channels.size(), 2U);
+    EXPECT_EQ(channels[1].sweepMode, domain::SweepMode::Continuous);
+    EXPECT_EQ(channels[1].triggerSource, domain::TriggerSource::None);
     const auto measurement = bus.dispatch(command(
         "create-measurement",
         1,
