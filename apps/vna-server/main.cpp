@@ -176,11 +176,19 @@ std::unique_ptr<vna::observability::Logger> makeServerLogger(
     return vna::logging::makeJsonLinesLogger(options);
 }
 
-int runServer() {
+struct ServerPaths {
+    std::filesystem::path webRoot;
+    std::filesystem::path logDirectory;
+};
+
+ServerPaths serverPaths() {
     const auto executable = vna::platform::currentExecutablePath();
     const auto releaseRoot = executable.parent_path().parent_path();
-    const auto webRoot = releaseRoot / "web";
-    const auto logDirectory = releaseRoot / "logs";
+    return {releaseRoot / "web", releaseRoot / "logs"};
+}
+
+int runServer() {
+    const auto paths = serverPaths();
 
     auto preset = vna::application::makeFactoryPreset();
     const auto defaultTraceId = preset.continuousTracePreset.trace.id;
@@ -212,8 +220,8 @@ int runServer() {
         operationManager,
         displayFrameQuery,
         defaultTraceId,
-        webRoot};
-    auto logger = makeServerLogger(logDirectory);
+        paths.webRoot};
+    auto logger = makeServerLogger(paths.logDirectory);
     try {
         return serveUntilStopped(webApi, logger);
     } catch (...) {
