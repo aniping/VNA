@@ -1,6 +1,7 @@
 #include <vna/web_api/web_api.hpp>
 
 #include "display_frame_http_handler.hpp"
+#include "display_frame_stream.hpp"
 #include "json_codec.hpp"
 #include "operation_http_handler.hpp"
 #include "web_asset_path.hpp"
@@ -15,6 +16,19 @@
 
 namespace vna::web_api {
 namespace {
+
+class ListenerRegistration {
+public:
+    explicit ListenerRegistration(detail::DisplayFrameStream& stream)
+        : stream_(stream) {}
+    ~ListenerRegistration() { stream_.finishListen(); }
+
+    ListenerRegistration(const ListenerRegistration&) = delete;
+    ListenerRegistration& operator=(const ListenerRegistration&) = delete;
+
+private:
+    detail::DisplayFrameStream& stream_;
+};
 
 void rejectInvalidCommand(httplib::Response& response) {
     response.status = httplib::StatusCode::BadRequest_400;
@@ -75,8 +89,9 @@ public:
         : commandBus_(commandBus),
           operations_(operations),
           displayFrames_(displayFrames),
-          defaultTraceId_(defaultTraceId) {
+          displayStream_(displayFrames, defaultTraceId) {
         installRoutes();
+        displayStream_.install(server_);
         if (webRoot) {
             installIndexRoutes(*webRoot);
             installAssets(*webRoot / "assets");
@@ -89,10 +104,10 @@ public:
     application::CommandBus& commandBus_;
     const application::OperationManager& operations_;
     const application::TraceDisplayFrameQuery& displayFrames_;
-    // This mandatory target is composed from FactoryPreset; a later adapter
-    // uses it without guessing or scanning display state.
-    const display_model::TraceId defaultTraceId_;
+    // Server precedes the stream so reverse destruction keeps every transport
+    // alive until all registered stream handlers have returned.
     httplib::Server server_;
+    detail::DisplayFrameStream displayStream_;
 };
 
 WebApi::WebApi(
@@ -107,7 +122,9 @@ WebApi::WebApi(
               commandBus, operations, displayFrames, defaultTraceId, validated);
       }()) {}
 
-WebApi::~WebApi() = default;
+WebApi::~WebApi() {
+    stop();
+}
 void WebApi::Impl::installRoutes() {
     server_.Get(
         "/api/v1/health",
@@ -164,19 +181,33 @@ void WebApi::Impl::installAssets(const std::filesystem::path& assetsPath) {
 }
 
 bool WebApi::listen(const std::string& address, int port) {
+    if (!impl_->displayStream_.beginListen()) {
+        return false;
+    }
+    ListenerRegistration registration{impl_->displayStream_};
     return impl_->server_.listen(address, port);
 }
 int WebApi::bindToAnyPort(const std::string& address) {
     return impl_->server_.bind_to_any_port(address);
 }
 bool WebApi::listenAfterBind() {
+    if (!impl_->displayStream_.beginListen()) {
+        return false;
+    }
+    ListenerRegistration registration{impl_->displayStream_};
     return impl_->server_.listen_after_bind();
 }
 void WebApi::waitUntilReady() {
     impl_->server_.wait_until_ready();
 }
 void WebApi::stop() {
+    impl_->displayStream_.requestStop();
+    // A listener already admitted by beginListen must first reach httplib's
+    // start callback; otherwise Server::stop observes !is_running and loses
+    // the shutdown request immediately before listen_internal starts.
+    impl_->displayStream_.waitUntilListenerStarted();
     impl_->server_.stop();
+    impl_->displayStream_.waitUntilStopped();
 }
 
 }  // namespace vna::web_api

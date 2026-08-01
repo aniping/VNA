@@ -3,6 +3,8 @@ add_library(
     src/command_json_decoder.cpp
     src/display_frame_http_handler.cpp
     src/display_frame_json_codec.cpp
+    src/display_frame_stream.cpp
+    src/display_frame_stream_lifecycle.cpp
     src/json_codec.cpp
     src/operation_http_handler.cpp
     src/web_asset_path.cpp

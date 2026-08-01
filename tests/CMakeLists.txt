@@ -210,6 +210,7 @@ add_executable(
     integration/web_api_static_files_test.cpp
     integration/web_api_text_id_test.cpp
     integration/web_api_test.cpp
+    integration/web_api_websocket_test.cpp
 )
 target_link_libraries(
     vna_web_api_tests
