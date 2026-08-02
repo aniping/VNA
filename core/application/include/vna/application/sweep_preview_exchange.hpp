@@ -46,6 +46,19 @@ using SweepPreviewHandle = std::shared_ptr<const SweepPreview>;
 
 enum class SweepPreviewErrorCode {
     InvalidIdentity,
+    InvalidSequenceNumber,
+    InvalidTotalPointCount,
+    EmptyTraceSet,
+    InvalidTraceIdentity,
+    DuplicateTraceId,
+    InvalidPrefixLength,
+    SampleCountMismatch,
+    NonFiniteValue,
+    FrequencyNotStrictlyIncreasing,
+    UnsupportedFormat,
+    UnsupportedValueUnit,
+    SamplePayloadMismatch,
+    ProgressRegression,
     StaleGeneration,
     FutureGeneration,
     SweepIdRegression,
@@ -107,6 +120,7 @@ private:
     std::uint64_t lastSweepId_{};
     std::uint64_t nextCursor_{1};
     std::optional<SweepPreviewIdentity> activeIdentity_;
+    SweepPreviewHandle currentPreview_;
     std::optional<SweepPreviewEvent> latestEvent_;
 };
 

@@ -1,5 +1,7 @@
 #include <vna/application/sweep_preview_exchange.hpp>
 
+#include "sweep_preview_validation_internal.hpp"
+
 #include <utility>
 
 namespace vna::application {
@@ -14,9 +16,8 @@ SweepPreviewCursor cursorOf(const SweepPreviewEvent& event) {
 
 SweepPreviewPublishResult SweepPreviewExchange::publish(
     SweepPreview preview) {
-    if (preview.identity.generation == 0 ||
-        preview.identity.sweepId.value() == 0) {
-        return SweepPreviewError{SweepPreviewErrorCode::InvalidIdentity};
+    if (const auto invalid = internal::validateSweepPreview(preview)) {
+        return *invalid;
     }
     SweepPreviewHandle handle;
     {
@@ -31,6 +32,10 @@ SweepPreviewPublishResult SweepPreviewExchange::publish(
         const auto continuing =
             activeIdentity_.has_value() &&
             *activeIdentity_ == preview.identity;
+        if (continuing && currentPreview_ != nullptr &&
+            !internal::isCumulativeExtension(*currentPreview_, preview)) {
+            return SweepPreviewError{SweepPreviewErrorCode::ProgressRegression};
+        }
         if (!continuing && sweepId <= lastSweepId_) {
             return SweepPreviewError{SweepPreviewErrorCode::SweepIdRegression};
         }
@@ -39,6 +44,7 @@ SweepPreviewPublishResult SweepPreviewExchange::publish(
             lastSweepId_ = sweepId;
         }
         handle = std::make_shared<const SweepPreview>(std::move(preview));
+        currentPreview_ = handle;
         latestEvent_ = SweepPreviewAvailable{
             SweepPreviewCursor{nextCursor_++}, handle};
     }
@@ -56,6 +62,7 @@ SweepPreviewGenerationResult SweepPreviewExchange::advanceGeneration(
         }
         generation_ = nextGeneration;
         activeIdentity_.reset();
+        currentPreview_.reset();
         advanced = {SweepPreviewCursor{nextCursor_++}, generation_};
         latestEvent_ = advanced;
     }
@@ -71,6 +78,7 @@ bool SweepPreviewExchange::invalidate(
             return false;
         }
         activeIdentity_.reset();
+        currentPreview_.reset();
         latestEvent_ = SweepPreviewInvalidated{
             SweepPreviewCursor{nextCursor_++}, identity};
     }

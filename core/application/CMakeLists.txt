@@ -21,6 +21,7 @@ add_library(
     src/single_sweep_trace_registry.cpp
     src/start_single_sweep_command.cpp
     src/sweep_preview_exchange.cpp
+    src/sweep_preview_validation.cpp
     src/trace_display_frame_query.cpp
     src/trace_display_frame_repository.cpp
     src/trace_display_frame_set.cpp
