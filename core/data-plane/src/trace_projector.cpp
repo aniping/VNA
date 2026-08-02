@@ -1,5 +1,6 @@
 #include <vna/data_plane/trace_projector.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <optional>
@@ -9,11 +10,15 @@
 namespace vna::data_plane {
 namespace {
 
+bool finite(const frames::ComplexSample& sample) {
+    return std::isfinite(sample.real) && std::isfinite(sample.imaginary);
+}
+
 std::optional<frames::FrameError> projectLogMagnitudeValues(
-    const frames::MeasurementFrame& source,
+    std::span<const frames::ComplexSample> source,
     std::vector<double>& values) {
-    values.reserve(source.samples.size());
-    for (const auto& sample : source.samples) {
+    values.reserve(source.size());
+    for (const auto& sample : source) {
         const auto projected =
             20.0 * std::log10(std::hypot(sample.real, sample.imaginary));
         // Zero magnitude maps to negative infinity. Reject the complete vector
@@ -28,10 +33,10 @@ std::optional<frames::FrameError> projectLogMagnitudeValues(
 }
 
 std::vector<double> projectPhaseValues(
-    const frames::MeasurementFrame& source) {
+    std::span<const frames::ComplexSample> source) {
     std::vector<double> values;
-    values.reserve(source.samples.size());
-    for (const auto& sample : source.samples) {
+    values.reserve(source.size());
+    for (const auto& sample : source) {
         if (sample.real == 0.0 && sample.imaginary == 0.0) {
             values.push_back(0.0);
             continue;
@@ -49,19 +54,17 @@ std::vector<double> projectPhaseValues(
 }  // namespace
 
 frames::Result<ProjectedTraceSamples> projectTraceSamples(
-    const frames::MeasurementFrame& source,
+    std::span<const frames::ComplexSample> source,
     display_model::TraceFormat format) {
-    const auto validated = frames::makeMeasurementFrame(
-        source.context, source.frequencyAxis, source.measurementId,
-        source.type, source.samples);
-    if (!validated.hasValue()) {
-        return frames::Result<ProjectedTraceSamples>{validated.error()};
+    if (!std::all_of(source.begin(), source.end(), finite)) {
+        return frames::Result<ProjectedTraceSamples>{frames::FrameError{
+            frames::FrameErrorCode::NonFiniteSample}};
     }
     switch (format) {
     case display_model::TraceFormat::LogMagnitude: {
         std::vector<double> values;
         if (const auto error =
-                projectLogMagnitudeValues(validated.value(), values)) {
+                projectLogMagnitudeValues(source, values)) {
             return frames::Result<ProjectedTraceSamples>{*error};
         }
         return frames::Result<ProjectedTraceSamples>{ScalarTraceSamples{
@@ -71,14 +74,28 @@ frames::Result<ProjectedTraceSamples> projectTraceSamples(
     case display_model::TraceFormat::Phase:
         return frames::Result<ProjectedTraceSamples>{ScalarTraceSamples{
             .unit = ProjectedTraceUnit::Degree,
-            .values = projectPhaseValues(validated.value())}};
+            .values = projectPhaseValues(source)}};
     case display_model::TraceFormat::Smith:
         return frames::Result<ProjectedTraceSamples>{ComplexTraceSamples{
             .unit = ProjectedTraceUnit::Unitless,
-            .values = validated.value().samples}};
+            .values = {source.begin(), source.end()}}};
     }
     return frames::Result<ProjectedTraceSamples>{frames::FrameError{
         .code = frames::FrameErrorCode::UnsupportedTraceFormat}};
+}
+
+frames::Result<ProjectedTraceSamples> projectTraceSamples(
+    const frames::MeasurementFrame& source,
+    display_model::TraceFormat format) {
+    const auto validated = frames::makeMeasurementFrame(
+        source.context, source.frequencyAxis, source.measurementId,
+        source.type, source.samples);
+    if (!validated.hasValue()) {
+        return frames::Result<ProjectedTraceSamples>{validated.error()};
+    }
+    return projectTraceSamples(
+        std::span<const frames::ComplexSample>{validated.value().samples},
+        format);
 }
 
 }  // namespace vna::data_plane

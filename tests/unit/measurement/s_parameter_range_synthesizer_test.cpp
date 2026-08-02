@@ -2,6 +2,7 @@
 
 #include <array>
 #include <limits>
+#include <span>
 #include <vector>
 
 #include <vna/measurement/s_parameter_synthesizer.hpp>
@@ -26,6 +27,19 @@ std::vector<frames::RawReceiverSample> sourceTwoSamples() {
     };
 }
 
+SParameterRangeSynthesisRequest rangeRequest(
+    std::span<const frames::RawReceiverSample> samples,
+    std::span<const domain::MeasurementSnapshot> measurements) {
+    return {
+        .sourcePort = 2,
+        .firstPoint = 4,
+        .totalPointCount = 10,
+        .portCount = 2,
+        .samples = samples,
+        .measurements = measurements,
+    };
+}
+
 TEST(SParameterRangeSynthesizerTest,
      SelectsApplicableMeasurementsInInputOrder) {
     const auto samples = sourceTwoSamples();
@@ -36,14 +50,8 @@ TEST(SParameterRangeSynthesizerTest,
         measurement(34, domain::MeasurementType::S12),
     };
 
-    const auto result = synthesizeSParameterRanges({
-        .sourcePort = 2,
-        .firstPoint = 4,
-        .totalPointCount = 10,
-        .portCount = 2,
-        .samples = samples,
-        .measurements = measurements,
-    });
+    const auto result =
+        synthesizeSParameterRanges(rangeRequest(samples, measurements));
 
     ASSERT_TRUE(result.hasValue());
     ASSERT_EQ(result.value().size(), 3U);
@@ -70,14 +78,8 @@ TEST(SParameterRangeSynthesizerTest, RejectsZeroReferenceAtomically) {
         measurement(33, domain::MeasurementType::S12),
     };
 
-    const auto result = synthesizeSParameterRanges({
-        .sourcePort = 2,
-        .firstPoint = 4,
-        .totalPointCount = 10,
-        .portCount = 2,
-        .samples = samples,
-        .measurements = measurements,
-    });
+    const auto result =
+        synthesizeSParameterRanges(rangeRequest(samples, measurements));
 
     ASSERT_FALSE(result.hasValue());
     EXPECT_EQ(result.error().code, frames::FrameErrorCode::ZeroReference);
@@ -88,17 +90,39 @@ TEST(SParameterRangeSynthesizerTest, RejectsSourceOutsidePortCount) {
     const std::array measurements{
         measurement(31, domain::MeasurementType::S22)};
 
-    const auto result = synthesizeSParameterRanges({
-        .sourcePort = 3,
-        .firstPoint = 4,
-        .totalPointCount = 10,
-        .portCount = 2,
-        .samples = samples,
-        .measurements = measurements,
-    });
+    auto request = rangeRequest(samples, measurements);
+    request.sourcePort = 3;
+    const auto result = synthesizeSParameterRanges(request);
 
     ASSERT_FALSE(result.hasValue());
     EXPECT_EQ(result.error().code, frames::FrameErrorCode::InvalidSourcePort);
+}
+
+TEST(SParameterRangeSynthesizerTest, ChecksResponsePortsOnlyForMatchingSource) {
+    const std::array samples{
+        frames::RawReceiverSample{{1.0, 0.0}, {{0.5, 0.0}}}};
+    const std::array matching{
+        measurement(31, domain::MeasurementType::S21)};
+    const std::array otherSource{
+        measurement(32, domain::MeasurementType::S22)};
+
+    auto request = SParameterRangeSynthesisRequest{
+        .sourcePort = 1,
+        .firstPoint = 0,
+        .totalPointCount = 2,
+        .portCount = 1,
+        .samples = samples,
+        .measurements = matching,
+    };
+    const auto rejected = synthesizeSParameterRanges(request);
+
+    ASSERT_FALSE(rejected.hasValue());
+    EXPECT_EQ(rejected.error().code, frames::FrameErrorCode::InvalidPortCount);
+
+    request.measurements = otherSource;
+    const auto ignored = synthesizeSParameterRanges(request);
+    ASSERT_TRUE(ignored.hasValue());
+    EXPECT_TRUE(ignored.value().empty());
 }
 
 TEST(SParameterRangeSynthesizerTest, RejectsRangePastTotalPointCount) {
@@ -106,14 +130,9 @@ TEST(SParameterRangeSynthesizerTest, RejectsRangePastTotalPointCount) {
     const std::array measurements{
         measurement(31, domain::MeasurementType::S22)};
 
-    const auto result = synthesizeSParameterRanges({
-        .sourcePort = 2,
-        .firstPoint = 9,
-        .totalPointCount = 10,
-        .portCount = 2,
-        .samples = samples,
-        .measurements = measurements,
-    });
+    auto request = rangeRequest(samples, measurements);
+    request.firstPoint = 9;
+    const auto result = synthesizeSParameterRanges(request);
 
     ASSERT_FALSE(result.hasValue());
     EXPECT_EQ(result.error().code, frames::FrameErrorCode::SampleCountMismatch);
@@ -125,14 +144,8 @@ TEST(SParameterRangeSynthesizerTest, RejectsMissingResponseReceiver) {
     const std::array measurements{
         measurement(31, domain::MeasurementType::S12)};
 
-    const auto result = synthesizeSParameterRanges({
-        .sourcePort = 2,
-        .firstPoint = 4,
-        .totalPointCount = 10,
-        .portCount = 2,
-        .samples = samples,
-        .measurements = measurements,
-    });
+    const auto result =
+        synthesizeSParameterRanges(rangeRequest(samples, measurements));
 
     ASSERT_FALSE(result.hasValue());
     EXPECT_EQ(
@@ -146,14 +159,8 @@ TEST(SParameterRangeSynthesizerTest, RejectsNonFiniteReceiverSample) {
     const std::array measurements{
         measurement(31, domain::MeasurementType::S12)};
 
-    const auto result = synthesizeSParameterRanges({
-        .sourcePort = 2,
-        .firstPoint = 4,
-        .totalPointCount = 10,
-        .portCount = 2,
-        .samples = samples,
-        .measurements = measurements,
-    });
+    const auto result =
+        synthesizeSParameterRanges(rangeRequest(samples, measurements));
 
     ASSERT_FALSE(result.hasValue());
     EXPECT_EQ(result.error().code, frames::FrameErrorCode::NonFiniteSample);
@@ -166,14 +173,8 @@ TEST(SParameterRangeSynthesizerTest, RejectsNonFiniteSynthesizedRatio) {
     const std::array measurements{
         measurement(31, domain::MeasurementType::S12)};
 
-    const auto result = synthesizeSParameterRanges({
-        .sourcePort = 2,
-        .firstPoint = 4,
-        .totalPointCount = 10,
-        .portCount = 2,
-        .samples = samples,
-        .measurements = measurements,
-    });
+    const auto result =
+        synthesizeSParameterRanges(rangeRequest(samples, measurements));
 
     ASSERT_FALSE(result.hasValue());
     EXPECT_EQ(result.error().code, frames::FrameErrorCode::NonFiniteSample);
@@ -186,14 +187,8 @@ TEST(SParameterRangeSynthesizerTest, InvalidMeasurementFailsWholeRangeBatch) {
         measurement(0, domain::MeasurementType::S12),
     };
 
-    const auto result = synthesizeSParameterRanges({
-        .sourcePort = 2,
-        .firstPoint = 4,
-        .totalPointCount = 10,
-        .portCount = 2,
-        .samples = samples,
-        .measurements = measurements,
-    });
+    const auto result =
+        synthesizeSParameterRanges(rangeRequest(samples, measurements));
 
     ASSERT_FALSE(result.hasValue());
     EXPECT_EQ(result.error().code, frames::FrameErrorCode::InvalidMeasurementId);
@@ -206,14 +201,8 @@ TEST(SParameterRangeSynthesizerTest, EmptyApplicableSetSucceeds) {
         measurement(32, domain::MeasurementType::S21),
     };
 
-    const auto result = synthesizeSParameterRanges({
-        .sourcePort = 2,
-        .firstPoint = 4,
-        .totalPointCount = 10,
-        .portCount = 2,
-        .samples = samples,
-        .measurements = measurements,
-    });
+    const auto result =
+        synthesizeSParameterRanges(rangeRequest(samples, measurements));
 
     ASSERT_TRUE(result.hasValue());
     EXPECT_TRUE(result.value().empty());

@@ -128,6 +128,10 @@ synthesizeSParameterRanges(const SParameterRangeSynthesisRequest& request) {
         if (ports->sourcePort != request.sourcePort) {
             continue;
         }
+        if (ports->responsePort > request.portCount) {
+            return frames::Result<std::vector<MeasurementSampleRange>>{
+                frames::FrameError{frames::FrameErrorCode::InvalidPortCount}};
+        }
         auto cached = cache.find(measurement.type);
         if (cached == cache.end()) {
             auto ratios = calculate(request.samples, ports->responsePort);

@@ -3,6 +3,8 @@
 #include <vna/data_plane/trace_projector.hpp>
 
 #include <array>
+#include <limits>
+#include <span>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -91,6 +93,53 @@ TEST(TraceProjectorTest, SmithPreservesComplexSamplesForEverySParameter) {
         EXPECT_EQ(complex->unit, ProjectedTraceUnit::Unitless);
         EXPECT_EQ(complex->values, expected);
     }
+}
+
+TEST(TraceProjectorTest, RejectsIncompleteMeasurementFrameBeforeProjection) {
+    auto source = measurementFrame(
+        domain::MeasurementType::S21,
+        {{1.0, 0.0}, {0.5, 0.0}});
+    source.frequencyAxis.points = 3;
+
+    const auto result = projectTraceSamples(
+        source,
+        display_model::TraceFormat::LogMagnitude);
+
+    ASSERT_FALSE(result.hasValue());
+    EXPECT_EQ(result.error().code, frames::FrameErrorCode::SampleCountMismatch);
+}
+
+TEST(TraceSampleRangeProjectorTest, ProjectsLogMagnitudeWithoutACompleteFrame) {
+    const std::array samples{
+        frames::ComplexSample{1.0, 0.0},
+        frames::ComplexSample{0.1, 0.0},
+    };
+
+    const auto result = projectTraceSamples(
+        std::span<const frames::ComplexSample>{samples},
+        display_model::TraceFormat::LogMagnitude);
+
+    ASSERT_TRUE(result.hasValue());
+    const auto* scalar = std::get_if<ScalarTraceSamples>(&result.value());
+    ASSERT_NE(scalar, nullptr);
+    EXPECT_EQ(scalar->unit, ProjectedTraceUnit::Decibel);
+    ASSERT_EQ(scalar->values.size(), 2U);
+    EXPECT_DOUBLE_EQ(scalar->values[0], 0.0);
+    EXPECT_NEAR(scalar->values[1], -20.0, 1e-12);
+}
+
+TEST(TraceSampleRangeProjectorTest, RejectsNonFiniteComplexInput) {
+    const std::array samples{
+        frames::ComplexSample{
+            std::numeric_limits<double>::quiet_NaN(), 0.0},
+    };
+
+    const auto result = projectTraceSamples(
+        std::span<const frames::ComplexSample>{samples},
+        display_model::TraceFormat::Phase);
+
+    ASSERT_FALSE(result.hasValue());
+    EXPECT_EQ(result.error().code, frames::FrameErrorCode::NonFiniteSample);
 }
 
 TEST(TraceProjectorTest, RejectsUnknownTraceFormat) {

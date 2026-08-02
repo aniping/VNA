@@ -1,5 +1,6 @@
 #pragma once
 
+#include <span>
 #include <variant>
 #include <vector>
 
@@ -31,6 +32,12 @@ struct ComplexTraceSamples {
 // Smith receives complex Sij unchanged; coordinate mapping remains a UI task.
 using ProjectedTraceSamples =
     std::variant<ScalarTraceSamples, ComplexTraceSamples>;
+
+// Projects a completed contiguous measurement range without inventing Frame
+// identity or frequency-axis completeness at the preview boundary.
+[[nodiscard]] frames::Result<ProjectedTraceSamples> projectTraceSamples(
+    std::span<const frames::ComplexSample> source,
+    display_model::TraceFormat format);
 
 [[nodiscard]] frames::Result<ProjectedTraceSamples> projectTraceSamples(
     const frames::MeasurementFrame& source,
