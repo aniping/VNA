@@ -37,6 +37,7 @@ struct SweepRuntimeConfigurationError {
 
 // Preparation owns the short staging gate. Dropping this move-only value
 // releases that gate without publishing a pending plan or changing generation.
+// The creating SweepRuntime must outlive an unconsumed prepared value.
 class PreparedSweepRuntimeConfiguration {
 public:
     PreparedSweepRuntimeConfiguration(
@@ -121,6 +122,11 @@ struct SweepRuntimeFailure {
 struct SweepRuntimeSnapshot {
     SweepRuntimeState state{SweepRuntimeState::Running};
     SweepRuntimePhase phase{SweepRuntimePhase::Preparing};
+    // These identify the immutable plan used at the last Sweep boundary.
+    // CommandBus stateRevision remains the separately observable configured
+    // revision and may be newer while a Sweep is still in flight.
+    std::uint64_t appliedStateRevision{};
+    std::uint64_t appliedGeneration{1};
     std::uint64_t attemptedSweeps{};
     std::uint64_t completedSweeps{};
     std::uint64_t rejectedSweeps{};

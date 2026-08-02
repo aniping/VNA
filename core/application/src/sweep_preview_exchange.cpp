@@ -2,10 +2,17 @@
 
 #include "sweep_preview_validation_internal.hpp"
 
+#include <limits>
+#include <type_traits>
 #include <utility>
 
 namespace vna::application {
 namespace {
+
+using PreviewEvent = std::optional<SweepPreviewEvent>;
+
+static_assert(std::is_nothrow_swappable_v<PreviewEvent>);
+static_assert(std::is_nothrow_move_assignable_v<SweepPreviewHandle>);
 
 SweepPreviewCursor cursorOf(const SweepPreviewEvent& event) {
     return std::visit(
@@ -54,17 +61,27 @@ SweepPreviewPublishResult SweepPreviewExchange::publish(
 
 SweepPreviewGenerationResult SweepPreviewExchange::advanceGeneration(
     std::uint64_t nextGeneration) {
-    SweepPreviewGenerationAdvanced advanced;
+    SweepPreviewGenerationAdvanced advanced{{}, nextGeneration};
     {
         std::lock_guard lock{mutex_};
-        if (nextGeneration == 0 || nextGeneration != generation_ + 1) {
+        if (generation_ == std::numeric_limits<std::uint64_t>::max() ||
+            nextCursor_ == std::numeric_limits<std::uint64_t>::max() ||
+            nextGeneration != generation_ + 1) {
             return SweepPreviewError{SweepPreviewErrorCode::GenerationNotNext};
         }
-        generation_ = nextGeneration;
-        activeIdentity_.reset();
-        currentPreview_.reset();
-        advanced = {SweepPreviewCursor{nextCursor_++}, generation_};
-        latestEvent_ = advanced;
+        advanced.cursor = SweepPreviewCursor{nextCursor_};
+        // Materialize the event before the first visible mutation so this
+        // direct seam has the same strong guarantee as the runtime transaction.
+        PreviewEvent nextEvent{advanced};
+        const auto commitPrepared = [&]() noexcept {
+            generation_ = nextGeneration;
+            activeIdentity_.reset();
+            currentPreview_.reset();
+            ++nextCursor_;
+            latestEvent_.swap(nextEvent);
+        };
+        static_assert(noexcept(commitPrepared()));
+        commitPrepared();
     }
     changed_.notify_all();
     return advanced;

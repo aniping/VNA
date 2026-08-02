@@ -3,6 +3,7 @@
 #include "trace_display_frame_validation_internal.hpp"
 
 #include <limits>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -10,6 +11,13 @@
 
 namespace vna::application {
 namespace {
+
+using TraceMap = std::unordered_map<
+    std::uint64_t, TraceDisplayFrameHandle>;
+
+static_assert(noexcept(std::declval<TraceMap&>().swap(
+    std::declval<TraceMap&>())));
+static_assert(std::is_nothrow_move_assignable_v<TraceDisplayFrameSetHandle>);
 
 TraceDisplayFrameSetError setError(
     TraceDisplayFrameSetErrorCode code,
@@ -131,22 +139,35 @@ TraceDisplayFrameSetResult TraceDisplayFrameRepository::publishFrameSet(
 TraceDisplayGenerationResult TraceDisplayFrameRepository::advanceGeneration(
     std::uint64_t nextGeneration) {
     std::vector<std::shared_ptr<WaitState>> notify;
+    TraceMap emptyFrames;
     {
         std::lock_guard lock{mutex_};
         if (generation_ == std::numeric_limits<std::uint64_t>::max() ||
             nextGeneration != generation_ + 1) {
             return setError(TraceDisplayFrameSetErrorCode::GenerationNotNext);
         }
-        generation_ = nextGeneration;
-        latestFrameSet_.reset();
-        latestByTrace_.clear();
-        // A generation boundary invalidates every legacy per-Trace view too;
-        // bumping its discard epoch lets existing waits observe that boundary.
+        // Snapshot every waiter before changing the epoch. Allocation failure
+        // therefore leaves generation and both retained views untouched.
+        notify.reserve(waitStates_.size());
         for (const auto& [traceId, state] : waitStates_) {
             static_cast<void>(traceId);
-            ++state->discardGeneration;
+            if (state->discardGeneration ==
+                std::numeric_limits<std::uint64_t>::max()) {
+                return setError(
+                    TraceDisplayFrameSetErrorCode::GenerationNotNext);
+            }
             notify.push_back(state);
         }
+        const auto commitPrepared = [&]() noexcept {
+            generation_ = nextGeneration;
+            latestFrameSet_.reset();
+            latestByTrace_.swap(emptyFrames);
+            for (const auto& state : notify) {
+                ++state->discardGeneration;
+            }
+        };
+        static_assert(noexcept(commitPrepared()));
+        commitPrepared();
     }
     // Notification stays lock-free for the same re-entrancy reason as publish.
     for (const auto& state : notify) {

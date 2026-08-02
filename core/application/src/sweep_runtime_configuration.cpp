@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <exception>
 #include <stdexcept>
+#include <type_traits>
 #include <utility>
 
 #include <vna/application/command_bus.hpp>
@@ -19,6 +20,22 @@ SweepRuntimeConfigurationError unavailable(SweepRuntimeState state) {
         ? SweepRuntimeConfigurationErrorCode::Retired
         : SweepRuntimeConfigurationErrorCode::Failed;
     return {code};
+}
+
+bool sameAcquisitionPlan(
+    const acquisition::ContinuousAcquisitionPlan& left,
+    const acquisition::ContinuousAcquisitionPlan& right) {
+    return left.frequencyAxis.id == right.frequencyAxis.id &&
+        left.frequencyAxis.startFrequencyHz ==
+            right.frequencyAxis.startFrequencyHz &&
+        left.frequencyAxis.stopFrequencyHz ==
+            right.frequencyAxis.stopFrequencyHz &&
+        left.frequencyAxis.points == right.frequencyAxis.points &&
+        left.portCount == right.portCount &&
+        left.sourcePorts == right.sourcePorts &&
+        left.ifBandwidthHz == right.ifBandwidthHz &&
+        left.powerDbm == right.powerDbm &&
+        left.minimumSweepPeriod == right.minimumSweepPeriod;
 }
 
 }  // namespace
@@ -47,7 +64,10 @@ SweepRuntimeImpl::prepareConfiguration(const StateSnapshot& candidate) {
     acquisition.ifBandwidthHz =
         static_cast<std::uint32_t>(channel->sweep.ifBandwidthHz);
     acquisition.powerDbm = channel->sweep.powerDbm;
-    auto publication = catalog_.prepare(candidate, candidate.stateRevision);
+    const auto acquisitionChanged = !sameAcquisitionPlan(
+        acquisition, plan_.acquisition);
+    auto publication = catalog_.prepare(
+        candidate, candidate.stateRevision, acquisitionChanged);
     if (std::holds_alternative<TracePublicationCatalogError>(publication)) {
         return SweepRuntimeConfigurationError{
             SweepRuntimeConfigurationErrorCode::TraceConfigurationRejected};
@@ -74,7 +94,10 @@ void SweepRuntimeImpl::commitConfiguration(
     static_assert(std::is_nothrow_move_assignable_v<
         decltype(pendingConfiguration_)>);
     pendingConfiguration_ = std::move(state->pending);
-    state->gate.unlock();
+    static_assert(std::is_nothrow_destructible_v<
+        detail::PreparedSweepRuntimeConfigurationState>);
+    static_assert(noexcept(state.reset()));
+    state.reset();
     changed_.notify_all();
 }
 
@@ -90,6 +113,8 @@ void SweepRuntimeImpl::applyPendingConfiguration() {
     static_assert(std::is_nothrow_move_assignable_v<SweepRuntimePlan>);
     plan_ = std::move(pendingConfiguration_->plan);
     pendingConfiguration_.reset();
+    snapshot_.appliedStateRevision = plan_.publication->stateRevision;
+    snapshot_.appliedGeneration = plan_.publication->generation;
 }
 
 }  // namespace vna::application::internal

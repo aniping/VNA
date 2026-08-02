@@ -163,7 +163,8 @@ TracePublicationPlanHandle TracePublicationCatalog::capture() const {
 
 TracePublicationPrepareResult TracePublicationCatalog::prepare(
     const StateSnapshot& candidate,
-    std::uint64_t nextStateRevision) const {
+    std::uint64_t nextStateRevision,
+    bool forceGenerationAdvance) const {
     // Only copying the immutable base token needs the gate; all candidate
     // validation and allocation intentionally happen after capture returns.
     const auto base = capture();
@@ -174,7 +175,8 @@ TracePublicationPrepareResult TracePublicationCatalog::prepare(
     }
     auto targets =
         std::move(std::get<std::vector<TracePublicationTarget>>(compiled));
-    const auto changed = !sameMaterialIdentity(*base, targets);
+    const auto changed = forceGenerationAdvance ||
+        !sameMaterialIdentity(*base, targets);
     if (changed &&
         base->generation == std::numeric_limits<std::uint64_t>::max()) {
         return catalogError(

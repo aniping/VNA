@@ -91,7 +91,8 @@ public:
 
     [[nodiscard]] TracePublicationPrepareResult prepare(
         const StateSnapshot& candidate,
-        std::uint64_t nextStateRevision) const;
+        std::uint64_t nextStateRevision,
+        bool forceGenerationAdvance = false) const;
     [[nodiscard]] TracePublicationCommitResult commit(
         PreparedTracePublicationPlan prepared);
     [[nodiscard]] TracePublicationPlanHandle capture() const;
