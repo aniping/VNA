@@ -186,7 +186,6 @@ git --version
   Invoke-Arm64Ssh @"
 set -eu
 cd '$remoteSource'
-test -f build-arm64/third-part/spdlog/libspdlogd.a
 assert_aarch64_elf() {
   header="`$(readelf -h "`$1")"
   printf '%s\n' "`$header"
@@ -194,7 +193,6 @@ assert_aarch64_elf() {
   printf '%s\n' "`$header" | grep -Eq "Data:[[:space:]]+2's complement, little endian"
   printf '%s\n' "`$header" | grep -Eq 'Machine:[[:space:]]+AArch64'
 }
-assert_aarch64_elf build-arm64/third-part/spdlog/CMakeFiles/spdlog.dir/src/spdlog.cpp.o
 assert_aarch64_elf build-arm64/apps/vna-server/vna-server
 "@
 }
@@ -226,8 +224,8 @@ finally {
 ## 结果判定
 
 通过必须同时满足：环境报告 `aarch64`；根配置成功；`vna-server` 编译和链接
-成功；spdlog 为静态库；`readelf` 对 spdlog 对象和 `vna-server` 都报告
-`ELF64`、little-endian、`AArch64`。报告分别记录配置与服务端构建的 wall time。
+成功；`readelf` 对 `vna-server` 报告 `ELF64`、little-endian、`AArch64`。
+报告分别记录配置与服务端构建的 wall time。
 
 若预检缺少 Git、编译器或 `readelf`，应停止并报告缺失工具，不得把未执行目标
 描述为通过。该脚本不执行 Linux 功能测试；QEMU 下的低速属于预期现象，不得用

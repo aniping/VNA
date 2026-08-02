@@ -41,7 +41,7 @@ git submodule update --init --recursive
 - GoogleTest `v1.17.0`
 - cpp-httplib `v0.51.0`
 - JSON for Modern C++ `v3.12.0`
-- spdlog `v1.17.0`（compiled static）
+- spdlog `v1.17.0`（仅保留第三方源码，当前不参与构建）
 
 前端包通过 `frontend/pnpm-lock.yaml` 固定精确版本，安装产物位于被忽略的
 `frontend/node_modules/`，不提交到仓库。
@@ -86,8 +86,8 @@ ctest --test-dir build --output-on-failure
 [Linux/ARM64 QEMU 验证](docs/linux-arm64-qemu-validation.md)。它只编译和链接
 `vna-server` 并检查产物架构，不运行功能测试，也不扩大正式平台支持范围。
 
-`build/`、`out/` 和 `frontend/dist/` 只是构建中间产物。组装包含服务端、前端静态文件、
-日志目录和运行库的便携发布目录前，还需要 Node.js 20.19 或更高版本、pnpm
+`build/`、`out/` 和 `frontend/dist/` 只是构建中间产物。组装包含服务端、前端静态文件和
+运行库的便携发布目录前，还需要 Node.js 20.19 或更高版本、pnpm
 11.9.0，并在首次打包或锁文件变化后安装前端依赖：
 
 ```powershell
@@ -115,20 +115,14 @@ Linux/GCC 使用相同目录结构，以下命令同样从仓库根运行：
 ```
 
 也可以在任意工作目录使用 `start.cmd` 或 `start.sh` 的绝对路径。服务从自身
-可执行文件位置定位相邻的 `web/` 与 `logs/`，不依赖当前工作目录；
+可执行文件位置定位相邻的 `web/`，不依赖当前工作目录；
 浏览器打开 `http://127.0.0.1:8080/`。服务仅监听 `127.0.0.1:8080`，可通过
 `/api/v1/health`、`/api/v1/state`
 和 `/api/v1/commands` 验证当前 HTTP 切片。
 `/api/v1/state` 的成功响应使用 `Cache-Control: no-store`，客户端不得缓存状态快照。
-启动脚本先输出启动状态、Web URL 及两个日志文件位置；服务随后把同一事件
-写为控制台和 `logs/vna.log` 的人类文本，并将权威 JSON Lines 写入
-`logs/vna.jsonl`。两类文件各自按 10 MiB、含活动文件最多 10 个滚动。日志记录稳定的 `server.*` 启动里程碑以及所有经
-`/api/v1/commands` 提交的 `web.command.*` 成功或拒绝结果，包含关联 ID 和
-状态版本；拒绝结果还包含与 HTTP 响应一致的稳定错误码，但不包含请求体或
-测量数组。服务非零退出时，脚本额外输出一行人类
-错误提示并保留原始退出码，不自动打开浏览器。
-启动里程碑直接显示当前工厂预置、采集周期/端口/IFBW/功率、默认迹线格式和
-Web 地址；这些值从组合根实际使用的预置快照生成，不是脚本中的重复常量。
+启动脚本输出启动状态和 Web URL；服务非零退出时额外输出一行错误提示并
+保留原始退出码，不自动打开浏览器。当前版本不包含运行日志系统，后续方案
+需重新设计和决策。
 `/api/v1/commands` 的失败响应保留 `status` 与 `stateRevision`，并提供稳定的
 `errorCode` 供客户端区分具体错误。
 `commandId`、`sessionId` 和 `instrumentId` 必须为 1..128 bytes，且不得包含

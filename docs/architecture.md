@@ -209,7 +209,7 @@ HAL 面向完整测量能力，而不是寄存器、SPI 或 ADC 的薄包装。�
 
 ### 5.6 横切基础设施
 
-持久化、日志、追踪、安全、配置和插件注册为横切能力。它们通过明确接口服务于各层，不反向拥有领域规则。
+持久化、追踪、安全、配置和插件注册为横切能力。它们通过明确接口服务于各层，不反向拥有领域规则。当前日志实现已撤销，恢复前必须另立架构决策。
 
 ## 6. 模块依赖规则
 
@@ -448,7 +448,7 @@ trace_id
 | Acquisition Executor | 准备、触发、采集和中止 |
 | Processing Pool | 校准、去嵌、格式转换、Marker 和 Limit |
 | Network Event Loop | REST、WebSocket 和 SCPI I/O |
-| Storage Worker | 保存项目、数据、CalSet 和日志 |
+| Storage Worker | 保存项目、数据和 CalSet |
 | Driver Event Loop | 中断、DMA、总线和驱动回调 |
 
 背压策略按消费语义确定：
@@ -583,7 +583,7 @@ stateDiagram-v2
 - Simulation Data
 - Replay Data
 
-结构化日志不得以自由文本作为唯一关联方式。日志、指标和追踪都应携带统一关联标识，且不得默认记录密码、令牌或完整敏感文件内容。
+命令、操作、扫频和帧必须通过稳定 ID 建立因果关联，不得依赖自由文本。未来诊断方案不得默认记录密码、令牌或完整敏感文件内容。
 
 ## 18. 目标工程目录
 
@@ -647,7 +647,7 @@ vna-platform/
 - **算法金样测试**：使用公开理论值、已知网络模型和固定 Seed 数据。
 - **SCPI 一致性测试**：长短命令、单位、队列、状态寄存器和同步语义。
 - **仿真端到端测试**：从命令到原始帧、处理、WebSocket/SCPI 输出的完整链路。
-- **Replay 回归测试**：固定命令日志和原始数据重现问题。
+- **Replay 回归测试**：固定命令记录和原始数据重现问题。
 - **故障注入测试**：超时、丢帧、断连、过载和取消恢复。
 - **性能测试**：扫频吞吐、处理延迟、内存上限和慢客户端背压。
 - **平台矩阵测试**：Windows/MinGW GCC 与 Linux/GCC 均执行配置、编译和测试；平台适配器运行各自的契约测试。
@@ -675,7 +675,7 @@ vna-platform/
 - [ADR-0002：所有外部入口映射到统一内部契约](adr/0002-unified-internal-contracts.md)
 - [ADR-0003：仿真后端输出原始接收机帧](adr/0003-simulate-raw-receiver-frames.md)
 - [ADR-0004：核心软件原生支持 Windows 与 Linux](adr/0004-native-windows-linux-support.md)
-- [ADR-0005：采用结构化可观测性接口与双日志输出](adr/0005-structured-observability.md)
+- [ADR-0005（已撤销）：采用结构化可观测性接口与双日志输出](adr/0005-structured-observability.md)
 - [ADR-0006：采用乐观并发控制、幂等命令与结构化错误](adr/0006-optimistic-control-and-command-reliability.md)
 - [ADR-0007：在 Scale 和 Marker 前拆分显示模型](adr/0007-separate-display-model.md)
 - [ADR-0008：以 Operation 完成栅栏实现 SCPI 同步](adr/0008-operation-fences-for-scpi-synchronization.md)

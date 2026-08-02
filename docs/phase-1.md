@@ -45,7 +45,7 @@
 - 接收机比值到 S11/S21 复数数据的测量合成。
 - Trace 格式转换与 FrameRepository。
 - 固定 Seed 噪声。
-- RawFrame 和命令日志的 Record/Replay。
+- RawFrame 和命令记录的 Record/Replay。
 
 **交互与呈现**
 
@@ -72,7 +72,7 @@
 - `cpp-httplib` 在两个平台上的协议适配器集成测试。
 - `cpp-httplib` 的 HTTP、WebSocket 兼容性冒烟测试。
 - 启用 HTTPS、WSS 或非回环地址监听前完成双平台 TLS 冒烟测试。
-- 结构化日志和统一关联标识。
+- 统一关联标识；运行日志方案另行决策。
 - 核心领域单元测试。
 - Backend 契约测试。
 - 确定性算法金样测试。
@@ -180,7 +180,7 @@ Vue 工作台骨架。前端按 [ZNB v74 界面复刻基线](ui-znb-v74-referenc
 
 - 录制内容可在 Replay Backend 中重现相同 Trace 结果。
 - 可从 Trace 帧追溯到 RawFrame、SweepPlan、Operation 和 Command。
-- 日志和录制文件不包含认证令牌或未声明的敏感数据。
+- 命令记录和录制文件不包含认证令牌或未声明的敏感数据。
 
 ### M7：阶段验收
 
