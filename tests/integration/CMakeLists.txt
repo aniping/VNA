@@ -1,6 +1,7 @@
 add_executable(
     vna_logging_tests
     logging/json_lines_logger_concurrency_test.cpp
+    logging/json_lines_logger_rotation_test.cpp
     logging/json_lines_logger_test.cpp
 )
 target_link_libraries(
