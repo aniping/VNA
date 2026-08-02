@@ -70,6 +70,10 @@ std::string describe(
 std::string describe(const application::RemoveTraceCommand& command) {
     return "删除迹线#" + std::to_string(command.traceId.value());
 }
+std::string describe(const application::EnsureAllSParametersCommand& command) {
+    return "为迹线#" + std::to_string(command.traceId.value()) +
+           "补齐全部 S 参数";
+}
 std::string describe(const application::StartSingleSweepCommand& command) {
     return "启动通道#" + std::to_string(command.channelId.value()) +
            "单次扫频";

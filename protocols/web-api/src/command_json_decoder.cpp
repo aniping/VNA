@@ -115,6 +115,10 @@ application::CommandPayload commandPayloadFromJson(
             traceIdFromJson(payload),
             payload.at("scalePerDivision").get<double>()};
     }
+    if (type == "ensureAllSParameters") {
+        return application::EnsureAllSParametersCommand{
+            traceIdFromJson(payload)};
+    }
     if (type == "startSingleSweep") {
         return application::StartSingleSweepCommand{
             domain::ChannelId{

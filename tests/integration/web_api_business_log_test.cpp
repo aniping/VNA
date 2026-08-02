@@ -142,5 +142,30 @@ TEST_F(WebApiBusinessLogTest, LogsDisabledSingleSweepAsResourceBusy) {
     EXPECT_EQ(text.find("frame_id="), std::string::npos);
 }
 
+TEST_F(WebApiBusinessLogTest, DescribesAllSParametersUsingTraceId) {
+    ASSERT_EQ(post(createChannelRequest("channel", 0))->status, 200);
+    ASSERT_EQ(post(commandRequest(
+        "measurement", 1, "createMeasurement",
+        {{"channelId", 1}, {"type", "S21"}}))->status, 200);
+    ASSERT_EQ(post(commandRequest(
+        "window", 2, "createWindow", nlohmann::json::object()))->status, 200);
+    ASSERT_EQ(post(commandRequest(
+        "trace", 3, "createTrace",
+        {{"windowId", 1}, {"measurementId", 1},
+         {"format", "logMagnitude"}}))->status, 200);
+    log_.clear();
+
+    const auto response = post(commandRequest(
+        "all-s", 4, "ensureAllSParameters", {{"traceId", 1}}));
+
+    ASSERT_TRUE(response);
+    ASSERT_EQ(response->status, httplib::StatusCode::OK_200);
+    EXPECT_NE(log_.text().find(
+        "INFO [配置命令] 为迹线#1补齐全部 S 参数请求已成功处理 | "
+        "command_id=all-s | session_id=web-log-session | "
+        "instrument_id=instrument-1 | revision=5 | trace_id=1"),
+        std::string::npos);
+}
+
 }  // namespace
 }  // namespace vna::web_api
