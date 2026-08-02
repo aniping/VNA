@@ -50,7 +50,11 @@ test('selects authoritative dB samples and Scale range without deriving display 
   )
   assert.deepEqual(curve, {
     kind: 'cartesian', traceId: 31, label: 'Log Magnitude', unit: 'dB',
-    samples: { frequenciesHz: common.frequenciesHz, values: [-80, -30, 20] },
+    samples: {
+      frequencyMinimumHz: 1e6,
+      frequencyMaximumHz: 3e6,
+      segments: [{ frequenciesHz: common.frequenciesHz, values: [-80, -30, 20] }],
+    },
     range: { minimum: -80, maximum: 20 },
   })
 })
@@ -62,9 +66,29 @@ test('uses the frozen Phase degree viewport and preserves backend samples', () =
   )
   assert.deepEqual(curve, {
     kind: 'cartesian', traceId: 31, label: 'Phase', unit: 'degree',
-    samples: { frequenciesHz: common.frequenciesHz, values: [-180, 0, 179.5] },
+    samples: {
+      frequencyMinimumHz: 1e6,
+      frequencyMaximumHz: 3e6,
+      segments: [{ frequenciesHz: common.frequenciesHz, values: [-180, 0, 179.5] }],
+    },
     range: { minimum: -225, maximum: 225 },
   })
+})
+
+test('wraps a complete Cartesian frame as exactly one explicit sample segment', () => {
+  const snapshot = state('phase')
+  const curve = selectDiagramCurve(
+    snapshot.instrument.traces[0], snapshot.instrument.measurements[0], frame('phase'),
+  )
+  assert.equal(curve?.kind === 'cartesian' ? curve.samples.segments.length : 0, 1)
+})
+
+test('wraps a complete Smith frame as exactly one explicit sample segment', () => {
+  const snapshot = state('smith')
+  const curve = selectDiagramCurve(
+    snapshot.instrument.traces[0], snapshot.instrument.measurements[0], frame('smith'),
+  )
+  assert.equal(curve?.kind === 'smith' ? curve.segments.length : 0, 1)
 })
 
 test('maps Smith pairs to the frozen complex-plane seam without unit-circle filtering', () => {
@@ -74,8 +98,8 @@ test('maps Smith pairs to the frozen complex-plane seam without unit-circle filt
   )
   assert.deepEqual(curve, {
     kind: 'smith', traceId: 31,
-    samples: [{ real: 0, imaginary: 0 }, { real: 1, imaginary: 0 },
-      { real: 1.2, imaginary: 0.2 }],
+    segments: [[{ real: 0, imaginary: 0 }, { real: 1, imaginary: 0 },
+      { real: 1.2, imaginary: 0.2 }]],
   })
 })
 

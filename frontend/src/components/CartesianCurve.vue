@@ -1,24 +1,27 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import {
-  projectCartesianPoints,
+  projectCartesianSegments,
   type CartesianAxisRange,
-  type CartesianSamples,
+  type CartesianSegmentedSamples,
 } from '../plot/cartesianProjection'
+import { segmentedSvgPath } from '../plot/segmentedSvgPath'
 
 const props = defineProps<{
   traceId: number
   label: string
   unit: string
-  samples: CartesianSamples
+  samples: CartesianSegmentedSamples
   range: CartesianAxisRange
 }>()
 
-const pathData = computed(() => projectCartesianPoints(props.samples, props.range)
-  .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
-  .join(' '))
+const pathData = computed(() => segmentedSvgPath(
+  projectCartesianSegments(props.samples, props.range),
+))
+const sampleCount = computed(() => props.samples.segments
+  .reduce((total, segment) => total + segment.values.length, 0))
 const description = computed(
-  () => `Trace ${props.traceId} ${props.label} curve in ${props.unit}, ${props.samples.values.length} samples`,
+  () => `Trace ${props.traceId} ${props.label} curve in ${props.unit}, ${sampleCount.value} samples`,
 )
 </script>
 

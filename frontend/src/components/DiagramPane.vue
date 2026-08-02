@@ -104,7 +104,7 @@ function selectTrace(): void {
       <SmithCurve
         v-else-if="curve?.kind === 'smith'"
         :trace-id="curve.traceId"
-        :samples="curve.samples"
+        :segments="curve.segments"
       />
       <span v-else class="plot-empty">{{ noMeasurementDataMessage }}</span>
     </div>

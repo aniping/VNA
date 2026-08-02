@@ -1,20 +1,21 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import {
-  projectSmithPoints,
+  projectSmithSegments,
   type SmithComplexPoint,
 } from '../plot/smithProjection'
+import { segmentedSvgPath } from '../plot/segmentedSvgPath'
 
 const props = defineProps<{
   traceId: number
-  samples: readonly SmithComplexPoint[]
+  segments: readonly (readonly SmithComplexPoint[])[]
 }>()
 
-const pathData = computed(() => projectSmithPoints(props.samples)
-  .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
-  .join(' '))
+const pathData = computed(() => segmentedSvgPath(projectSmithSegments(props.segments)))
+const sampleCount = computed(() => props.segments
+  .reduce((total, segment) => total + segment.length, 0))
 const description = computed(
-  () => `Trace ${props.traceId} Smith curve, ${props.samples.length} samples`,
+  () => `Trace ${props.traceId} Smith curve, ${sampleCount.value} samples`,
 )
 </script>
 

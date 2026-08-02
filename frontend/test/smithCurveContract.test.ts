@@ -7,8 +7,10 @@ const curveSource = readFileSync(
   'utf8',
 )
 
-test('SmithCurve exposes complex samples on an equal-aspect SVG viewport', () => {
-  assert.match(curveSource, /samples: readonly SmithComplexPoint\[\]/)
+test('SmithCurve exposes explicit complex sample segments on an equal-aspect SVG viewport', () => {
+  assert.match(curveSource, /segments: readonly \(readonly SmithComplexPoint\[\]\)\[\]/)
+  assert.match(curveSource, /projectSmithSegments\(props\.segments\)/)
+  assert.match(curveSource, /segmentedSvgPath/)
   assert.match(curveSource, /viewBox="-1 -1 2 2"/)
   assert.match(curveSource, /preserveAspectRatio="xMidYMid meet"/)
   assert.match(curveSource, /v-if="pathData"/)

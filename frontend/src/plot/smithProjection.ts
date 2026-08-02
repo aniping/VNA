@@ -18,3 +18,9 @@ export function projectSmithPoints(
     y: imaginary === 0 ? 0 : -imaginary,
   }))
 }
+
+export function projectSmithSegments(
+  segments: readonly (readonly SmithComplexPoint[])[],
+): readonly (readonly SmithPlotPoint[])[] {
+  return segments.map(projectSmithPoints)
+}

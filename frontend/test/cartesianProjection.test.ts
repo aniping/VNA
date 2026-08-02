@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { projectCartesianPoints } from '../src/plot/cartesianProjection.ts'
+import {
+  projectCartesianPoints,
+  projectCartesianSegments,
+} from '../src/plot/cartesianProjection.ts'
 
 test('projects backend Cartesian values onto the existing normalized dB viewport', () => {
   const points = projectCartesianPoints({
@@ -41,5 +44,21 @@ test('projects wrapped Phase samples inside the wider ZNB default viewport', () 
     { x: 0, y: 0.9 },
     { x: 0.5, y: 0.5 },
     { x: 1, y: 91 / 900 },
+  ])
+})
+
+test('projects ordered Cartesian segments against one full frequency axis', () => {
+  const segments = projectCartesianSegments({
+    frequencyMinimumHz: 1,
+    frequencyMaximumHz: 11,
+    segments: [
+      { frequenciesHz: [1, 2], values: [-80, -30] },
+      { frequenciesHz: [10, 11], values: [-30, 20] },
+    ],
+  }, { minimum: -80, maximum: 20 })
+
+  assert.deepEqual(segments, [
+    [{ x: 0, y: 1 }, { x: 0.1, y: 0.5 }],
+    [{ x: 0.9, y: 0.5 }, { x: 1, y: 0 }],
   ])
 })
