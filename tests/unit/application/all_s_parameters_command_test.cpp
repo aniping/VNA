@@ -1,7 +1,8 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <set>
+#include <array>
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <variant>
@@ -43,6 +44,32 @@ TraceDisplayFrameSet frameSetFor(
         });
     }
     return {plan->generation, sequence, std::move(frames)};
+}
+
+void expectCanonicalDisplay(const StateSnapshot& state) {
+    constexpr std::array expectedTypes{
+        domain::MeasurementType::S11,
+        domain::MeasurementType::S12,
+        domain::MeasurementType::S21,
+        domain::MeasurementType::S22,
+    };
+    ASSERT_EQ(state.display.windows.size(), expectedTypes.size());
+    ASSERT_EQ(state.display.traces.size(), expectedTypes.size());
+    for (std::size_t index = 0; index < expectedTypes.size(); ++index) {
+        const auto expectedId = static_cast<std::uint64_t>(index + 1);
+        const auto& trace = state.display.traces[index];
+        EXPECT_EQ(trace.id, display_model::TraceId{expectedId});
+        EXPECT_EQ(trace.windowId, display_model::WindowId{expectedId});
+        EXPECT_EQ(trace.format, display_model::TraceFormat::LogMagnitude);
+        const auto measurement = std::find_if(
+            state.instrument.measurements.cbegin(),
+            state.instrument.measurements.cend(),
+            [&trace](const auto& item) {
+                return item.id == trace.measurementId;
+            });
+        ASSERT_NE(measurement, state.instrument.measurements.cend());
+        EXPECT_EQ(measurement->type, expectedTypes[index]);
+    }
 }
 
 class AllSParametersCommandTest : public ::testing::Test {
@@ -95,29 +122,12 @@ TEST_F(AllSParametersCommandTest, CreatesFourSingleTraceDiagramsAtomically) {
         display_model::TraceId{1});
     const auto state = bus_.snapshot();
     ASSERT_EQ(state.instrument.measurements.size(), 4U);
-    ASSERT_EQ(state.display.windows.size(), 4U);
-    ASSERT_EQ(state.display.traces.size(), 4U);
+    expectCanonicalDisplay(state);
     EXPECT_EQ(catalog_.capture()->generation, 2U);
     EXPECT_EQ(catalog_.capture()->targets.size(), 4U);
     EXPECT_EQ(repository_.latestFrameSet(), nullptr);
 
-    const auto& anchor = state.display.traces.front();
-    EXPECT_EQ(anchor.id, display_model::TraceId{1});
-    EXPECT_EQ(anchor.windowId, display_model::WindowId{1});
-    EXPECT_EQ(anchor.measurementId, domain::MeasurementId{1});
-    const std::set expectedTypes{
-        domain::MeasurementType::S11,
-        domain::MeasurementType::S12,
-        domain::MeasurementType::S21,
-        domain::MeasurementType::S22,
-    };
-    std::set<domain::MeasurementType> actualTypes;
-    for (const auto& target : catalog_.capture()->targets) {
-        actualTypes.insert(target.measurement.type);
-    }
-    EXPECT_EQ(actualTypes, expectedTypes);
     for (const auto& trace : state.display.traces) {
-        EXPECT_EQ(trace.format, display_model::TraceFormat::LogMagnitude);
         EXPECT_EQ(
             std::count_if(
                 state.display.traces.cbegin(), state.display.traces.cend(),

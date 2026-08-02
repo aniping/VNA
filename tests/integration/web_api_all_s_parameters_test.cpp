@@ -3,8 +3,8 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
+#include <array>
 #include <cstdint>
-#include <set>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -31,6 +31,15 @@ Json commandRequest(
         {"type", "ensureAllSParameters"},
         {"payload", std::move(payload)},
     };
+}
+
+const Json& findMeasurement(const Json& instrument, std::uint64_t id) {
+    for (const auto& measurement : instrument.at("measurements")) {
+        if (measurement.at("id") == id) {
+            return measurement;
+        }
+    }
+    throw std::runtime_error{"measurement missing from state"};
 }
 
 class WebApiAllSParametersTest : public ::testing::Test {
@@ -107,21 +116,19 @@ TEST_F(WebApiAllSParametersTest, CreatesFourSingleTraceDiagramsAndReplays) {
     EXPECT_EQ(instrument.at("windows").size(), 4U);
     EXPECT_EQ(instrument.at("traces").size(), 4U);
 
-    std::set<std::string> types;
-    for (const auto& measurement : instrument.at("measurements")) {
-        types.insert(measurement.at("type").get<std::string>());
-    }
-    EXPECT_EQ(types, (std::set<std::string>{"S11", "S12", "S21", "S22"}));
-
-    std::set<std::uint64_t> windowIds;
-    for (const auto& trace : instrument.at("traces")) {
-        windowIds.insert(trace.at("windowId").get<std::uint64_t>());
+    constexpr std::array expectedTypes{"S11", "S12", "S21", "S22"};
+    for (std::size_t index = 0; index < expectedTypes.size(); ++index) {
+        const auto expectedId = static_cast<std::uint64_t>(index + 1);
+        const auto& trace = instrument.at("traces").at(index);
+        EXPECT_EQ(trace.at("id"), expectedId);
+        EXPECT_EQ(trace.at("windowId"), expectedId);
         EXPECT_EQ(trace.at("format"), "logMagnitude");
+        const auto measurementId =
+            trace.at("measurementId").get<std::uint64_t>();
+        EXPECT_EQ(
+            findMeasurement(instrument, measurementId).at("type"),
+            expectedTypes[index]);
     }
-    EXPECT_EQ(windowIds.size(), 4U);
-    EXPECT_EQ(instrument.at("traces").at(0).at("id"), 1);
-    EXPECT_EQ(instrument.at("traces").at(0).at("windowId"), 1);
-    EXPECT_EQ(instrument.at("traces").at(0).at("measurementId"), 1);
 }
 
 TEST_F(WebApiAllSParametersTest, RejectsAliasAndMissingTraceWithoutMutation) {

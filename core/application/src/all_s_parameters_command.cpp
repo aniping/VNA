@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -84,28 +85,21 @@ bool isComplete(
         display.windows.size() != kSParameters.size()) {
         return false;
     }
-    for (const auto type : kSParameters) {
-        const auto matches = std::count_if(
-            display.traces.cbegin(), display.traces.cend(),
-            [&](const auto& trace) {
-                const auto* measurement =
-                    findMeasurement(instrument, trace.measurementId);
-                return measurement != nullptr &&
-                    measurement->channelId == channelId &&
-                    measurement->type == type;
-            });
-        if (matches != 1) {
+    for (std::size_t index = 0; index < kSParameters.size(); ++index) {
+        const auto expectedId = static_cast<std::uint64_t>(index + 1);
+        const auto& window = display.windows[index];
+        const auto& trace = display.traces[index];
+        const auto* measurement =
+            findMeasurement(instrument, trace.measurementId);
+        if (window.id != display_model::WindowId{expectedId} ||
+            trace.id != display_model::TraceId{expectedId} ||
+            trace.windowId != window.id || measurement == nullptr ||
+            measurement->channelId != channelId ||
+            measurement->type != kSParameters[index]) {
             return false;
         }
     }
-    return std::all_of(
-        display.windows.cbegin(), display.windows.cend(), [&](const auto& window) {
-            return std::count_if(
-                       display.traces.cbegin(), display.traces.cend(),
-                       [&window](const auto& trace) {
-                           return trace.windowId == window.id;
-                       }) == 1;
-        });
+    return true;
 }
 
 bool isPresetShape(
@@ -136,21 +130,30 @@ std::optional<domain::MeasurementId> ensureMeasurement(
         : std::nullopt;
 }
 
-bool appendMissingDiagrams(
+bool appendCanonicalDiagrams(
     domain::Instrument& instrument,
     display_model::DisplayWorkspace& display,
-    domain::ChannelId channelId) {
+    domain::ChannelId channelId,
+    display_model::TraceId anchorTraceId) {
+    std::vector<domain::MeasurementId> measurements;
+    measurements.reserve(kSParameters.size());
     for (const auto type : kSParameters) {
-        if (type == domain::MeasurementType::S21) {
-            continue;
-        }
         const auto measurement = ensureMeasurement(instrument, channelId, type);
         if (!measurement.has_value()) {
             return false;
         }
+        measurements.push_back(*measurement);
+    }
+    if (!display.updateTraceMeasurement(
+            anchorTraceId, measurements.front()).hasValue()) {
+        return false;
+    }
+    for (std::size_t index = 1; index < measurements.size(); ++index) {
         const auto window = display.createWindow();
         const auto trace = display.createTrace(
-            window, *measurement, display_model::TraceFormat::LogMagnitude);
+            window,
+            measurements[index],
+            display_model::TraceFormat::LogMagnitude);
         if (!trace.hasValue()) {
             return false;
         }
@@ -195,8 +198,11 @@ CommandResult CommandBus::execute(const EnsureAllSParametersCommand& command) {
 
     auto candidateInstrument = instrument_;
     auto candidateDisplay = displayWorkspace_;
-    if (!appendMissingDiagrams(
-            candidateInstrument, candidateDisplay, measurement->channelId)) {
+    if (!appendCanonicalDiagrams(
+            candidateInstrument,
+            candidateDisplay,
+            measurement->channelId,
+            anchor->id)) {
         return applicationError(
             ApplicationErrorCode::TraceConfigurationRejected);
     }
