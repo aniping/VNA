@@ -1,6 +1,6 @@
 # ZNB All S-Params 功能规格
 
-> 状态：已冻结；当前实现待按身份顺序修订并重新完成正式发布版验收
+> 状态：符合
 >
 > 基线：`main@a589bf7`
 >
@@ -162,3 +162,12 @@ FrameSet。
    `docs/znb-conformance-gate.md` 记录功能和页面 UI 门禁结论。
 
 本规格的自动化测试不能替代上述正式 release 的真实浏览器目视和交互验收。
+
+## 11. 完成记录
+
+2026-08-03 使用正式 `release/VectorNetworkAnalyzer` 产物在 Windows、
+1280×800、100% 缩放下完成验收：冷启动保持 `Trc1/S21/Diagram1`；执行一次
+`All S-Params` 后形成第 4 节规定的四宫格，四条曲线均包含 201 个实时样本。
+重复执行保持 revision 1 且不推进 publication generation，刷新页面后四宫格仍在；
+页面无横向或纵向溢出，浏览器控制台 warning/error 为 0。服务端权威状态为一个
+Channel、四个 Measurement、四条 Trace 和四个 Window。
