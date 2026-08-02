@@ -1,9 +1,9 @@
 #include "continuous_trace_pipeline_internal.hpp"
 
 #include "frequency_axis_materialization_internal.hpp"
+#include "trace_display_samples_internal.hpp"
 
 #include <cstddef>
-#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -52,31 +52,6 @@ MeasurementBatch collectMeasurements(
     return batch;
 }
 
-std::optional<TraceDisplaySamples> convertSamples(
-    const data_plane::ProjectedTraceSamples& projected) {
-    return std::visit(
-        [](const auto& samples) -> std::optional<TraceDisplaySamples> {
-            using Samples = std::decay_t<decltype(samples)>;
-            if constexpr (std::is_same_v<
-                              Samples, data_plane::ScalarTraceSamples>) {
-                if (samples.unit == data_plane::ProjectedTraceUnit::Decibel) {
-                    return CartesianTraceDisplaySamples{
-                        TraceDisplayUnit::Decibel, samples.values};
-                }
-                if (samples.unit == data_plane::ProjectedTraceUnit::Degree) {
-                    return CartesianTraceDisplaySamples{
-                        TraceDisplayUnit::Degree, samples.values};
-                }
-            } else if (samples.unit ==
-                       data_plane::ProjectedTraceUnit::Unitless) {
-                return ComplexTraceDisplaySamples{
-                    TraceDisplayUnit::Unitless, samples.values};
-            }
-            return std::nullopt;
-        },
-        projected);
-}
-
 std::optional<TraceDisplayFrame> projectTarget(
     const acquisition::RawFrame& raw,
     const TracePublicationPlan& plan,
@@ -88,7 +63,7 @@ std::optional<TraceDisplayFrame> projectTarget(
     if (!projected.hasValue()) {
         return std::nullopt;
     }
-    auto samples = convertSamples(projected.value());
+    auto samples = toTraceDisplaySamples(projected.value());
     if (!samples.has_value()) {
         return std::nullopt;
     }
