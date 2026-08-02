@@ -15,20 +15,6 @@ target_link_libraries(
 gtest_discover_tests(vna_logging_tests PROPERTIES TIMEOUT 10)
 
 add_executable(
-    vna_server_startup_observability_tests
-    server/startup_observability_test.cpp
-)
-target_link_libraries(
-    vna_server_startup_observability_tests
-    PRIVATE
-        vna::logging
-        vna::server_startup_observability
-        GTest::gtest_main
-)
-gtest_discover_tests(
-    vna_server_startup_observability_tests PROPERTIES TIMEOUT 10)
-
-add_executable(
     vna_httplib_compatibility_tests
     httplib_compatibility_test.cpp
 )

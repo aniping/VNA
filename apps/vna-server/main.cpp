@@ -1,11 +1,8 @@
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
-#include <memory>
 #include <stop_token>
-#include <string_view>
 #include <utility>
 
 #include <vna/acquisition/continuous_acquisition.hpp>
@@ -18,10 +15,7 @@
 #include <vna/application/trace_display_frame_query.hpp>
 #include <vna/application/trace_display_frame_repository.hpp>
 #include <vna/application/trace_publication_catalog.hpp>
-#include <vna/logging/json_lines_logger.hpp>
-#include <vna/observability/logger.hpp>
 #include <vna/platform/executable_path.hpp>
-#include <vna/server/startup_observability.hpp>
 #include <vna/simulation/simulation_sweep.hpp>
 #include <vna/web_api/web_api.hpp>
 
@@ -34,23 +28,6 @@ constexpr std::size_t traceCapacity = 1024;
 // A stable product seed makes the simulated frame sequence reproducible across
 // restarts without leaking simulation concerns into the acquisition plan.
 constexpr std::uint64_t simulationSeed = 0x564E4101ULL;
-
-void reportEmergency(std::string_view message) noexcept {
-    // stderr is deliberately outside the logger and its std::cout/file sinks.
-    // Do not flush here: the first release cannot promise cancellable I/O.
-    static_cast<void>(std::fwrite(message.data(), 1, message.size(), stderr));
-    static_cast<void>(std::fputc('\n', stderr));
-}
-
-bool flushLogs(
-    vna::observability::Logger& logger,
-    std::string_view failureMessage) {
-    if (logger.flush()) {
-        return true;
-    }
-    reportEmergency(failureMessage);
-    return false;
-}
 
 vna::acquisition::RawSweepSource makeSimulationSource() {
     return [](const vna::acquisition::ContinuousAcquisitionPlan& plan,
@@ -91,56 +68,20 @@ struct PublicationState {
 };
 
 int serveUntilStopped(
-    vna::web_api::WebApi& webApi,
-    vna::observability::Logger& logger,
-    const vna::server::StartupLogDetails& startup) {
-    if (!vna::server::writeStartupMilestones(logger, startup)) {
-        reportEmergency("vna-server failed to record startup milestones");
-        static_cast<void>(flushLogs(logger, "vna-server startup log flush failed"));
-        return EXIT_FAILURE;
-    }
-    // Publish the starting event before listen blocks, so operators can
-    // distinguish a live server from an empty log without relying on exit.
-    if (!flushLogs(logger, "vna-server startup log flush failed")) {
-        return EXIT_FAILURE;
-    }
-    if (!webApi.listen(webAddress, webPort)) {
-        static_cast<void>(vna::server::writeListenFailed(logger, startup));
-        static_cast<void>(flushLogs(logger, "vna-server final log flush failed"));
-        return EXIT_FAILURE;
-    }
-    const auto stoppedRecorded =
-        vna::server::writeStopped(logger, startup);
-    const auto flushed = flushLogs(logger, "vna-server final log flush failed");
-    return stoppedRecorded && flushed ? EXIT_SUCCESS : EXIT_FAILURE;
+    vna::web_api::WebApi& webApi) {
+    return webApi.listen(webAddress, webPort) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
-std::unique_ptr<vna::observability::Logger> makeServerLogger(
-    const std::filesystem::path& logDirectory) {
-    auto options = vna::logging::JsonLinesLoggerOptions{logDirectory};
-    // The same structured event feeds a human console formatter and the
-    // authoritative JSONL file; launch scripts own only three location hints.
-    options.consoleFormat = vna::logging::ConsoleFormat::HumanReadable;
-    return vna::logging::makeJsonLinesLogger(options);
-}
-
-struct ServerPaths {
-    std::filesystem::path webRoot;
-    std::filesystem::path logDirectory;
-};
-
-ServerPaths serverPaths() {
+std::filesystem::path releaseWebRoot() {
     const auto executable = vna::platform::currentExecutablePath();
     const auto releaseRoot = executable.parent_path().parent_path();
-    return {releaseRoot / "web", releaseRoot / "logs"};
+    return releaseRoot / "web";
 }
 
 int runServer() {
-    const auto paths = serverPaths();
+    const auto webRoot = releaseWebRoot();
 
     auto preset = vna::application::makeFactoryPreset();
-    const auto startup = vna::server::makeStartupLogDetails(
-        preset, instrumentId, webAddress, webPort);
     // Declaration order is the borrowing graph. Reverse destruction stops Web
     // access first, then CommandBus and publisher, before acquisition and repos.
     vna::application::OperationManager operationManager;
@@ -159,23 +100,14 @@ int runServer() {
         std::move(preset.commandBusState)};
     vna::application::TraceDisplayFrameQuery displayFrameQuery{
         commandBus, publication.repository};
-    auto logger = makeServerLogger(paths.logDirectory);
     // WebApi validates index.html and assets without following unsafe paths.
-    // The logger precedes its borrower so command handlers cannot outlive it.
     vna::web_api::WebApi webApi{
         commandBus,
         operationManager,
         displayFrameQuery,
         publication.repository,
-        {.webRoot = paths.webRoot,
-         .logger = logger.get(),
-         .logFailureReporter = reportEmergency}};
-    try {
-        return serveUntilStopped(webApi, *logger, startup);
-    } catch (...) {
-        reportEmergency("vna-server failed during logged execution");
-        return EXIT_FAILURE;
-    }
+        {.webRoot = webRoot}};
+    return serveUntilStopped(webApi);
 }
 
 }  // namespace
@@ -183,11 +115,7 @@ int runServer() {
 int main() {
     try {
         return runServer();
-    } catch (const std::exception& error) {
-        reportEmergency(error.what());
-        return EXIT_FAILURE;
     } catch (...) {
-        reportEmergency("vna-server startup failed");
         return EXIT_FAILURE;
     }
 }
