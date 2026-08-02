@@ -17,15 +17,6 @@ namespace vna::application {
 namespace {
 using namespace std::chrono_literals;
 
-StateSnapshot initialState(const FactoryPreset& preset) {
-    return {
-        0,
-        {},
-        preset.commandBusState.instrument.snapshot(),
-        preset.commandBusState.displayWorkspace.snapshot(),
-    };
-}
-
 OperationSnapshot waitForTerminal(
     OperationManager& operations,
     const OperationSnapshot& accepted) {
@@ -38,13 +29,20 @@ OperationSnapshot waitForTerminal(
     return std::get<OperationSnapshot>(operations.snapshot(accepted.id));
 }
 
+acquisition::RawSweepCaptureResult validSource(
+    const acquisition::RawSweepCaptureRequest& request,
+    const acquisition::RawSweepChunkObserver&,
+    std::stop_token) {
+    return acquisition::test_support::validPayload(request.sequenceNumber);
+}
+
 class BlockingCaptureSource {
 public:
     acquisition::RawSweepCaptureResult operator()(
         const acquisition::RawSweepCaptureRequest& request,
         const acquisition::RawSweepChunkObserver&,
         std::stop_token token) {
-        if (request.sequenceNumber > 1) {
+        if (request.sequenceNumber == 2) {
             return acquisition::test_support::validPayload(
                 request.sequenceNumber);
         }
@@ -93,23 +91,18 @@ protected:
     FactoryPreset preset_{makeFactoryPreset()};
     TraceDisplayFrameRepository repository_{4};
     TracePublicationCatalog catalog_{
-        preset_.acquisitionChannelId, repository_, initialState(preset_)};
+        preset_.acquisitionChannelId, repository_,
+        {0, {}, preset_.commandBusState.instrument.snapshot(),
+         preset_.commandBusState.displayWorkspace.snapshot()}};
     SweepPreviewExchange previews_;
     OperationManager operations_;
 };
 
 TEST_F(SweepRuntimeControlTest, SingleRestartCompletesOnlyPublishedFrame) {
-    const auto source = [](
-                            const acquisition::RawSweepCaptureRequest&,
-                            const acquisition::RawSweepChunkObserver&,
-                            std::stop_token) ->
-        acquisition::RawSweepCaptureResult {
-        return acquisition::test_support::validPayload(1);
-    };
     SweepRuntime runtime{
         {acquisition::test_support::validPlan(), catalog_.capture(), 2,
          {domain::SweepMode::Single, 1}},
-        source, previews_, catalog_, operations_};
+        validSource, previews_, catalog_, operations_};
     EXPECT_EQ(runtime.snapshot().phase, SweepRuntimePhase::Hold);
 
     const auto submitted = runtime.requestRestart({
@@ -131,18 +124,10 @@ TEST_F(SweepRuntimeControlTest, SingleRestartCompletesOnlyPublishedFrame) {
 }
 
 TEST_F(SweepRuntimeControlTest, SingleCompletesAfterConfiguredSweepCount) {
-    const auto source = [](
-                            const acquisition::RawSweepCaptureRequest& request,
-                            const acquisition::RawSweepChunkObserver&,
-                            std::stop_token) ->
-        acquisition::RawSweepCaptureResult {
-        return acquisition::test_support::validPayload(
-            request.sequenceNumber);
-    };
     SweepRuntime runtime{
         {acquisition::test_support::validPlan(), catalog_.capture(), 2,
          {domain::SweepMode::Single, 3}},
-        source, previews_, catalog_, operations_};
+        validSource, previews_, catalog_, operations_};
 
     const auto submitted = runtime.requestRestart({
         CommandId{"restart-3"}, SessionId{"session-1"}, 9});
@@ -156,6 +141,58 @@ TEST_F(SweepRuntimeControlTest, SingleCompletesAfterConfiguredSweepCount) {
     ASSERT_NE(succeeded, nullptr);
     EXPECT_EQ(succeeded->frameId, frames::FrameId{3});
     EXPECT_EQ(runtime.snapshot().completedSweeps, 3U);
+    EXPECT_EQ(runtime.snapshot().phase, SweepRuntimePhase::Hold);
+    runtime.stop();
+}
+
+TEST_F(SweepRuntimeControlTest, ReplacementCancelsQueuedBeforeActiveSource) {
+    BlockingCaptureSource source;
+    SweepRuntime runtime{
+        {acquisition::test_support::validPlan(), catalog_.capture(), 2,
+         {domain::SweepMode::Single, 1}},
+        std::ref(source), previews_, catalog_, operations_};
+    const auto first = std::get<OperationId>(runtime.requestRestart({
+        CommandId{"restart-a"}, SessionId{"session-1"}, 1}));
+    EXPECT_TRUE(source.waitForStart());
+    const auto queued = std::get<OperationId>(runtime.requestRestart({
+        CommandId{"restart-b"}, SessionId{"session-1"}, 1}));
+    const auto newest = std::get<OperationId>(runtime.requestRestart({
+        CommandId{"restart-c"}, SessionId{"session-1"}, 1}));
+
+    EXPECT_TRUE(source.waitForCancellation());
+    EXPECT_TRUE(std::holds_alternative<OperationCancelRequested>(
+        std::get<OperationSnapshot>(operations_.snapshot(first)).state));
+    EXPECT_TRUE(std::holds_alternative<OperationCanceled>(
+        std::get<OperationSnapshot>(operations_.snapshot(queued)).state));
+    EXPECT_TRUE(std::holds_alternative<OperationQueued>(
+        std::get<OperationSnapshot>(operations_.snapshot(newest)).state));
+    source.releaseCancellation();
+    const auto canceled = waitForTerminal(
+        operations_, std::get<OperationSnapshot>(operations_.snapshot(first)));
+    EXPECT_TRUE(std::holds_alternative<OperationCanceled>(canceled.state));
+    runtime.stop();
+}
+
+TEST_F(SweepRuntimeControlTest, SingleFailureFailsOperationAndHolds) {
+    auto plan = acquisition::test_support::validPlan();
+    plan.minimumSweepPeriod = 100ms;
+    const auto source = [](
+                            const acquisition::RawSweepCaptureRequest&,
+                            const acquisition::RawSweepChunkObserver&,
+                            std::stop_token) ->
+        acquisition::RawSweepCaptureResult {
+        return frames::FrameError{frames::FrameErrorCode::NonFiniteSample};
+    };
+    SweepRuntime runtime{{plan, catalog_.capture(), 2,
+                          {domain::SweepMode::Single, 1}},
+                         source, previews_, catalog_, operations_};
+    const auto operationId = std::get<OperationId>(runtime.requestRestart({
+        CommandId{"restart-fail"}, SessionId{"session-1"}, 4}));
+    const auto terminal = waitForTerminal(
+        operations_, std::get<OperationSnapshot>(
+                         operations_.snapshot(operationId)));
+
+    EXPECT_TRUE(std::holds_alternative<OperationFailed>(terminal.state));
     EXPECT_EQ(runtime.snapshot().phase, SweepRuntimePhase::Hold);
     runtime.stop();
 }

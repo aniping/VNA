@@ -216,8 +216,11 @@ TEST_F(SweepRuntimeTest, InvalidatesPreviewBeforeUnexpectedCancelFails) {
 TEST_F(SweepRuntimeTest, GenerationAdvanceRetiresStalePlan) {
     const auto publication = catalog_.capture();
     ControlledCaptureSource source;
-    SweepRuntime runtime{{acquisition::test_support::validPlan(), publication, 2},
+    SweepRuntime runtime{{acquisition::test_support::validPlan(), publication, 2,
+                          {domain::SweepMode::Single, 1}},
                          std::ref(source), previews_, catalog_, operations_};
+    const auto operation = std::get<OperationId>(runtime.requestRestart({
+        CommandId{"restart-stale"}, SessionId{"session-1"}, 1}));
     ASSERT_TRUE(source.waitForRequest(1));
     source.releasePreview(1);
     ASSERT_TRUE(previews_.waitForNext({0}).has_value());
@@ -238,9 +241,10 @@ TEST_F(SweepRuntimeTest, GenerationAdvanceRetiresStalePlan) {
     EXPECT_EQ(snapshot.state, SweepRuntimeState::Retired);
     EXPECT_EQ(snapshot.previewRejectedSweeps, 1U);
     EXPECT_EQ(repository_.latestFrameSet(), nullptr);
+    EXPECT_TRUE(std::holds_alternative<OperationCanceled>(
+        std::get<OperationSnapshot>(operations_.snapshot(operation)).state));
     const auto event = previews_.waitForNext({0});
     EXPECT_TRUE(std::holds_alternative<SweepPreviewGenerationAdvanced>(*event));
 }
-
 }  // namespace
 }  // namespace vna::application
