@@ -60,6 +60,12 @@ add_executable(
 vna_configure_application_test(vna_application_sweep_preview_tests)
 
 add_executable(
+    vna_application_sweep_runtime_tests
+    sweep_runtime_test.cpp
+)
+vna_configure_application_test(vna_application_sweep_runtime_tests)
+
+add_executable(
     vna_application_trace_frame_tests
     trace_display_frame_query_test.cpp
     trace_display_frame_query_wait_test.cpp
@@ -97,6 +103,7 @@ add_custom_target(
         vna_application_command_tests
         vna_application_operation_tests
         vna_application_sweep_preview_tests
+        vna_application_sweep_runtime_tests
         vna_application_sweep_tests
         vna_application_trace_command_tests
         vna_application_trace_frame_tests
