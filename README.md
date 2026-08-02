@@ -122,7 +122,8 @@ Linux/GCC 使用相同目录结构，以下命令同样从仓库根运行：
 `/api/v1/state` 的成功响应使用 `Cache-Control: no-store`，客户端不得缓存状态快照。
 启动脚本输出启动状态、Web URL 和 `logs/vna.log` 路径；服务非零退出时额外
 输出一行错误提示并保留原始退出码，不自动打开浏览器。运行日志是同步写入的
-中文人类文本，单文件最大 10 MiB，活动文件加四个归档；不产生 JSONL。
+中文人类文本，单文件最大 10 MiB，活动文件加四个归档；不产生 JSONL。日志只记录
+成功解码后的写命令业务结果，不记录 GET、静态资源、WebSocket 或帧推送请求。
 `/api/v1/commands` 的失败响应保留 `status` 与 `stateRevision`，并提供稳定的
 `errorCode` 供客户端区分具体错误。
 `commandId`、`sessionId` 和 `instrumentId` 必须为 1..128 bytes，且不得包含

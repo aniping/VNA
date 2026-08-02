@@ -19,6 +19,16 @@ function Read-Text([string]$path) {
     return ''
 }
 
+function Wait-ForText([string]$path, [string]$needle) {
+    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+    do {
+        $text = Read-Text $path
+        if ($text.Contains($needle)) { return $text }
+        Start-Sleep -Milliseconds 50
+    } while ([DateTime]::UtcNow -lt $deadline)
+    throw "Timed out waiting for '$needle' in $path"
+}
+
 function Stop-ExactReleaseServer([string]$expectedPath) {
     $candidates = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object { $_.ExecutablePath -eq $expectedPath })

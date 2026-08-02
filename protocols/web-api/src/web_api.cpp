@@ -2,6 +2,7 @@
 
 #include "display_frame_http_handler.hpp"
 #include "display_frame_stream.hpp"
+#include "command_business_log.hpp"
 #include "json_codec.hpp"
 #include "operation_http_handler.hpp"
 #include "web_asset_path.hpp"
@@ -45,6 +46,7 @@ void handleCommand(
         return;
     }
     const auto commandResult = commandBus.dispatch(*command);
+    detail::logBusinessCommand(*command, commandResult);
     const auto responseBody = detail::encodeCommandResult(commandResult);
     response.status = responseBody.httpStatus;
     response.set_content(responseBody.body, "application/json");

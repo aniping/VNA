@@ -28,6 +28,13 @@ add_executable(
 vna_configure_web_api_test(vna_web_api_http_tests)
 
 add_executable(
+    vna_web_api_business_log_tests
+    ../web_api_business_log_test.cpp
+)
+vna_configure_web_api_test(vna_web_api_business_log_tests)
+target_link_libraries(vna_web_api_business_log_tests PRIVATE spdlog::spdlog)
+
+add_executable(
     vna_web_api_display_tests
     ../web_api_display_frame_test.cpp
     ../web_api_single_sweep_test.cpp
@@ -55,6 +62,7 @@ add_custom_target(
     vna_web_api_tests
     DEPENDS
         vna_web_api_display_tests
+        vna_web_api_business_log_tests
         vna_web_api_http_tests
         vna_web_api_static_tests
         vna_web_api_websocket_tests

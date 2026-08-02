@@ -1,6 +1,7 @@
 add_library(
     vna_web_api
     src/command_json_decoder.cpp
+    src/command_business_log.cpp
     src/command_outcome_info.cpp
     src/display_frame_http_handler.cpp
     src/display_frame_json_codec.cpp
@@ -34,5 +35,6 @@ target_link_libraries(
     PRIVATE
         httplib::httplib
         nlohmann_json::nlohmann_json
+        spdlog::spdlog
 )
 target_compile_options(vna_web_api PRIVATE -Wall -Wextra -Wpedantic)

@@ -87,9 +87,11 @@ try {
             'state-revision-conflict') {
         throw 'Release command responses do not match the HTTP fixture'
     }
-    if ((Read-Text $logFile) -ne $logText) {
-        throw 'P1 logged commands or continuous frames'
-    }
+    $businessLog = Wait-ForText $logFile 'error_code=state-revision-conflict'
+    Require-OrderedText $businessLog @(
+        '[配置命令] 创建通道请求已成功处理 | command_id=release-accepted | session_id=release-smoke | instrument_id=instrument-1 | revision=1 | channel_id=2',
+        '[配置命令] 创建通道请求被拒绝 | command_id=release-rejected | session_id=release-smoke | instrument_id=instrument-1 | revision=1 | error_code=state-revision-conflict'
+    )
 
     [pscustomobject]@{
         HealthStatus = $health.StatusCode
