@@ -1,8 +1,11 @@
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <stop_token>
+#include <string_view>
 #include <utility>
 
 #include <vna/acquisition/continuous_acquisition.hpp>
@@ -19,6 +22,10 @@
 #include <vna/simulation/simulation_sweep.hpp>
 #include <vna/web_api/web_api.hpp>
 
+#include <spdlog/spdlog.h>
+
+#include "runtime_log.hpp"
+
 namespace {
 
 constexpr auto instrumentId = "instrument-1";
@@ -28,6 +35,79 @@ constexpr std::size_t traceCapacity = 1024;
 // A stable product seed makes the simulated frame sequence reproducible across
 // restarts without leaking simulation concerns into the acquisition plan.
 constexpr std::uint64_t simulationSeed = 0x564E4101ULL;
+
+// Registry and formatting failures are diagnostic failures only; they cannot
+// change startup, acquisition or HTTP results.
+void logInfo(std::string_view message) noexcept {
+    try {
+        if (const auto logger = spdlog::get("vna")) {
+            logger->info("{}", message);
+        }
+    } catch (...) {}
+}
+
+std::string_view measurementName(vna::domain::MeasurementType type) noexcept {
+    switch (type) {
+    case vna::domain::MeasurementType::S11: return "S11";
+    case vna::domain::MeasurementType::S21: return "S21";
+    case vna::domain::MeasurementType::S12: return "S12";
+    case vna::domain::MeasurementType::S22: return "S22";
+    }
+    return "unknown";
+}
+
+void logFactoryPreset(const vna::application::FactoryPreset& preset) noexcept {
+    try {
+        if (const auto logger = spdlog::get("vna")) {
+            const auto& plan = preset.acquisitionPlan;
+            const auto display = preset.commandBusState.displayWorkspace.snapshot();
+            const auto trace = std::find_if(
+                display.traces.cbegin(), display.traces.cend(), [&preset](const auto& item) {
+                    return item.id == preset.defaultTraceId;
+                });
+            if (trace == display.traces.cend()) {
+                return;
+            }
+            const auto instrument = preset.commandBusState.instrument.snapshot();
+            const auto measurement = std::find_if(
+                instrument.measurements.cbegin(), instrument.measurements.cend(),
+                [measurementId = trace->measurementId](const auto& item) {
+                    return item.id == measurementId;
+                });
+            if (measurement == instrument.measurements.cend()) {
+                return;
+            }
+            logger->info(
+                "[工厂预置] 已加载：通道 {}，{}，Trace {}，频率 {} MHz 至 {} GHz，"
+                "{} 点，IFBW {} kHz，功率 {} dBm",
+                measurement->channelId.value(), measurementName(measurement->type),
+                preset.defaultTraceId.value(),
+                static_cast<double>(plan.frequencyAxis.startFrequencyHz) / 1.0e6,
+                static_cast<double>(plan.frequencyAxis.stopFrequencyHz) / 1.0e9,
+                plan.frequencyAxis.points, plan.ifBandwidthHz / 1'000,
+                plan.powerDbm);
+        }
+    } catch (...) {}
+}
+
+void logWebEndpoint(spdlog::level::level_enum level) noexcept {
+    try {
+        if (const auto logger = spdlog::get("vna")) {
+            logger->log(
+                level, "[服务启动] Web 服务{}：http://{}:{}/",
+                level == spdlog::level::err ? "监听失败" : "准备监听",
+                webAddress, webPort);
+        }
+    } catch (...) {}
+}
+
+void logStartupFailure(std::string_view reason) noexcept {
+    try {
+        if (const auto logger = spdlog::get("vna")) {
+            logger->error("[服务启动] 服务器启动失败：{}", reason);
+        }
+    } catch (...) {}
+}
 
 vna::acquisition::RawSweepSource makeSimulationSource() {
     return [](const vna::acquisition::ContinuousAcquisitionPlan& plan,
@@ -67,22 +147,22 @@ struct PublicationState {
     vna::application::TracePublicationCatalog catalog;
 };
 
-std::filesystem::path releaseWebRoot() {
+int runServer() {
     const auto executable = vna::platform::currentExecutablePath();
     const auto releaseRoot = executable.parent_path().parent_path();
-    return releaseRoot / "web";
-}
-
-int runServer() {
-    const auto webRoot = releaseWebRoot();
+    const auto webRoot = releaseRoot / "web";
+    vna::server::initializeRuntimeLog(releaseRoot);
+    logInfo("[服务启动] 矢量网络分析仪服务正在启动");
 
     auto preset = vna::application::makeFactoryPreset();
+    logFactoryPreset(preset);
     // Declaration order is the borrowing graph. Reverse destruction stops Web
     // access first, then CommandBus and publisher, before acquisition and repos.
     vna::application::OperationManager operationManager;
     PublicationState publication{preset};
     vna::acquisition::ContinuousAcquisition acquisition{
         std::move(preset.acquisitionPlan), makeSimulationSource()};
+    logInfo("[连续扫频] 仿真持续测量已启动");
     vna::application::ContinuousTracePublisher tracePublisher{
         acquisition, publication.catalog};
     vna::application::DisabledSingleSweepExecution disabledSingleSweep;
@@ -102,15 +182,28 @@ int runServer() {
         displayFrameQuery,
         publication.repository,
         {.webRoot = webRoot}};
-    return webApi.listen(webAddress, webPort) ? EXIT_SUCCESS : EXIT_FAILURE;
+    logWebEndpoint(spdlog::level::info);
+    if (!webApi.listen(webAddress, webPort)) {
+        logWebEndpoint(spdlog::level::err);
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
 }
 
 }  // namespace
 
 int main() {
     try {
-        return runServer();
+        const auto result = runServer();
+        vna::server::flushRuntimeLog();
+        return result;
+    } catch (const std::exception& error) {
+        logStartupFailure(error.what());
+        vna::server::flushRuntimeLog();
+        return EXIT_FAILURE;
     } catch (...) {
+        logStartupFailure("未知异常");
+        vna::server::flushRuntimeLog();
         return EXIT_FAILURE;
     }
 }

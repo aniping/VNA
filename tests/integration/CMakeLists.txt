@@ -14,3 +14,4 @@ gtest_discover_tests(
 )
 
 add_subdirectory(web-api)
+add_subdirectory(server)
