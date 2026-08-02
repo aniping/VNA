@@ -5,7 +5,6 @@
 #include <filesystem>
 #include <memory>
 #include <stop_token>
-#include <string>
 #include <string_view>
 #include <utility>
 
@@ -22,66 +21,23 @@
 #include <vna/logging/json_lines_logger.hpp>
 #include <vna/observability/logger.hpp>
 #include <vna/platform/executable_path.hpp>
+#include <vna/server/startup_observability.hpp>
 #include <vna/simulation/simulation_sweep.hpp>
 #include <vna/web_api/web_api.hpp>
 
 namespace {
 
 constexpr auto instrumentId = "instrument-1";
-constexpr auto lifecycleEventName = "server.lifecycle";
 constexpr std::size_t traceCapacity = 1024;
 // A stable product seed makes the simulated frame sequence reproducible across
 // restarts without leaking simulation concerns into the acquisition plan.
 constexpr std::uint64_t simulationSeed = 0x564E4101ULL;
-
-enum class LifecycleStatus {
-    Starting,
-    ListenFailed,
-    Stopped,
-};
 
 void reportEmergency(std::string_view message) noexcept {
     // stderr is deliberately outside the logger and its std::cout/file sinks.
     // Do not flush here: the first release cannot promise cancellable I/O.
     static_cast<void>(std::fwrite(message.data(), 1, message.size(), stderr));
     static_cast<void>(std::fputc('\n', stderr));
-}
-
-std::string_view statusName(LifecycleStatus status) {
-    switch (status) {
-    case LifecycleStatus::Starting:
-        return "starting";
-    case LifecycleStatus::ListenFailed:
-        return "listen_failed";
-    case LifecycleStatus::Stopped:
-        return "stopped";
-    }
-    return "unknown";
-}
-
-vna::observability::LogLevel levelFor(LifecycleStatus status) {
-    if (status == LifecycleStatus::ListenFailed) {
-        return vna::observability::LogLevel::Error;
-    }
-    return vna::observability::LogLevel::Info;
-}
-
-bool writeLifecycle(
-    vna::observability::Logger& logger,
-    LifecycleStatus status) {
-    if (logger.write({
-        .level = levelFor(status),
-        .name = lifecycleEventName,
-        .commandId = {},
-        .sessionId = {},
-        .instrumentId = instrumentId,
-        .stateRevision = {},
-        .status = std::string{statusName(status)},
-    })) {
-        return true;
-    }
-    reportEmergency("vna-server failed to record lifecycle event");
-    return false;
 }
 
 bool flushLogs(
@@ -135,7 +91,8 @@ struct PublicationState {
 int serveUntilStopped(
     vna::web_api::WebApi& webApi,
     vna::observability::Logger& logger) {
-    if (!writeLifecycle(logger, LifecycleStatus::Starting)) {
+    if (!vna::server::writeStartupMilestones(logger, instrumentId)) {
+        reportEmergency("vna-server failed to record startup milestones");
         static_cast<void>(flushLogs(logger, "vna-server startup log flush failed"));
         return EXIT_FAILURE;
     }
@@ -147,13 +104,12 @@ int serveUntilStopped(
     constexpr auto address = "127.0.0.1";
     constexpr int port = 8080;
     if (!webApi.listen(address, port)) {
-        static_cast<void>(
-            writeLifecycle(logger, LifecycleStatus::ListenFailed));
+        static_cast<void>(vna::server::writeListenFailed(logger, instrumentId));
         static_cast<void>(flushLogs(logger, "vna-server final log flush failed"));
         return EXIT_FAILURE;
     }
     const auto stoppedRecorded =
-        writeLifecycle(logger, LifecycleStatus::Stopped);
+        vna::server::writeStopped(logger, instrumentId);
     const auto flushed = flushLogs(logger, "vna-server final log flush failed");
     return stoppedRecorded && flushed ? EXIT_SUCCESS : EXIT_FAILURE;
 }
@@ -161,8 +117,9 @@ int serveUntilStopped(
 std::unique_ptr<vna::observability::Logger> makeServerLogger(
     const std::filesystem::path& logDirectory) {
     auto options = vna::logging::JsonLinesLoggerOptions{logDirectory};
-    // The portable launcher owns the human console; JSONL remains authoritative.
-    options.console = nullptr;
+    // The same structured event feeds a human console formatter and the
+    // authoritative JSONL file; launch scripts own only three location hints.
+    options.consoleFormat = vna::logging::ConsoleFormat::HumanReadable;
     return vna::logging::makeJsonLinesLogger(options);
 }
 

@@ -49,6 +49,69 @@ function Read-Text([string]$path) {
     return ''
 }
 
+function Stop-ExactReleaseServer {
+    $candidates = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.ExecutablePath -eq $serverPath })
+    if ($candidates.Count -gt 1) {
+        throw "Refusing to stop $($candidates.Count) release server processes"
+    }
+    if ($candidates.Count -eq 0) { return }
+
+    $processId = $candidates[0].ProcessId
+    $confirmed = Get-CimInstance Win32_Process `
+        -Filter "ProcessId = $processId" -ErrorAction SilentlyContinue
+    if (-not $confirmed -or $confirmed.ExecutablePath -ne $serverPath) {
+        throw 'Release server PID changed before cleanup'
+    }
+    $process = Get-Process -Id $processId -ErrorAction Stop
+    Stop-Process -InputObject $process -Force
+    if (-not $process.WaitForExit(5000)) {
+        throw 'Release server did not exit during cleanup'
+    }
+}
+
+function Assert-OrderedHumanMilestones([string]$text) {
+    $expected = @(
+        '[info] server.lifecycle status=starting instrument_id=instrument-1',
+        '[info] server.factory_preset status=loaded instrument_id=instrument-1',
+        '[info] server.continuous_acquisition status=running instrument_id=instrument-1',
+        '[info] server.display_publication status=running instrument_id=instrument-1',
+        '[info] server.web_listener status=starting instrument_id=instrument-1'
+    )
+    $previous = -1
+    foreach ($milestone in $expected) {
+        $position = $text.IndexOf(
+            $milestone, $previous + 1, [StringComparison]::Ordinal)
+        if ($position -lt 0) { throw "Missing human milestone: $milestone" }
+        $previous = $position
+    }
+}
+
+function Assert-OrderedJsonMilestones([object[]]$records) {
+    $expected = @(
+        @('server.lifecycle', 'starting'),
+        @('server.factory_preset', 'loaded'),
+        @('server.continuous_acquisition', 'running'),
+        @('server.display_publication', 'running'),
+        @('server.web_listener', 'starting')
+    )
+    $cursor = 0
+    foreach ($milestone in $expected) {
+        while ($cursor -lt $records.Count -and
+               ($records[$cursor].event -ne $milestone[0] -or
+                $records[$cursor].status -ne $milestone[1])) {
+            $cursor++
+        }
+        if ($cursor -eq $records.Count) {
+            throw "Missing JSON milestone: $($milestone -join '/')"
+        }
+        if ($records[$cursor].instrument_id -ne 'instrument-1') {
+            throw "Milestone instrument ID is missing: $($milestone[0])"
+        }
+        $cursor++
+    }
+}
+
 try {
     $start = Join-Path $release 'start.cmd'
     $launcher = Start-Process -FilePath 'cmd.exe' `
@@ -58,6 +121,9 @@ try {
     $health = Wait-ForHealth $launcher
     if (-not $health) {
         throw "Release health check failed: $(Read-Text $stderr)"
+    }
+    if ($health.StatusCode -ne 200) {
+        throw "Release health returned HTTP $($health.StatusCode), expected 200"
     }
 
     $server = @(Get-CimInstance Win32_Process | Where-Object {
@@ -69,18 +135,25 @@ try {
     $console = Read-Text $stdout
     if ($console -notmatch 'Starting Vector Network Analyzer' -or
         $console -notmatch 'Web URL: http://127\.0\.0\.1:8080/' -or
-        $console -match '"event"|server\.lifecycle') {
+        $console -match '"event"\s*:|(?m)^\s*\{') {
         throw "Unexpected launcher output: $console"
     }
+    Assert-OrderedHumanMilestones $console
 
     $logPath = Join-Path $release 'logs\vna.log.jsonl'
     $records = @(Get-Content -LiteralPath $logPath | ForEach-Object {
         $_ | ConvertFrom-Json
     })
-    if (-not ($records | Where-Object {
-        $_.event -eq 'server.lifecycle' -and $_.status -eq 'starting'
-    })) {
-        throw 'Authoritative lifecycle event is missing from the JSONL file'
+    Assert-OrderedJsonMilestones $records
+
+    # Acquisition runs continuously at about 10 Hz. Startup observability is
+    # intentionally low-cardinality, so neither sink should grow per frame.
+    $consoleLength = $console.Length
+    $recordCount = $records.Count
+    Start-Sleep -Milliseconds 1200
+    if ((Read-Text $stdout).Length -ne $consoleLength -or
+        @(Get-Content -LiteralPath $logPath).Count -ne $recordCount) {
+        throw 'Startup sinks grew while only continuous frames were produced'
     }
 
     [pscustomobject]@{
@@ -92,13 +165,8 @@ try {
         Artifacts = $artifacts
     } | Format-List
 } finally {
-    if (-not $server) {
-        $server = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-            Where-Object { $_.ExecutablePath -eq $serverPath })
-    }
-    if ($server -and $server.Count -eq 1) {
-        Stop-Process -Id $server[0].ProcessId -Force -ErrorAction SilentlyContinue
-    }
+    $cleanupFailure = $null
+    try { Stop-ExactReleaseServer } catch { $cleanupFailure = $_ }
     if ($launcher -and -not $launcher.WaitForExit(5000)) {
         Stop-Process -Id $launcher.Id -Force -ErrorAction SilentlyContinue
     }
@@ -110,4 +178,61 @@ try {
             throw "Nonzero launcher guidance is missing: $errorText"
         }
     }
+    if ($cleanupFailure) { throw $cleanupFailure }
+}
+
+$failureStdout = Join-Path $artifacts 'listen-failure-stdout.txt'
+$failureStderr = Join-Path $artifacts 'listen-failure-stderr.txt'
+$failureLauncher = $null
+$portOwner = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 8080)
+$portOwner.Server.ExclusiveAddressUse = $true
+try {
+    $portOwner.Start()
+    $failureLauncher = Start-Process -FilePath 'cmd.exe' `
+        -ArgumentList @('/d', '/c', ('"' + $start + '"')) `
+        -WorkingDirectory $outside -WindowStyle Hidden -PassThru `
+        -RedirectStandardOutput $failureStdout `
+        -RedirectStandardError $failureStderr
+    if (-not $failureLauncher.WaitForExit(15000)) {
+        throw 'Release did not report listen failure within 15 seconds'
+    }
+    $failureLauncher.Refresh()
+    if ($failureLauncher.ExitCode -eq 0) {
+        throw 'Release reported success while port 8080 was occupied'
+    }
+
+    $failureConsole = Read-Text $failureStdout
+    Assert-OrderedHumanMilestones $failureConsole
+    if ($failureConsole -notmatch
+        '\[error\] server\.web_listener status=listen_failed instrument_id=instrument-1' -or
+        $failureConsole -match '"event"\s*:|(?m)^\s*\{') {
+        throw "Listen failure console output is invalid: $failureConsole"
+    }
+    $failureError = Read-Text $failureStderr
+    if ($failureError -notmatch 'ERROR: Vector Network Analyzer exited' -or
+        $failureError -notmatch 'Log file:') {
+        throw "Listen failure guidance is missing: $failureError"
+    }
+    $failureRecords = @(Get-Content -LiteralPath $logPath | ForEach-Object {
+        $_ | ConvertFrom-Json
+    })
+    if (-not ($failureRecords | Where-Object {
+        $_.event -eq 'server.web_listener' -and
+        $_.status -eq 'listen_failed' -and
+        $_.instrument_id -eq 'instrument-1'
+    })) {
+        throw 'Authoritative listen_failed event is missing from JSONL'
+    }
+    Write-Host "ListenFailureExitCode=$($failureLauncher.ExitCode)"
+} finally {
+    $cleanupFailure = $null
+    try { Stop-ExactReleaseServer } catch { $cleanupFailure = $_ }
+    if ($failureLauncher -and -not $failureLauncher.HasExited) {
+        Stop-Process -Id $failureLauncher.Id -Force -ErrorAction SilentlyContinue
+        if (-not $failureLauncher.WaitForExit(5000)) {
+            $cleanupFailure = 'Listen-failure launcher did not stop within 5 seconds'
+        }
+    }
+    $portOwner.Stop()
+    if ($cleanupFailure) { throw $cleanupFailure }
 }
