@@ -92,6 +92,29 @@ TEST(JsonLinesLoggerTest, WritesStructuredEventsToConsoleAndFile) {
     EXPECT_EQ(lines.peek(), std::char_traits<char>::eof());
 }
 
+TEST(JsonLinesLoggerTest, WritesHumanConsoleAndStructuredFileFromSameEvent) {
+    TemporaryDirectory directory;
+    std::ostringstream console;
+    auto options = JsonLinesLoggerOptions{directory.path(), &console};
+    options.consoleFormat = ConsoleFormat::HumanReadable;
+    auto logger = makeJsonLinesLogger(options);
+
+    ASSERT_TRUE(logger->write(completeEvent("command.completed")));
+    ASSERT_TRUE(logger->flush());
+
+    const auto record = nlohmann::json::parse(
+        readFile(directory.path() / "vna.log.jsonl"));
+    const auto expected = record.at("timestamp").get<std::string>() +
+        " [info] command.completed status=succeeded command_id=command-1" +
+        " session_id=session-1 instrument_id=instrument-1" +
+        " state_revision=42\n";
+    EXPECT_EQ(console.str(), expected);
+    EXPECT_THROW({
+        const auto parsed = nlohmann::json::parse(console.str());
+        static_cast<void>(parsed);
+    }, nlohmann::json::parse_error);
+}
+
 TEST(JsonLinesLoggerTest, WritesOnlyToFileWhenConsoleIsDisabled) {
     TemporaryDirectory directory;
     auto options = JsonLinesLoggerOptions{.logDirectory = directory.path()};

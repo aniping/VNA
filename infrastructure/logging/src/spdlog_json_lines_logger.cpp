@@ -4,9 +4,11 @@
 #include "log_path_preflight.hpp"
 
 #include <spdlog/logger.h>
+#include <spdlog/formatter.h>
 #include <spdlog/pattern_formatter.h>
 #include <spdlog/sinks/base_sink.h>
 #include <spdlog/sinks/rotating_file_sink.h>
+#include <nlohmann/json.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -16,6 +18,7 @@
 #include <ostream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -49,6 +52,67 @@ private:
 
     std::ostream& stream_;
 };
+
+void appendHumanField(
+    std::string& output,
+    const nlohmann::json& record,
+    std::string_view key) {
+    const auto value = record.find(key);
+    if (value == record.end()) return;
+    output += ' ';
+    output += key;
+    output += '=';
+    output += value->is_string() ? value->get<std::string>() : value->dump();
+}
+
+class HumanConsoleFormatter final : public spdlog::formatter {
+public:
+    void format(
+        const spdlog::details::log_msg& message,
+        spdlog::memory_buf_t& destination) override {
+        const auto record = nlohmann::json::parse(
+            message.payload.begin(), message.payload.end());
+        auto output = record.at("timestamp").get<std::string>() + " [" +
+            record.at("level").get<std::string>() + "] " +
+            record.at("event").get<std::string>();
+        for (const auto key : {"status", "command_id", "session_id",
+                               "instrument_id", "state_revision"}) {
+            appendHumanField(output, record, key);
+        }
+        output += '\n';
+        destination.append(output.data(), output.data() + output.size());
+    }
+
+    std::unique_ptr<spdlog::formatter> clone() const override {
+        return std::make_unique<HumanConsoleFormatter>();
+    }
+};
+
+std::unique_ptr<spdlog::formatter> jsonLineFormatter() {
+    // JSON owns timestamp and level fields; the sink adds only one LF.
+    return std::make_unique<spdlog::pattern_formatter>(
+        "%v", spdlog::pattern_time_type::utc, "\n");
+}
+
+std::vector<spdlog::sink_ptr> makeSinks(
+    const JsonLinesLoggerOptions& options,
+    const std::filesystem::path& activePath) {
+    std::vector<spdlog::sink_ptr> sinks;
+    if (options.console != nullptr) {
+        auto console = std::make_shared<CheckedOstreamSink>(*options.console);
+        if (options.consoleFormat == ConsoleFormat::HumanReadable) {
+            console->set_formatter(std::make_unique<HumanConsoleFormatter>());
+        } else {
+            console->set_formatter(jsonLineFormatter());
+        }
+        sinks.push_back(std::move(console));
+    }
+    auto file = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
+        activePath.native(), options.maxFileBytes, options.maxFiles - 1);
+    file->set_formatter(jsonLineFormatter());
+    sinks.push_back(std::move(file));
+    return sinks;
+}
 
 spdlog::level::level_enum toSpdlogLevel(
     observability::LogLevel level) noexcept {
@@ -101,20 +165,9 @@ private:
     static std::shared_ptr<spdlog::logger> makeLogger(
         const JsonLinesLoggerOptions& options,
         const std::filesystem::path& activePath) {
-        std::vector<spdlog::sink_ptr> sinks;
-        if (options.console != nullptr) {
-            sinks.push_back(
-                std::make_shared<CheckedOstreamSink>(*options.console));
-        }
-        sinks.push_back(
-            std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-                activePath.native(), options.maxFileBytes,
-                options.maxFiles - 1));
+        auto sinks = makeSinks(options, activePath);
         auto logger = std::make_shared<spdlog::logger>(
             "vna-json-lines", sinks.begin(), sinks.end());
-        // JSON owns timestamp and level fields; the sink adds only one LF.
-        logger->set_formatter(std::make_unique<spdlog::pattern_formatter>(
-            "%v", spdlog::pattern_time_type::utc, "\n"));
         logger->set_level(spdlog::level::debug);
         return logger;
     }

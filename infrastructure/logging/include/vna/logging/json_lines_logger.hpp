@@ -9,11 +9,18 @@
 
 namespace vna::logging {
 
+enum class ConsoleFormat {
+    JsonLines,
+    HumanReadable,
+};
+
 struct JsonLinesLoggerOptions {
     std::filesystem::path logDirectory;
     // Non-owning; when non-null it must outlive Logger and its I/O must return.
-    // nullptr disables ordinary console JSON while retaining the file sink.
+    // nullptr disables ordinary console output while retaining the file sink.
     std::ostream* console{&std::cout};
+    // JSON remains the compatibility default; portable release selects human.
+    ConsoleFormat consoleFormat{ConsoleFormat::JsonLines};
     // Both must be > 0; maxFiles includes the active log file.
     std::size_t maxFileBytes{10U * 1024U * 1024U};
     std::size_t maxFiles{10};
