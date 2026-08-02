@@ -112,8 +112,9 @@ M1.5 必须先交付以下可操作内容：
 - Meas 功能键与对应 Softtool 的联动。
 - Meas 按 ZNB v74 第 288–290 页显示测量族、逻辑端口对、S11/S12/S21/S22、
   All S-Params、S-Param Wizard、Balanced Ports 和类别列。它不含 Format 或
-  Create Trace；仅四个单独 S 参数按钮接入活动 Trace 的真实命令，当前选中项、
-  请求期间及其余批量、向导、拓扑入口均保持原生禁用。
+  Create Trace；四个单独 S 参数按钮和 `All S-Params` 接入真实命令，当前选中项
+  与请求期间保持禁用。向导和拓扑入口仍保持原生禁用；All S-Params 的四图身份
+  与顺序遵守 [专用规格](znb-all-s-parameters-spec.md)。
 - Start、Stop、Points、IFBW、Power 数值输入入口。
 - 服务连接状态和 `stateRevision`，融入状态栏而非另做 Dashboard 卡片。
 - 所有业务数据来自 `vna-server`，无静态业务 Mock。
