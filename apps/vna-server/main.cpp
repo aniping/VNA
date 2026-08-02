@@ -67,11 +67,6 @@ struct PublicationState {
     vna::application::TracePublicationCatalog catalog;
 };
 
-int serveUntilStopped(
-    vna::web_api::WebApi& webApi) {
-    return webApi.listen(webAddress, webPort) ? EXIT_SUCCESS : EXIT_FAILURE;
-}
-
 std::filesystem::path releaseWebRoot() {
     const auto executable = vna::platform::currentExecutablePath();
     const auto releaseRoot = executable.parent_path().parent_path();
@@ -107,7 +102,7 @@ int runServer() {
         displayFrameQuery,
         publication.repository,
         {.webRoot = webRoot}};
-    return serveUntilStopped(webApi);
+    return webApi.listen(webAddress, webPort) ? EXIT_SUCCESS : EXIT_FAILURE;
 }
 
 }  // namespace
