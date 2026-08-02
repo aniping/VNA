@@ -47,6 +47,14 @@ struct CartesianScaleSnapshot {
     ScaleUnit unit;
 };
 
+// Callers provide only the independent display coordinates. The workspace
+// validates them and remains the sole owner of derived minimum/maximum values.
+struct CartesianScaleSettings {
+    double scalePerDivision;
+    double referenceValue;
+    double referencePosition;
+};
+
 enum class DisplayErrorCode {
     WindowNotFound,
     TraceNotFound,
@@ -104,6 +112,11 @@ public:
         WindowId windowId,
         domain::MeasurementId measurementId,
         TraceFormat format);
+    [[nodiscard]] Result<TraceId> createTrace(
+        WindowId windowId,
+        domain::MeasurementId measurementId,
+        TraceFormat format,
+        CartesianScaleSettings initialScale);
     [[nodiscard]] Result<TraceId> updateTraceFormat(
         TraceId traceId,
         TraceFormat format);
@@ -134,6 +147,8 @@ private:
     [[nodiscard]] static std::optional<CartesianScaleState> defaultScaleFor(
         TraceFormat format);
     [[nodiscard]] static CartesianScaleSnapshot scaleSnapshot(
+        const CartesianScaleState& scale);
+    [[nodiscard]] static bool validScale(
         const CartesianScaleState& scale);
 
     std::uint64_t nextWindowId_{1};

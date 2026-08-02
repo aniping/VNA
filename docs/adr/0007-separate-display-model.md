@@ -29,9 +29,14 @@ ZNA User Manual v41 第 1406 页示例在 `*RST` 后查询
 查询 `DISPlay[:WINDow<Wnd>]:TRACe<WndTr>:Y[:SCALe]:RLEVel?`，返回 `0`。
 
 该手册第 1410 页将 `RPOSition` 参数的复位值标为 `*RST: 80%`，对应 GUI
-从 0 到 10 的 Ref Pos 刻度值 `8`。据此，LogMagnitude 默认值为 Scale/Div
-`10 dB`、Ref Value `0 dB`、Ref Pos `8`。按十格纵轴公式派生的 Min 为
-`-80 dB`，Max 为 `20 dB`。
+从 0 到 10 的 Ref Pos 刻度值 `8`。普通 `createTrace` 与跨格式恢复继续使用
+Scale/Div `10 dB`、Ref Value `0 dB`、Ref Pos `8`，按十格纵轴公式派生
+Min `-80 dB`、Max `20 dB`。
+
+当前产品的系统 Preset 对齐 ZNB User Manual v74：单个 Diagram 中建立
+Trc1/S21/dB Mag，显式使用 Scale/Div `10 dB`、Ref Value `0 dB`、Ref Pos
+`9`，派生 Min `-90 dB`、Max `10 dB`。该应用层初始策略不改变普通 Trace
+创建的既有默认值。
 
 显示模型只保存 Scale/Div、Ref Value 和 Ref Pos 三项主值。Min、Max 和单位
 均在生成快照时派生，不作为可独立修改的状态。更新 Scale/Div 时，输入及派生

@@ -89,9 +89,9 @@ TEST(FactoryPresetTest, CreatesCorrelatedS21StateAtRevisionZero) {
     ASSERT_TRUE(trace.scale.has_value());
     EXPECT_DOUBLE_EQ(trace.scale->scalePerDivision, 10.0);
     EXPECT_DOUBLE_EQ(trace.scale->referenceValue, 0.0);
-    EXPECT_DOUBLE_EQ(trace.scale->referencePosition, 8.0);
-    EXPECT_DOUBLE_EQ(trace.scale->minimum, -80.0);
-    EXPECT_DOUBLE_EQ(trace.scale->maximum, 20.0);
+    EXPECT_DOUBLE_EQ(trace.scale->referencePosition, 9.0);
+    EXPECT_DOUBLE_EQ(trace.scale->minimum, -90.0);
+    EXPECT_DOUBLE_EQ(trace.scale->maximum, 10.0);
 }
 
 TEST(FactoryPresetTest, FirstMutationsUseRevisionOneAndNextIdentifiers) {

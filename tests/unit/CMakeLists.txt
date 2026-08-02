@@ -55,6 +55,7 @@ gtest_discover_tests(vna_acquisition_tests)
 
 add_executable(
     vna_display_model_tests
+    display_model/display_initial_scale_test.cpp
     display_model/display_scale_test.cpp
     display_model/display_workspace_test.cpp
 )

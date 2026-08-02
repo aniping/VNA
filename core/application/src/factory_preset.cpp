@@ -12,6 +12,11 @@ using namespace std::chrono_literals;
 // cadence prevents a tight loop and gives the first display roughly 10 Hz;
 // it is a display pacing choice, not a hardware capability claim.
 constexpr auto kSimulationMinimumSweepPeriod = 100ms;
+constexpr display_model::CartesianScaleSettings kFactoryLogMagnitudeScale{
+    .scalePerDivision = 10.0,
+    .referenceValue = 0.0,
+    .referencePosition = 9.0,
+};
 
 constexpr domain::SweepSettings factorySweepSettings() {
     return {
@@ -39,7 +44,11 @@ FactoryState makeInitialState(const domain::SweepSettings& sweep) {
     const auto trace = displayWorkspace.createTrace(
         window,
         measurement,
-        display_model::TraceFormat::LogMagnitude).value();
+        display_model::TraceFormat::LogMagnitude,
+        // ZNB system Preset places 0 dB on the second major line from the top.
+        // Supplying the three independent values here avoids changing the
+        // ordinary createTrace default used outside the product preset.
+        kFactoryLogMagnitudeScale).value();
     return {
         .commandBusState = {
             .instrument = std::move(instrument),
