@@ -82,6 +82,10 @@ ctest --test-dir build --output-on-failure
 
 在 Windows 上执行前，请确认 `g++` 和 `ninja` 来自同一套 MinGW 工具链。
 
+固定的 QEMU Linux/ARM64 补充门禁、环境依赖和完整执行脚本见
+[Linux/ARM64 QEMU 验证](docs/linux-arm64-qemu-validation.md)。该门禁验证可移植性，
+不代表原生 ARM64 性能，也不扩大正式平台支持范围。
+
 `build/`、`out/` 和 `frontend/dist/` 只是构建中间产物。组装包含服务端、前端静态文件、
 日志目录和运行库的便携发布目录前，还需要 Node.js 20.19 或更高版本、pnpm
 11.9.0，并在首次打包或锁文件变化后安装前端依赖：
