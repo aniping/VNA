@@ -41,6 +41,7 @@ add_executable(
     vna_acquisition_tests
     acquisition/continuous_acquisition_hardening_test.cpp
     acquisition/continuous_acquisition_test.cpp
+    acquisition/raw_sweep_capture_test.cpp
 )
 target_link_libraries(
     vna_acquisition_tests

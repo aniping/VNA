@@ -1,6 +1,10 @@
 find_package(Threads REQUIRED)
 
-add_library(vna_acquisition src/continuous_acquisition.cpp)
+add_library(
+    vna_acquisition
+    src/continuous_acquisition.cpp
+    src/raw_sweep_capture.cpp
+)
 add_library(vna::acquisition ALIAS vna_acquisition)
 
 target_compile_features(vna_acquisition PUBLIC cxx_std_20)
