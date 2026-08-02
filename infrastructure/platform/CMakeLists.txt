@@ -1,15 +1,7 @@
 if(WIN32)
-    set(
-        vna_platform_sources
-        windows/executable_path.cpp
-        windows/state_directory.cpp
-    )
+    set(vna_platform_sources windows/executable_path.cpp)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    set(
-        vna_platform_sources
-        linux/executable_path.cpp
-        linux/state_directory.cpp
-    )
+    set(vna_platform_sources linux/executable_path.cpp)
 else()
     message(FATAL_ERROR "Unsupported platform")
 endif()
