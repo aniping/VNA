@@ -52,6 +52,7 @@ target_link_libraries(
 
 add_executable(
     vna_application_sweep_preview_tests
+    sweep_preview_assembler_test.cpp
     sweep_preview_exchange_test.cpp
     sweep_preview_concurrency_test.cpp
     sweep_preview_validation_test.cpp
