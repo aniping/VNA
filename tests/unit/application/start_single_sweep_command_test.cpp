@@ -38,7 +38,7 @@ public:
         : handler_(*this),
           bus_(InstrumentId{"instrument-1"},
                handler_,
-               catalogOwner_.catalog(),
+               runtimeOwner_.catalog(),
                idempotencyCapacity) {}
 
     CommandResult createChannel() {
@@ -116,7 +116,7 @@ private:
 
     std::vector<SingleSweepWorkItem> submitted_;
     std::deque<SingleSweepSubmitErrorCode> rejections_;
-    vna::test::CommandBusCatalogOwner catalogOwner_;
+    vna::test::CommandBusRuntimeOwner runtimeOwner_;
     SingleSweepCommandHandler handler_;
     CommandBus bus_;
 };

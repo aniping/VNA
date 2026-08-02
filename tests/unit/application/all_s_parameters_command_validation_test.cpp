@@ -5,16 +5,10 @@
 
 #include <vna/application/command_bus.hpp>
 #include <vna/application/factory_preset.hpp>
-#include <vna/application/trace_publication_catalog.hpp>
 #include <vna/test/stopped_single_sweep_handler.hpp>
 
 namespace vna::application {
 namespace {
-
-StateSnapshot snapshotFor(const FactoryPreset& preset) {
-    return {0, {}, preset.commandBusState.instrument.snapshot(),
-        preset.commandBusState.displayWorkspace.snapshot()};
-}
 
 CommandEnvelope ensureCommand() {
     return {
@@ -33,11 +27,10 @@ TEST(AllSParametersCommandValidationTest, ReusesExistingMeasurements) {
         domain::ChannelId{1}, domain::MeasurementType::S12).value();
     const auto s22 = instrument.createMeasurement(
         domain::ChannelId{1}, domain::MeasurementType::S22).value();
-    TraceDisplayFrameRepository repository{8};
-    TracePublicationCatalog catalog{
-        preset.acquisitionChannelId, repository, snapshotFor(preset)};
+    vna::test::CommandBusRuntimeOwner runtimeOwner{
+        preset.commandBusState, 8};
     CommandBus bus{InstrumentId{"instrument-1"},
-        vna::test::stoppedSingleSweepHandler(), catalog,
+        vna::test::stoppedSingleSweepHandler(), runtimeOwner.catalog(),
         std::move(preset.commandBusState)};
 
     const auto result = bus.dispatch(ensureCommand());
@@ -58,12 +51,11 @@ TEST(AllSParametersCommandValidationTest, RejectsPartialDisplayAtomically) {
     const auto window = preset.commandBusState.displayWorkspace.createWindow();
     ASSERT_TRUE(preset.commandBusState.displayWorkspace.createTrace(
         window, measurement, display_model::TraceFormat::LogMagnitude).hasValue());
-    TraceDisplayFrameRepository repository{8};
-    TracePublicationCatalog catalog{
-        preset.acquisitionChannelId, repository, snapshotFor(preset)};
-    const auto initialPlan = catalog.capture();
+    vna::test::CommandBusRuntimeOwner runtimeOwner{
+        preset.commandBusState, 8};
+    const auto initialPlan = runtimeOwner.catalog().capture();
     CommandBus bus{InstrumentId{"instrument-1"},
-        vna::test::stoppedSingleSweepHandler(), catalog,
+        vna::test::stoppedSingleSweepHandler(), runtimeOwner.catalog(),
         std::move(preset.commandBusState)};
 
     const auto rejected = bus.dispatch(ensureCommand());
@@ -73,7 +65,7 @@ TEST(AllSParametersCommandValidationTest, RejectsPartialDisplayAtomically) {
     EXPECT_EQ(std::get<ApplicationError>(*error).code,
         ApplicationErrorCode::TraceConfigurationRejected);
     EXPECT_EQ(rejected.stateRevision, 0U);
-    EXPECT_EQ(catalog.capture(), initialPlan);
+    EXPECT_EQ(runtimeOwner.catalog().capture(), initialPlan);
     EXPECT_EQ(bus.snapshot().display.traces.size(), 2U);
 }
 

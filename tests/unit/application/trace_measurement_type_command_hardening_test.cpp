@@ -13,15 +13,6 @@
 namespace vna::application {
 namespace {
 
-StateSnapshot initialSnapshot(const FactoryPreset& preset) {
-    return {
-        .stateRevision = 0,
-        .control = {},
-        .instrument = preset.commandBusState.instrument.snapshot(),
-        .display = preset.commandBusState.displayWorkspace.snapshot(),
-    };
-}
-
 CommandEnvelope measurementCommand(
     display_model::TraceId traceId,
     domain::MeasurementType type,
@@ -45,10 +36,9 @@ CommandErrorCode errorCode(const CommandResult& result) {
 class TraceMeasurementTypeCommandHardeningTest : public ::testing::Test {
 protected:
     TraceMeasurementTypeCommandHardeningTest()
-        : catalog_(domain::ChannelId{1}, repository_, initialSnapshot(preset_)),
-          bus_(InstrumentId{"instrument-1"},
+        : bus_(InstrumentId{"instrument-1"},
                vna::test::stoppedSingleSweepHandler(),
-               catalog_,
+               runtimeOwner_.catalog(),
                std::move(preset_.commandBusState)) {}
 
     TraceDisplayFrameSetHandle publishCurrent(std::uint64_t sequence) {
@@ -74,8 +64,10 @@ protected:
     }
 
     FactoryPreset preset_{makeFactoryPreset()};
-    TraceDisplayFrameRepository repository_{4};
-    TracePublicationCatalog catalog_;
+    vna::test::CommandBusRuntimeOwner runtimeOwner_{
+        preset_.commandBusState, 4};
+    TraceDisplayFrameRepository& repository_{runtimeOwner_.repository()};
+    TracePublicationCatalog& catalog_{runtimeOwner_.catalog()};
     CommandBus bus_;
 };
 

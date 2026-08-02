@@ -17,6 +17,7 @@
 #include <vna/application/trace_display_frame_query.hpp>
 #include <vna/application/trace_publication_catalog.hpp>
 #include <vna/simulation/simulation_sweep.hpp>
+#include <vna/test/stopped_single_sweep_handler.hpp>
 #include <vna/web_api/web_api.hpp>
 
 namespace vna::web_api {
@@ -53,11 +54,7 @@ Json sweepPayload() {
 class WebApiSingleSweepTest : public ::testing::Test {
 protected:
     WebApiSingleSweepTest()
-        : catalog_(
-              domain::ChannelId{1},
-              repository_,
-              application::StateSnapshot{0, {}, {}, {}}),
-          executor_(
+        : executor_(
               2,
               [](const frames::FrequencyAxis& axis, std::stop_token) {
                   return simulation::simulateSweep(axis);
@@ -66,7 +63,8 @@ protected:
               repository_),
           handler_(executor_),
           commandBus_(
-              application::InstrumentId{"instrument-1"}, handler_, catalog_),
+              application::InstrumentId{"instrument-1"}, handler_,
+              runtimeOwner_.catalog()),
           query_(commandBus_, repository_),
           webApi_(
               commandBus_,
@@ -136,8 +134,9 @@ protected:
     }
 
     application::OperationManager operations_;
-    application::TraceDisplayFrameRepository repository_{1};
-    application::TracePublicationCatalog catalog_;
+    vna::test::CommandBusRuntimeOwner runtimeOwner_{{}, 1};
+    application::TraceDisplayFrameRepository& repository_{
+        runtimeOwner_.repository()};
     application::SingleSweepExecutor executor_;
     application::SingleSweepCommandHandler handler_;
     application::CommandBus commandBus_;

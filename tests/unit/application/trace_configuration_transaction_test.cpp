@@ -12,15 +12,6 @@
 namespace vna::application {
 namespace {
 
-StateSnapshot presetSnapshot(const FactoryPreset& preset) {
-    return {
-        .stateRevision = 0,
-        .control = {},
-        .instrument = preset.commandBusState.instrument.snapshot(),
-        .display = preset.commandBusState.displayWorkspace.snapshot(),
-    };
-}
-
 TraceDisplaySamples samplesFor(display_model::TraceFormat format) {
     if (format == display_model::TraceFormat::Smith) {
         return ComplexTraceDisplaySamples{
@@ -35,13 +26,9 @@ TraceDisplaySamples samplesFor(display_model::TraceFormat format) {
 class TraceConfigurationTransactionTest : public ::testing::Test {
 protected:
     TraceConfigurationTransactionTest()
-        : catalog_(
-              preset_.acquisitionChannelId,
-              repository_,
-              presetSnapshot(preset_)),
-          bus_(InstrumentId{"instrument-1"},
+        : bus_(InstrumentId{"instrument-1"},
                vna::test::stoppedSingleSweepHandler(),
-               catalog_,
+               runtimeOwner_.catalog(),
                std::move(preset_.commandBusState)) {}
 
     CommandResult dispatch(CommandPayload payload) {
@@ -88,8 +75,10 @@ protected:
     }
 
     FactoryPreset preset_{makeFactoryPreset()};
-    TraceDisplayFrameRepository repository_{4};
-    TracePublicationCatalog catalog_;
+    vna::test::CommandBusRuntimeOwner runtimeOwner_{
+        preset_.commandBusState, 4};
+    TraceDisplayFrameRepository& repository_{runtimeOwner_.repository()};
+    TracePublicationCatalog& catalog_{runtimeOwner_.catalog()};
     CommandBus bus_;
     std::uint64_t nextId_{1};
 };

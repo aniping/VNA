@@ -15,15 +15,6 @@
 namespace vna::application {
 namespace {
 
-StateSnapshot presetSnapshot(const FactoryPreset& preset) {
-    return {
-        .stateRevision = 0,
-        .control = {},
-        .instrument = preset.commandBusState.instrument.snapshot(),
-        .display = preset.commandBusState.displayWorkspace.snapshot(),
-    };
-}
-
 TraceDisplayFrameSet frameSetFor(
     const TracePublicationPlanHandle& plan,
     std::uint64_t sequence) {
@@ -75,13 +66,9 @@ void expectCanonicalDisplay(const StateSnapshot& state) {
 class AllSParametersCommandTest : public ::testing::Test {
 protected:
     AllSParametersCommandTest()
-        : catalog_(
-              preset_.acquisitionChannelId,
-              repository_,
-              presetSnapshot(preset_)),
-          bus_(InstrumentId{"instrument-1"},
+        : bus_(InstrumentId{"instrument-1"},
                vna::test::stoppedSingleSweepHandler(),
-               catalog_,
+               runtimeOwner_.catalog(),
                std::move(preset_.commandBusState)) {}
 
     CommandEnvelope command(
@@ -102,8 +89,10 @@ protected:
     }
 
     FactoryPreset preset_{makeFactoryPreset()};
-    TraceDisplayFrameRepository repository_{8};
-    TracePublicationCatalog catalog_;
+    vna::test::CommandBusRuntimeOwner runtimeOwner_{
+        preset_.commandBusState, 8};
+    TraceDisplayFrameRepository& repository_{runtimeOwner_.repository()};
+    TracePublicationCatalog& catalog_{runtimeOwner_.catalog()};
     CommandBus bus_;
 };
 

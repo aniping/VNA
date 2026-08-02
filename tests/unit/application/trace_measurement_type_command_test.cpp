@@ -12,23 +12,12 @@
 namespace vna::application {
 namespace {
 
-StateSnapshot presetSnapshot(const FactoryPreset& preset) {
-    return {
-        .stateRevision = 0,
-        .control = {},
-        .instrument = preset.commandBusState.instrument.snapshot(),
-        .display = preset.commandBusState.displayWorkspace.snapshot(),
-    };
-}
-
 class TraceMeasurementTypeCommandTest : public ::testing::Test {
 protected:
     TraceMeasurementTypeCommandTest()
-        : catalog_(
-              domain::ChannelId{1}, repository_, presetSnapshot(preset_)),
-          bus_(InstrumentId{"instrument-1"},
+        : bus_(InstrumentId{"instrument-1"},
                vna::test::stoppedSingleSweepHandler(),
-               catalog_,
+               runtimeOwner_.catalog(),
                std::move(preset_.commandBusState)) {}
 
     CommandResult dispatch(
@@ -74,8 +63,10 @@ protected:
     }
 
     FactoryPreset preset_{makeFactoryPreset()};
-    TraceDisplayFrameRepository repository_{4};
-    TracePublicationCatalog catalog_;
+    vna::test::CommandBusRuntimeOwner runtimeOwner_{
+        preset_.commandBusState, 4};
+    TraceDisplayFrameRepository& repository_{runtimeOwner_.repository()};
+    TracePublicationCatalog& catalog_{runtimeOwner_.catalog()};
     CommandBus bus_;
     std::uint64_t nextId_{1};
 };

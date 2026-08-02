@@ -12,6 +12,7 @@
 #include <vna/application/single_sweep_command_handler.hpp>
 #include <vna/application/trace_display_frame_query.hpp>
 #include <vna/application/trace_publication_catalog.hpp>
+#include <vna/test/stopped_single_sweep_handler.hpp>
 
 namespace vna::application {
 namespace {
@@ -76,9 +77,8 @@ class TraceDisplayFrameQueryWaitTest
       private SingleSweepExecution {
 protected:
     TraceDisplayFrameQueryWaitTest()
-        : catalog_(domain::ChannelId{1}, repository_, StateSnapshot{0, {}, {}, {}}),
-          handler_(*this),
-          bus_(InstrumentId{"instrument-1"}, handler_, catalog_),
+        : handler_(*this),
+          bus_(InstrumentId{"instrument-1"}, handler_, runtimeOwner_.catalog()),
           query_(bus_, repository_) {}
 
     void SetUp() override {
@@ -139,8 +139,8 @@ private:
     }
 
 protected:
-    TraceDisplayFrameRepository repository_{1};
-    TracePublicationCatalog catalog_;
+    vna::test::CommandBusRuntimeOwner runtimeOwner_{{}, 1};
+    TraceDisplayFrameRepository& repository_{runtimeOwner_.repository()};
     SingleSweepCommandHandler handler_;
     CommandBus bus_;
     TraceDisplayFrameQuery query_;

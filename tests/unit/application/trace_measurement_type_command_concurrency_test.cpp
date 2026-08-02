@@ -9,7 +9,6 @@
 
 #include <vna/application/command_bus.hpp>
 #include <vna/application/factory_preset.hpp>
-#include <vna/application/trace_publication_catalog.hpp>
 #include <vna/test/stopped_single_sweep_handler.hpp>
 
 namespace vna::application {
@@ -38,15 +37,6 @@ private:
     std::condition_variable changed_;
 };
 
-StateSnapshot initialSnapshot(const FactoryPreset& preset) {
-    return {
-        .stateRevision = 0,
-        .control = {},
-        .instrument = preset.commandBusState.instrument.snapshot(),
-        .display = preset.commandBusState.displayWorkspace.snapshot(),
-    };
-}
-
 CommandEnvelope command(const char* id, domain::MeasurementType type) {
     return {
         .commandId = CommandId{id},
@@ -61,13 +51,12 @@ CommandEnvelope command(const char* id, domain::MeasurementType type) {
 
 TEST(TraceMeasurementTypeCommandConcurrencyTest, DispatchesLinearizeAtRevision) {
     auto preset = makeFactoryPreset();
-    TraceDisplayFrameRepository repository{4};
-    TracePublicationCatalog catalog{
-        domain::ChannelId{1}, repository, initialSnapshot(preset)};
+    vna::test::CommandBusRuntimeOwner runtimeOwner{
+        preset.commandBusState, 4};
     CommandBus bus{
         InstrumentId{"instrument-1"},
         vna::test::stoppedSingleSweepHandler(),
-        catalog,
+        runtimeOwner.catalog(),
         std::move(preset.commandBusState)};
     StartGate gate;
     std::optional<CommandResult> first;
@@ -98,7 +87,7 @@ TEST(TraceMeasurementTypeCommandConcurrencyTest, DispatchesLinearizeAtRevision) 
     EXPECT_EQ(state.stateRevision, 1U);
     EXPECT_EQ(state.instrument.measurements.size(), 2U);
     EXPECT_EQ(state.display.traces.size(), 1U);
-    EXPECT_EQ(catalog.capture()->generation, 2U);
+    EXPECT_EQ(runtimeOwner.catalog().capture()->generation, 2U);
 }
 
 }  // namespace

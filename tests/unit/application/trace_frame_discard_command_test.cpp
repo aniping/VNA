@@ -8,6 +8,7 @@
 #include <vna/application/single_sweep_command_handler.hpp>
 #include <vna/application/trace_display_frame_repository.hpp>
 #include <vna/application/trace_publication_catalog.hpp>
+#include <vna/test/stopped_single_sweep_handler.hpp>
 
 namespace vna::application {
 namespace {
@@ -32,9 +33,8 @@ class TraceFrameDiscardCommandTest
       private SingleSweepExecution {
 protected:
     TraceFrameDiscardCommandTest()
-        : catalog_(domain::ChannelId{1}, repository_, StateSnapshot{0, {}, {}, {}}),
-          handler_(*this),
-          bus_(InstrumentId{"instrument-1"}, handler_, catalog_) {
+        : handler_(*this),
+          bus_(InstrumentId{"instrument-1"}, handler_, runtimeOwner_.catalog()) {
         const auto channel = successValue<domain::ChannelId>(dispatch(
             CreateChannelCommand{.sweep = validSweep()}));
         measurementId_ = successValue<domain::MeasurementId>(dispatch(
@@ -101,9 +101,8 @@ private:
     }
 
 protected:
-
-    TraceDisplayFrameRepository repository_{1};
-    TracePublicationCatalog catalog_;
+    vna::test::CommandBusRuntimeOwner runtimeOwner_{{}, 1};
+    TraceDisplayFrameRepository& repository_{runtimeOwner_.repository()};
     std::size_t discardCalls_{0};
     SingleSweepCommandHandler handler_;
     CommandBus bus_;
