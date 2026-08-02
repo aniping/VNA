@@ -16,15 +16,9 @@
 namespace vna::logging {
 namespace {
 
-constexpr std::string_view kActiveFilename = "vna.log.jsonl";
-constexpr std::string_view kArchivePrefix = "vna.log.";
-constexpr std::string_view kArchiveExtension = ".jsonl";
-constexpr std::string_view kLegacyPrefix = "vna.log.jsonl.";
-
-struct ArchiveIdentity {
-    std::size_t index;
-    bool legacy;
-};
+constexpr std::string_view kHumanActive = "vna.log";
+constexpr std::string_view kStructuredActive = "vna.jsonl";
+constexpr std::string_view kArchivePrefix = "vna.";
 
 std::optional<std::size_t> parseIndex(std::string_view text) {
     if (text.empty() || text.front() == '0') return std::nullopt;
@@ -38,23 +32,19 @@ std::optional<std::size_t> parseIndex(std::string_view text) {
     return index;
 }
 
-std::optional<ArchiveIdentity> archiveIdentity(std::string_view name) {
-    if (name.rfind(kLegacyPrefix, 0) == 0) {
-        const auto index = parseIndex(name.substr(kLegacyPrefix.size()));
-        if (index) return ArchiveIdentity{*index, true};
+std::optional<std::size_t> archiveIndex(std::string_view name) {
+    if (name.rfind(kArchivePrefix, 0) != 0) return std::nullopt;
+    for (const auto extension : {std::string_view{".log"},
+                                 std::string_view{".jsonl"}}) {
+        if (name.size() <= kArchivePrefix.size() + extension.size() ||
+            name.substr(name.size() - extension.size()) != extension) {
+            continue;
+        }
+        return parseIndex(name.substr(
+            kArchivePrefix.size(),
+            name.size() - kArchivePrefix.size() - extension.size()));
     }
-    if (name.rfind(kArchivePrefix, 0) != 0 ||
-        name.size() <= kArchivePrefix.size() + kArchiveExtension.size() ||
-        name.substr(name.size() - kArchiveExtension.size()) !=
-            kArchiveExtension) {
-        return std::nullopt;
-    }
-    const auto digits = name.substr(
-        kArchivePrefix.size(),
-        name.size() - kArchivePrefix.size() - kArchiveExtension.size());
-    const auto index = parseIndex(digits);
-    return index ? std::optional{ArchiveIdentity{*index, false}}
-                 : std::nullopt;
+    return std::nullopt;
 }
 
 void validateManagedFile(
@@ -62,11 +52,11 @@ void validateManagedFile(
     std::size_t maxFileBytes) {
     const auto kind = classifyManagedPathNoFollow(path);
     if (kind == ManagedPathKind::Unsafe) {
-        throw std::runtime_error("JSON Lines log path is not a regular file");
+        throw std::runtime_error("managed log path is not a regular file");
     }
     if (kind == ManagedPathKind::Regular &&
         std::filesystem::file_size(path) > maxFileBytes) {
-        throw std::runtime_error("existing JSON Lines log file exceeds limit");
+        throw std::runtime_error("existing managed log file exceeds limit");
     }
 }
 
@@ -75,7 +65,7 @@ void validateOptions(const JsonLinesLoggerOptions& options) {
         spdlog::sinks::rotating_file_sink_mt::MaxFiles;
     if (options.logDirectory.empty() || options.maxFileBytes == 0 ||
         options.maxFiles == 0 || options.maxFiles - 1 > maxArchives) {
-        throw std::invalid_argument("invalid JSON Lines logger options");
+        throw std::invalid_argument("invalid logger options");
     }
 }
 
@@ -84,11 +74,10 @@ std::vector<std::filesystem::path> inspectArchives(
     std::vector<std::filesystem::path> expired;
     for (const auto& entry :
          std::filesystem::directory_iterator(options.logDirectory)) {
-        const auto identity = archiveIdentity(
-            entry.path().filename().string());
-        if (!identity) continue;
+        const auto index = archiveIndex(entry.path().filename().string());
+        if (!index) continue;
         validateManagedFile(entry.path(), options.maxFileBytes);
-        if (identity->legacy || identity->index >= options.maxFiles) {
+        if (*index >= options.maxFiles) {
             expired.push_back(entry.path());
         }
     }
@@ -107,17 +96,21 @@ void removeExpired(const std::vector<std::filesystem::path>& expired) {
 
 }  // namespace
 
-std::filesystem::path prepareLogFiles(
+LogFilePaths prepareLogFiles(
     const JsonLinesLoggerOptions& options) {
     validateOptions(options);
     std::filesystem::create_directories(options.logDirectory);
-    const auto active = options.logDirectory / kActiveFilename;
-    validateManagedFile(active, options.maxFileBytes);
+    const LogFilePaths paths{
+        options.logDirectory / kHumanActive,
+        options.logDirectory / kStructuredActive,
+    };
+    validateManagedFile(paths.human, options.maxFileBytes);
+    validateManagedFile(paths.structured, options.maxFileBytes);
     // Complete inspection precedes cleanup so unsafe or oversized paths leave
     // the directory snapshot untouched when construction is rejected.
     const auto expired = inspectArchives(options);
     removeExpired(expired);
-    return active;
+    return paths;
 }
 
 }  // namespace vna::logging

@@ -75,11 +75,9 @@ protected:
 };
 
 TEST_F(JsonLinesLoggerRotationTest, RejectsManagedSymlinks) {
-    for (const auto* filename : {"vna.log.jsonl", "vna.log.1.jsonl"}) {
-        const auto state = directory_ /
-            (std::string{filename} == "vna.log.jsonl"
-                 ? "active-link"
-                 : "archive-link");
+    for (const auto* filename :
+         {"vna.log", "vna.1.log", "vna.jsonl", "vna.1.jsonl"}) {
+        const auto state = directory_ / std::string{filename};
         std::filesystem::create_directory(state);
         const auto target = directory_ / (state.filename().string() + "-target");
         std::ofstream{target} << "outside";
@@ -100,19 +98,20 @@ TEST_F(JsonLinesLoggerRotationTest, RejectsManagedSymlinks) {
 
 TEST_F(JsonLinesLoggerRotationTest, RotatesBeforeWritingFullFile) {
     JsonLinesLoggerOptions options{directory_, &console_};
-    options.maxFileBytes = 180;
+    options.maxFileBytes = 300;
     options.maxFiles = 2;
     auto logger = makeJsonLinesLogger(options);
     for (const char value : {'a', 'b'}) {
         ASSERT_TRUE(logger->write({.level = observability::LogLevel::Info,
-                                   .name = std::string(80, value)}));
+                                   .name = std::string(180, value)}));
     }
     ASSERT_TRUE(logger->flush());
 
-    const auto active = directory_ / "vna.log.jsonl";
-    const auto archive = directory_ / "vna.log.1.jsonl";
-    EXPECT_LE(std::filesystem::file_size(active), options.maxFileBytes);
-    EXPECT_LE(std::filesystem::file_size(archive), options.maxFileBytes);
+    for (const auto* filename :
+         {"vna.log", "vna.1.log", "vna.jsonl", "vna.1.jsonl"}) {
+        EXPECT_LE(std::filesystem::file_size(directory_ / filename),
+                  options.maxFileBytes);
+    }
 }
 
 }  // namespace

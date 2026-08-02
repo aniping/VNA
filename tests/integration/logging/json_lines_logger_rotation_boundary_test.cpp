@@ -74,7 +74,8 @@ TEST_F(JsonLinesLoggerRotationBoundaryTest,
 
 TEST_F(JsonLinesLoggerRotationBoundaryTest,
        OversizedManagedFileIsRejectedWithoutMutation) {
-    for (const auto* filename : {"vna.log.jsonl", "vna.log.1.jsonl"}) {
+    for (const auto* filename :
+         {"vna.log", "vna.1.log", "vna.jsonl", "vna.1.jsonl"}) {
         const auto state = root_ / filename;
         std::filesystem::create_directories(state);
         const auto managed = state / filename;
@@ -93,31 +94,47 @@ TEST_F(JsonLinesLoggerRotationBoundaryTest,
        RetainsConfiguredTotalFileCount) {
     for (const auto maxFiles : {1U, 3U}) {
         const auto state = root_ / ("retain-" + std::to_string(maxFiles));
-        auto logger = makeJsonLinesLogger(optionsFor(state, 180, maxFiles));
+        auto logger = makeJsonLinesLogger(optionsFor(state, 300, maxFiles));
         for (const char value : {'a', 'b', 'c', 'd', 'e'}) {
-            ASSERT_TRUE(logger->write(event(std::string(80, value))));
+            ASSERT_TRUE(logger->write(event(std::string(180, value))));
         }
         ASSERT_TRUE(logger->flush());
-        EXPECT_EQ(fileCount(state), maxFiles);
+        EXPECT_EQ(fileCount(state), maxFiles * 2U);
+    }
+}
+
+TEST_F(JsonLinesLoggerRotationBoundaryTest, LeavesLegacyNamesUnmanaged) {
+    const auto state = root_ / "legacy";
+    std::filesystem::create_directories(state);
+    for (const auto* name :
+         {"vna.log.jsonl", "vna.log.1.jsonl", "vna.log.jsonl.1"}) {
+        std::ofstream{state / name} << "legacy";
+    }
+    EXPECT_NO_THROW(makeJsonLinesLogger(optionsFor(state, 512, 3)));
+    for (const auto* name :
+         {"vna.log.jsonl", "vna.log.1.jsonl", "vna.log.jsonl.1"}) {
+        EXPECT_EQ(readText(state / name), "legacy");
     }
 }
 
 TEST_F(JsonLinesLoggerRotationBoundaryTest,
        LowerRetentionRemovesExpiredArchivesOnRestart) {
     const auto state = root_ / "retention-restart";
-    auto logger = makeJsonLinesLogger(optionsFor(state, 180, 4));
+    auto logger = makeJsonLinesLogger(optionsFor(state, 300, 4));
     for (const char value : {'a', 'b', 'c', 'd', 'e'}) {
-        ASSERT_TRUE(logger->write(event(std::string(80, value))));
+        ASSERT_TRUE(logger->write(event(std::string(180, value))));
     }
     ASSERT_TRUE(logger->flush());
     logger.reset();
-    ASSERT_EQ(fileCount(state), 4U);
+    ASSERT_EQ(fileCount(state), 8U);
 
-    logger = makeJsonLinesLogger(optionsFor(state, 180, 2));
+    logger = makeJsonLinesLogger(optionsFor(state, 300, 2));
     ASSERT_TRUE(logger->flush());
-    EXPECT_EQ(fileCount(state), 2U);
-    EXPECT_FALSE(std::filesystem::exists(state / "vna.log.2.jsonl"));
-    EXPECT_FALSE(std::filesystem::exists(state / "vna.log.3.jsonl"));
+    EXPECT_EQ(fileCount(state), 4U);
+    for (const auto* filename :
+         {"vna.2.log", "vna.3.log", "vna.2.jsonl", "vna.3.jsonl"}) {
+        EXPECT_FALSE(std::filesystem::exists(state / filename));
+    }
 }
 
 TEST_F(JsonLinesLoggerRotationBoundaryTest,
@@ -127,14 +144,14 @@ TEST_F(JsonLinesLoggerRotationBoundaryTest,
     ASSERT_TRUE(probe->write(event("")));
     ASSERT_TRUE(probe->flush());
     const auto overhead = std::filesystem::file_size(
-        probeState / "vna.log.jsonl");
+        probeState / "vna.jsonl");
 
     constexpr std::size_t payloadBytes = 32;
     const auto limit = overhead + payloadBytes;
     auto exact = makeJsonLinesLogger(optionsFor(root_ / "exact", limit, 1));
     ASSERT_TRUE(exact->write(event(std::string(payloadBytes, 'x'))));
     ASSERT_TRUE(exact->flush());
-    EXPECT_EQ(std::filesystem::file_size(root_ / "exact" / "vna.log.jsonl"),
+    EXPECT_EQ(std::filesystem::file_size(root_ / "exact" / "vna.jsonl"),
               limit);
 
     auto oversized = makeJsonLinesLogger(
@@ -142,7 +159,7 @@ TEST_F(JsonLinesLoggerRotationBoundaryTest,
     EXPECT_FALSE(oversized->write(event(std::string(payloadBytes + 1, 'x'))));
     EXPECT_TRUE(oversized->flush());
     EXPECT_EQ(std::filesystem::file_size(
-                  root_ / "oversized" / "vna.log.jsonl"), 0U);
+                  root_ / "oversized" / "vna.jsonl"), 0U);
 }
 
 TEST_F(JsonLinesLoggerRotationBoundaryTest,
@@ -154,7 +171,7 @@ TEST_F(JsonLinesLoggerRotationBoundaryTest,
     }
     ASSERT_TRUE(probe->flush());
     const auto exactLimit = std::filesystem::file_size(
-        probeState / "vna.log.jsonl");
+        probeState / "vna.jsonl");
 
     const auto exactState = root_ / "cumulative-exact";
     auto logger = makeJsonLinesLogger(optionsFor(exactState, exactLimit, 2));
@@ -162,8 +179,8 @@ TEST_F(JsonLinesLoggerRotationBoundaryTest,
         ASSERT_TRUE(logger->write(event(name)));
     }
     ASSERT_TRUE(logger->flush());
-    EXPECT_EQ(fileCount(exactState), 1U);
-    EXPECT_EQ(std::filesystem::file_size(exactState / "vna.log.jsonl"),
+    EXPECT_EQ(fileCount(exactState), 2U);
+    EXPECT_EQ(std::filesystem::file_size(exactState / "vna.jsonl"),
               exactLimit);
 }
 

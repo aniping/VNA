@@ -6,7 +6,12 @@
 
 namespace vna::logging {
 
-std::filesystem::path prepareLogFiles(
+struct LogFilePaths {
+    std::filesystem::path human;
+    std::filesystem::path structured;
+};
+
+LogFilePaths prepareLogFiles(
     const JsonLinesLoggerOptions& options);
 
 }  // namespace vna::logging

@@ -1,4 +1,5 @@
 add_library(vna_logging
+    src/human_log_formatter.cpp
     src/json_line_formatter.cpp
     src/log_path_preflight.cpp
     src/spdlog_json_lines_logger.cpp

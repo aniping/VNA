@@ -120,9 +120,9 @@ Linux/GCC 使用相同目录结构，以下命令同样从仓库根运行：
 `/api/v1/health`、`/api/v1/state`
 和 `/api/v1/commands` 验证当前 HTTP 切片。
 `/api/v1/state` 的成功响应使用 `Cache-Control: no-store`，客户端不得缓存状态快照。
-启动脚本先输出启动状态、Web URL 和日志文件位置；服务随后把同一结构化事件
-格式化为简短的人类控制台行，并将权威 JSON Lines 写入
-`logs/vna.log.jsonl`。文件记录稳定的 `server.*` 启动里程碑以及所有经
+启动脚本先输出启动状态、Web URL 及两个日志文件位置；服务随后把同一事件
+写为控制台和 `logs/vna.log` 的人类文本，并将权威 JSON Lines 写入
+`logs/vna.jsonl`。两类文件各自按 10 MiB、含活动文件最多 10 个滚动。日志记录稳定的 `server.*` 启动里程碑以及所有经
 `/api/v1/commands` 提交的 `web.command.*` 成功或拒绝结果，包含关联 ID 和
 状态版本但不包含请求体或测量数组。服务非零退出时，脚本额外输出一行人类
 错误提示并保留原始退出码，不自动打开浏览器。

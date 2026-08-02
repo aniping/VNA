@@ -21,7 +21,7 @@ struct JsonLinesLoggerOptions {
     std::ostream* console{&std::cout};
     // JSON remains the compatibility default; portable release selects human.
     ConsoleFormat consoleFormat{ConsoleFormat::JsonLines};
-    // Both must be > 0; maxFiles includes the active log file.
+    // Both must be > 0; maxFiles applies to each file family and includes active.
     std::size_t maxFileBytes{10U * 1024U * 1024U};
     std::size_t maxFiles{10};
 };

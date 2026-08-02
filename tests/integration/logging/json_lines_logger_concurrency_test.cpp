@@ -105,17 +105,14 @@ std::string readText(const std::filesystem::path& path) {
 }
 
 bool isManagedLogName(std::string_view name) {
-    constexpr std::string_view active = "vna.log.jsonl";
-    if (name == active) return true;
-    constexpr std::string_view prefix = "vna.log.";
-    constexpr std::string_view extension = ".jsonl";
+    if (name == "vna.log" || name == "vna.jsonl") return true;
+    constexpr std::string_view prefix = "vna.";
     if (name.rfind(prefix, 0) != 0) return false;
-    if (name.size() <= prefix.size() + extension.size() ||
-        name.substr(name.size() - extension.size()) != extension) {
-        return false;
-    }
-    const auto index = name.substr(
-        prefix.size(), name.size() - prefix.size() - extension.size());
+    const auto separator = name.find('.', prefix.size());
+    if (separator == std::string_view::npos) return false;
+    const auto extension = name.substr(separator);
+    if (extension != ".log" && extension != ".jsonl") return false;
+    const auto index = name.substr(prefix.size(), separator - prefix.size());
     return !index.empty() && index.front() != '0' &&
         std::all_of(index.begin(), index.end(), [](char value) {
             return value >= '0' && value <= '9';
@@ -171,9 +168,10 @@ FileOutput readFileOutput(
     std::size_t maxFileBytes) {
     FileOutput output;
     for (const auto& entry : std::filesystem::directory_iterator(directory)) {
-        ++output.files;
         output.managedOnly = output.managedOnly &&
             isManagedLogName(entry.path().filename().string());
+        if (entry.path().extension() != ".jsonl") continue;
+        ++output.files;
         output.withinLimit = output.withinLimit &&
             entry.file_size() <= maxFileBytes;
         appendJsonLines(readText(entry.path()), output.log);

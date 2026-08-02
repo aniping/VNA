@@ -135,12 +135,14 @@ try {
     $console = Read-Text $stdout
     if ($console -notmatch 'Starting Vector Network Analyzer' -or
         $console -notmatch 'Web URL: http://127\.0\.0\.1:8080/' -or
+        $console -notmatch 'Text log: .*logs\\vna\.log' -or
+        $console -notmatch 'Structured log: .*logs\\vna\.jsonl' -or
         $console -match '"event"\s*:|(?m)^\s*\{') {
         throw "Unexpected launcher output: $console"
     }
     Assert-OrderedHumanMilestones $console
 
-    $logPath = Join-Path $release 'logs\vna.log.jsonl'
+    $logPath = Join-Path $release 'logs\vna.jsonl'
     $records = @(Get-Content -LiteralPath $logPath | ForEach-Object {
         $_ | ConvertFrom-Json
     })
@@ -174,7 +176,7 @@ try {
         $errorText = Read-Text $stderr
         if ($launcher.ExitCode -eq 0 -or
             $errorText -notmatch 'ERROR: Vector Network Analyzer exited' -or
-            $errorText -notmatch 'Log file:') {
+            $errorText -notmatch 'Text log:') {
             throw "Nonzero launcher guidance is missing: $errorText"
         }
     }
@@ -210,7 +212,7 @@ try {
     }
     $failureError = Read-Text $failureStderr
     if ($failureError -notmatch 'ERROR: Vector Network Analyzer exited' -or
-        $failureError -notmatch 'Log file:') {
+        $failureError -notmatch 'Text log:') {
         throw "Listen failure guidance is missing: $failureError"
     }
     $failureRecords = @(Get-Content -LiteralPath $logPath | ForEach-Object {

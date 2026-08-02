@@ -3,12 +3,15 @@
 
 #include <array>
 #include <chrono>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <regex>
 #include <sstream>
 #include <streambuf>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include <vna/logging/json_lines_logger.hpp>
@@ -47,6 +50,25 @@ std::string readFile(const std::filesystem::path& path) {
             std::istreambuf_iterator<char>{}};
 }
 
+std::chrono::milliseconds parseTimestamp(std::string_view value) {
+    std::tm fields{};
+    std::istringstream input{std::string{value.substr(0, 19)}};
+    input >> std::get_time(&fields, "%Y-%m-%dT%H:%M:%S");
+#ifdef _WIN32
+    const auto seconds = _mkgmtime64(&fields);
+#else
+    const auto seconds = timegm(&fields);
+#endif
+    auto offset = 0;
+    if (value.size() > 24) {
+        offset = std::stoi(std::string{value.substr(24, 2)}) * 3600 +
+            std::stoi(std::string{value.substr(27, 2)}) * 60;
+        if (value[23] == '-') offset = -offset;
+    }
+    return std::chrono::seconds{seconds - offset} +
+        std::chrono::milliseconds{std::stoi(std::string{value.substr(20, 3)})};
+}
+
 observability::LogEvent completeEvent(std::string name) {
     return {
         .level = observability::LogLevel::Info,
@@ -72,7 +94,7 @@ TEST(JsonLinesLoggerTest, WritesStructuredEventsToConsoleAndFile) {
     ASSERT_TRUE(logger->flush());
 
     const auto consoleText = console.str();
-    ASSERT_EQ(consoleText, readFile(directory.path() / "vna.log.jsonl"));
+    ASSERT_EQ(consoleText, readFile(directory.path() / "vna.jsonl"));
     std::istringstream lines{consoleText};
     const std::regex timestamp{R"(^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$)"};
     for (const auto* name : eventNames) {
@@ -102,15 +124,18 @@ TEST(JsonLinesLoggerTest, WritesHumanConsoleAndStructuredFileFromSameEvent) {
     ASSERT_TRUE(logger->write(completeEvent("command.completed")));
     ASSERT_TRUE(logger->flush());
 
+    const auto human = readFile(directory.path() / "vna.log");
     const auto record = nlohmann::json::parse(
-        readFile(directory.path() / "vna.log.jsonl"));
-    const auto expected = record.at("timestamp").get<std::string>() +
-        " [info] command.completed status=succeeded command_id=command-1" +
-        " session_id=session-1 instrument_id=instrument-1" +
-        " state_revision=42\n";
-    EXPECT_EQ(console.str(), expected);
+        readFile(directory.path() / "vna.jsonl"));
+    EXPECT_EQ(console.str(), human);
+    const std::regex humanLine{
+        R"(^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2} \[info\] command\.completed status=succeeded command_id=command-1 session_id=session-1 instrument_id=instrument-1 state_revision=42\n$)"};
+    EXPECT_TRUE(std::regex_match(human, humanLine));
+    EXPECT_EQ(record.at("event"), "command.completed");
+    EXPECT_EQ(parseTimestamp(std::string_view{human}.substr(0, 29)),
+              parseTimestamp(record.at("timestamp").get<std::string>()));
     EXPECT_THROW({
-        const auto parsed = nlohmann::json::parse(console.str());
+        const auto parsed = nlohmann::json::parse(human);
         static_cast<void>(parsed);
     }, nlohmann::json::parse_error);
 }
@@ -125,7 +150,7 @@ TEST(JsonLinesLoggerTest, WritesOnlyToFileWhenConsoleIsDisabled) {
     ASSERT_TRUE(logger->flush());
 
     const auto record = nlohmann::json::parse(
-        readFile(directory.path() / "vna.log.jsonl"));
+        readFile(directory.path() / "vna.jsonl"));
     EXPECT_EQ(record.at("event"), "server.lifecycle");
 }
 
@@ -139,7 +164,7 @@ TEST(JsonLinesLoggerTest, WritesThroughUnicodeLogDirectory) {
 
     ASSERT_TRUE(logger->write(completeEvent("unicode.path")));
     ASSERT_TRUE(logger->flush());
-    EXPECT_EQ(nlohmann::json::parse(readFile(state / "vna.log.jsonl"))
+    EXPECT_EQ(nlohmann::json::parse(readFile(state / "vna.jsonl"))
                   .at("event"),
               "unicode.path");
 }
