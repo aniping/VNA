@@ -110,7 +110,6 @@ TEST(JsonLinesLoggerTest, SinkFailureIsReportedAndRemainsTerminal) {
     TemporaryDirectory directory;
     FailingStreamBuffer buffer;
     std::ostream console{&buffer};
-    console.exceptions(std::ios::badbit | std::ios::failbit);
     auto logger = makeJsonLinesLogger({directory.path(), &console});
 
     EXPECT_FALSE(logger->write(completeEvent("failing.event")));

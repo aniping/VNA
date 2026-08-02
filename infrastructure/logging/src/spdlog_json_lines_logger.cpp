@@ -5,13 +5,15 @@
 
 #include <spdlog/logger.h>
 #include <spdlog/pattern_formatter.h>
-#include <spdlog/sinks/ostream_sink.h>
+#include <spdlog/sinks/base_sink.h>
 #include <spdlog/sinks/rotating_file_sink.h>
 
 #include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <memory>
+#include <mutex>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -21,6 +23,34 @@ namespace vna::logging {
 namespace {
 
 constexpr auto kActiveFilename = "vna.log.jsonl";
+
+class CheckedOstreamSink final : public spdlog::sinks::base_sink<std::mutex> {
+public:
+    explicit CheckedOstreamSink(std::ostream& stream) : stream_(stream) {}
+
+protected:
+    void sink_it_(const spdlog::details::log_msg& message) override {
+        spdlog::memory_buf_t formatted;
+        formatter_->format(message, formatted);
+        stream_.write(formatted.data(),
+                      static_cast<std::streamsize>(formatted.size()));
+        ensureHealthy();
+    }
+
+    void flush_() override {
+        stream_.flush();
+        ensureHealthy();
+    }
+
+private:
+    void ensureHealthy() const {
+        if (!stream_.good()) {
+            throw std::runtime_error("JSON Lines console sink failed");
+        }
+    }
+
+    std::ostream& stream_;
+};
 
 void validateOptions(const JsonLinesLoggerOptions& options) {
     constexpr auto maxArchives =
@@ -117,8 +147,8 @@ private:
         const std::filesystem::path& activePath) {
         std::vector<spdlog::sink_ptr> sinks;
         if (options.console != nullptr) {
-            sinks.push_back(std::make_shared<spdlog::sinks::ostream_sink_mt>(
-                *options.console));
+            sinks.push_back(
+                std::make_shared<CheckedOstreamSink>(*options.console));
         }
         sinks.push_back(
             std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
