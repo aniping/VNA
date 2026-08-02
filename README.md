@@ -126,6 +126,8 @@ Linux/GCC 使用相同目录结构，以下命令同样从仓库根运行：
 `/api/v1/commands` 提交的 `web.command.*` 成功或拒绝结果，包含关联 ID 和
 状态版本但不包含请求体或测量数组。服务非零退出时，脚本额外输出一行人类
 错误提示并保留原始退出码，不自动打开浏览器。
+启动里程碑直接显示当前工厂预置、采集周期/端口/IFBW/功率、默认迹线格式和
+Web 地址；这些值从组合根实际使用的预置快照生成，不是脚本中的重复常量。
 `/api/v1/commands` 的失败响应保留 `status` 与 `stateRevision`，并提供稳定的
 `errorCode` 供客户端区分具体错误。
 `commandId`、`sessionId` 和 `instrumentId` 必须为 1..128 bytes，且不得包含

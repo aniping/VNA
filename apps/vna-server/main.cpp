@@ -28,6 +28,8 @@
 namespace {
 
 constexpr auto instrumentId = "instrument-1";
+constexpr auto webAddress = "127.0.0.1";
+constexpr int webPort = 8080;
 constexpr std::size_t traceCapacity = 1024;
 // A stable product seed makes the simulated frame sequence reproducible across
 // restarts without leaking simulation concerns into the acquisition plan.
@@ -90,8 +92,9 @@ struct PublicationState {
 
 int serveUntilStopped(
     vna::web_api::WebApi& webApi,
-    vna::observability::Logger& logger) {
-    if (!vna::server::writeStartupMilestones(logger, instrumentId)) {
+    vna::observability::Logger& logger,
+    const vna::server::StartupLogDetails& startup) {
+    if (!vna::server::writeStartupMilestones(logger, startup)) {
         reportEmergency("vna-server failed to record startup milestones");
         static_cast<void>(flushLogs(logger, "vna-server startup log flush failed"));
         return EXIT_FAILURE;
@@ -101,15 +104,13 @@ int serveUntilStopped(
     if (!flushLogs(logger, "vna-server startup log flush failed")) {
         return EXIT_FAILURE;
     }
-    constexpr auto address = "127.0.0.1";
-    constexpr int port = 8080;
-    if (!webApi.listen(address, port)) {
-        static_cast<void>(vna::server::writeListenFailed(logger, instrumentId));
+    if (!webApi.listen(webAddress, webPort)) {
+        static_cast<void>(vna::server::writeListenFailed(logger, startup));
         static_cast<void>(flushLogs(logger, "vna-server final log flush failed"));
         return EXIT_FAILURE;
     }
     const auto stoppedRecorded =
-        vna::server::writeStopped(logger, instrumentId);
+        vna::server::writeStopped(logger, startup);
     const auto flushed = flushLogs(logger, "vna-server final log flush failed");
     return stoppedRecorded && flushed ? EXIT_SUCCESS : EXIT_FAILURE;
 }
@@ -138,6 +139,8 @@ int runServer() {
     const auto paths = serverPaths();
 
     auto preset = vna::application::makeFactoryPreset();
+    const auto startup = vna::server::makeStartupLogDetails(
+        preset, instrumentId, webAddress, webPort);
     // Declaration order is the borrowing graph. Reverse destruction stops Web
     // access first, then CommandBus and publisher, before acquisition and repos.
     vna::application::OperationManager operationManager;
@@ -168,7 +171,7 @@ int runServer() {
          .logger = logger.get(),
          .logFailureReporter = reportEmergency}};
     try {
-        return serveUntilStopped(webApi, *logger);
+        return serveUntilStopped(webApi, *logger, startup);
     } catch (...) {
         reportEmergency("vna-server failed during logged execution");
         return EXIT_FAILURE;

@@ -6,7 +6,8 @@ target_include_directories(
     vna_server_startup_observability
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-target_link_libraries(vna_server_startup_observability PUBLIC vna::observability)
+target_link_libraries(
+    vna_server_startup_observability PUBLIC vna::application vna::observability)
 target_compile_options(
     vna_server_startup_observability PRIVATE -Wall -Wextra -Wpedantic)
 
