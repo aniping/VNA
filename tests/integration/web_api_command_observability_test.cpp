@@ -103,6 +103,7 @@ TEST_F(WebApiCommandObservabilityTest, LogsAcceptedAndRejectedWebCommands) {
     EXPECT_EQ(accepted.level, observability::LogLevel::Info);
     EXPECT_EQ(accepted.name, "web.command.create_channel");
     EXPECT_EQ(accepted.message, "Create channel succeeded");
+    EXPECT_FALSE(accepted.errorCode.has_value());
     EXPECT_EQ(accepted.commandId, "create-channel");
     EXPECT_EQ(accepted.sessionId, "web-session");
     EXPECT_EQ(accepted.instrumentId, "instrument-1");
@@ -113,6 +114,7 @@ TEST_F(WebApiCommandObservabilityTest, LogsAcceptedAndRejectedWebCommands) {
     EXPECT_EQ(rejected.level, observability::LogLevel::Warning);
     EXPECT_EQ(rejected.name, "web.command.create_channel");
     EXPECT_EQ(rejected.message, "Create channel rejected");
+    EXPECT_EQ(rejected.errorCode, "state-revision-conflict");
     EXPECT_EQ(rejected.commandId, "stale-command");
     EXPECT_EQ(rejected.stateRevision, 1U);
     EXPECT_EQ(rejected.status, "rejected");

@@ -1,5 +1,7 @@
 #include "command_observability.hpp"
+#include "command_outcome_info.hpp"
 
+#include <optional>
 #include <string>
 #include <variant>
 
@@ -59,6 +61,7 @@ bool recordWebCommand(
         std::holds_alternative<application::CommandSuccess>(result.outcome);
     try {
         const auto description = std::visit(DescribeCommand{}, command.payload);
+        const auto outcome = commandOutcomeInfo(result.outcome);
         const auto written = logger->write({
             .level = succeeded ? observability::LogLevel::Info
                                : observability::LogLevel::Warning,
@@ -70,6 +73,9 @@ bool recordWebCommand(
             .instrumentId = command.instrumentId.value(),
             .stateRevision = result.stateRevision,
             .status = succeeded ? "succeeded" : "rejected",
+            .errorCode = outcome.errorCode == nullptr
+                ? std::optional<std::string>{}
+                : std::string{outcome.errorCode},
         });
         // Browser commands are low-rate control events. Flushing here makes
         // the authoritative audit trail visible during a long-running server.

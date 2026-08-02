@@ -67,6 +67,7 @@ std::string formatJsonRecord(
     if (event.instrumentId) record["instrument_id"] = *event.instrumentId;
     if (event.stateRevision) record["state_revision"] = *event.stateRevision;
     if (event.status) record["status"] = *event.status;
+    if (event.errorCode) record["error_code"] = *event.errorCode;
     return record.dump();
 }
 

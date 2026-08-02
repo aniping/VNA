@@ -13,7 +13,7 @@ enum class LogLevel {
     Error,
 };
 
-// name, message, and status are UTF-8 values produced by stable caller
+// name, message, status, and errorCode are UTF-8 values from stable caller
 // catalogs. message is one sentence: never a body, token, sample array, or
 // undeclared file content, and it must not contain control characters.
 struct LogEvent {
@@ -25,6 +25,7 @@ struct LogEvent {
     std::optional<std::string> instrumentId;
     std::optional<std::uint64_t> stateRevision;
     std::optional<std::string> status;
+    std::optional<std::string> errorCode;
 };
 
 class Logger {

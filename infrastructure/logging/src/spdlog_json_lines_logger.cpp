@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <ostream>
 #include <stdexcept>
 #include <string>
@@ -107,12 +108,22 @@ spdlog::level::level_enum toSpdlogLevel(
     return spdlog::level::off;
 }
 
-bool isSafeHumanMessage(std::string_view message) noexcept {
-    if (message.empty()) return false;
-    for (const unsigned char value : message) {
-        if (value <= 0x1fU || value == 0x7fU) return false;
+bool hasControlCharacter(std::string_view text) noexcept {
+    for (const unsigned char value : text) {
+        if (value <= 0x1fU || value == 0x7fU) return true;
     }
-    return true;
+    return false;
+}
+
+bool isSafeHumanText(const std::optional<std::string>& text) noexcept {
+    return !text || (!text->empty() && !hasControlCharacter(*text));
+}
+
+bool isSafeHumanEvent(const observability::LogEvent& event) noexcept {
+    return !event.message.empty() &&
+        !hasControlCharacter(event.message) &&
+        isSafeHumanText(event.commandId) && isSafeHumanText(event.sessionId) &&
+        isSafeHumanText(event.instrumentId) && isSafeHumanText(event.errorCode);
 }
 
 class SpdlogJsonLinesLogger final : public observability::Logger {
@@ -132,7 +143,7 @@ public:
     bool write(observability::LogEvent event) noexcept override {
         if (failed_.load(std::memory_order_acquire)) return false;
         try {
-            if (!isSafeHumanMessage(event.message)) return false;
+            if (!isSafeHumanEvent(event)) return false;
             const auto timestamp = std::chrono::system_clock::now();
             const auto record = formatJsonRecord(event, timestamp);
             if (record.size() > maxRecordBytes_) return false;

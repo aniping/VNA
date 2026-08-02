@@ -144,6 +144,7 @@ bool writeMilestone(
         .instrumentId = std::string{instrumentId},
         .stateRevision = {},
         .status = std::string{milestone.status},
+        .errorCode = {},
     });
 }
 

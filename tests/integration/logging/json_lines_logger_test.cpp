@@ -123,7 +123,12 @@ TEST(JsonLinesLoggerTest, WritesHumanConsoleAndStructuredFileFromSameEvent) {
     options.consoleFormat = ConsoleFormat::HumanReadable;
     auto logger = makeJsonLinesLogger(options);
 
-    ASSERT_TRUE(logger->write(completeEvent("command.completed")));
+    auto event = completeEvent("command.completed");
+    event.level = observability::LogLevel::Warning;
+    event.message = "Create channel rejected";
+    event.status = "rejected";
+    event.errorCode = "state-revision-conflict";
+    ASSERT_TRUE(logger->write(std::move(event)));
     ASSERT_TRUE(logger->flush());
 
     const auto human = readFile(directory.path() / "vna.log");
@@ -131,9 +136,10 @@ TEST(JsonLinesLoggerTest, WritesHumanConsoleAndStructuredFileFromSameEvent) {
         readFile(directory.path() / "vna.jsonl"));
     EXPECT_EQ(console.str(), human);
     const std::regex humanLine{
-        R"(^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2} \[info\] Create channel succeeded command_id=command-1 session_id=session-1 instrument_id=instrument-1 state_revision=42\n$)"};
+        R"(^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2} \[warning\] Create channel rejected command_id=command-1 session_id=session-1 instrument_id=instrument-1 state_revision=42 error_code=state-revision-conflict\n$)"};
     EXPECT_TRUE(std::regex_match(human, humanLine));
     EXPECT_EQ(record.at("event"), "command.completed");
+    EXPECT_EQ(record.at("error_code"), "state-revision-conflict");
     EXPECT_EQ(parseTimestamp(std::string_view{human}.substr(0, 29)),
               parseTimestamp(record.at("timestamp").get<std::string>()));
     EXPECT_THROW({
@@ -153,6 +159,9 @@ TEST(JsonLinesLoggerTest, RejectsUnsafeHumanMessage) {
         event.message = message;
         EXPECT_FALSE(logger->write(std::move(event)));
     }
+    auto event = completeEvent("unsafe.error-code");
+    event.errorCode = "forged\nerror";
+    EXPECT_FALSE(logger->write(std::move(event)));
     EXPECT_TRUE(readFile(directory.path() / "vna.log").empty());
     EXPECT_TRUE(readFile(directory.path() / "vna.jsonl").empty());
 }

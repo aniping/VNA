@@ -1,4 +1,5 @@
 #include "json_codec.hpp"
+#include "command_outcome_info.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -138,57 +139,6 @@ Json instrumentToJson(
     };
 }
 
-struct CommandOutcomeInfo {
-    const char* status;
-    int httpStatus;
-    const char* errorCode;
-};
-
-CommandOutcomeInfo commandOutcomeInfo(
-    const application::CommandOutcome& outcome) {
-    if (std::holds_alternative<application::CommandSuccess>(outcome)) {
-        return {"succeeded", 200, nullptr};
-    }
-    const auto& error = std::get<application::CommandError>(outcome);
-    switch (application::commandErrorCode(error)) {
-        case application::CommandErrorCode::InvalidSweepSettings:
-            return {"validationError", 422, "invalid-sweep-settings"};
-        case application::CommandErrorCode::ChannelNotFound:
-            return {"validationError", 422, "channel-not-found"};
-        case application::CommandErrorCode::MeasurementNotFound:
-            return {"validationError", 422, "measurement-not-found"};
-        case application::CommandErrorCode::WindowNotFound:
-            return {"validationError", 422, "window-not-found"};
-        case application::CommandErrorCode::TraceNotFound:
-            return {"validationError", 422, "trace-not-found"};
-        case application::CommandErrorCode::InvalidScalePerDivision:
-            return {
-                "validationError", 422, "invalid-scale-per-division"};
-        case application::CommandErrorCode::ScaleNotSupportedForFormat:
-            return {
-                "validationError", 422, "scale-not-supported-for-format"};
-        case application::CommandErrorCode::CommandIdReuse:
-            return {"conflict", 409, "command-id-reuse"};
-        case application::CommandErrorCode::ControlDenied:
-            return {"conflict", 409, "control-denied"};
-        case application::CommandErrorCode::ResourceBusy:
-            return {"conflict", 409, "resource-busy"};
-        case application::CommandErrorCode::StateRevisionConflict:
-            return {"conflict", 409, "state-revision-conflict"};
-        case application::CommandErrorCode::TraceConfigurationRejected:
-            return {
-                "validationError", 422, "trace-configuration-rejected"};
-        case application::CommandErrorCode::UnsupportedSweepConfiguration:
-            return {
-                "validationError",
-                422,
-                "unsupported-sweep-configuration"};
-        case application::CommandErrorCode::WrongInstrument:
-            return {"wrongInstrument", 404, "wrong-instrument"};
-    }
-    return {"unknown", 500, "unknown"};
-}
-
 void encodeCommandValue(Json& body, const application::CommandValue& value) {
     if (const auto* channelId = std::get_if<domain::ChannelId>(&value)) {
         body["value"] = {{"channelId", channelId->value()}};
@@ -223,7 +173,7 @@ CommandResponse encodeCommandResult(
     const application::CommandResult& result) {
     const auto info = commandOutcomeInfo(result.outcome);
     Json body{
-        {"status", info.status},
+        {"status", info.responseStatus},
         {"stateRevision", result.stateRevision},
     };
     if (const auto* success =

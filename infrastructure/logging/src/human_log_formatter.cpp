@@ -80,7 +80,7 @@ public:
             record.at("level").get<std::string>() + "] " +
             record.at("message").get<std::string>();
         for (const auto key : {"command_id", "session_id", "instrument_id",
-                               "state_revision"}) {
+                               "state_revision", "error_code"}) {
             appendContext(output, record, key);
         }
         output += '\n';

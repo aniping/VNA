@@ -31,11 +31,13 @@
 
 每条记录至少包含 UTC 时间、级别、稳定事件名和适用的关联标识。命令日志
 必须包含 `command_id`、`session_id`、`instrument_id`、
-`state_revision` 和 `status`；后续按事件补充 `operation_id`、
+`state_revision` 和 `status`；拒绝事件还包含与 HTTP 响应同源的稳定
+`error_code`。后续按事件补充 `operation_id`、
 `sweep_id`、`frame_id`、`measurement_id` 和 `trace_id`。
 
-默认禁止记录完整请求体、认证信息、测量数组和未声明的文件内容。自由文本
-只能作为说明字段，不能替代稳定事件名和结构化错误码。
+默认禁止记录完整请求体、认证信息、测量数组和未声明的文件内容。人类消息
+只能由事件边界的稳定目录提供完整单行句子，不能包含控制字符，也不能替代
+稳定事件名和结构化错误码。
 
 Web 协议适配器只在统一命令入口完成 dispatch 后记录一次 `web.command.*`。
 读请求、静态资源和连续显示帧不产生日志，避免把低频审计事件与采集热路径混合。

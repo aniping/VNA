@@ -2,6 +2,7 @@ add_library(
     vna_web_api
     src/command_json_decoder.cpp
     src/command_observability.cpp
+    src/command_outcome_info.cpp
     src/display_frame_http_handler.cpp
     src/display_frame_json_codec.cpp
     src/display_frame_stream.cpp
