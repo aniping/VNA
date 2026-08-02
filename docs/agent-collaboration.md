@@ -80,3 +80,13 @@
 5. 下一步推进顺序。
 
 不得用内部类名、测试数量或提交数量代替产品进度；技术细节只能作为补充。
+
+## 8. 当前主机 ARM64 验证环境
+
+以下环境是当前 Windows 开发主机上的验证设施，不是产品部署合同；每次使用前仍须重新核验版本和架构。
+
+- WSL 发行版为 `Ubuntu`，其中的 Docker 容器为 `arm64-ssh`，启动命令为 `wsl -d Ubuntu -- docker start arm64-ssh`。
+- 通过 `ssh -i "%USERPROFILE%\.ssh\arm64-docker-ed25519" -p 2222 arm64@127.0.0.1` 连接；不得读取、复制或登记私钥内容。
+- 容器应报告 `linux/arm64` 与 `aarch64`，并提供 GCC/G++ 13.3.0、CMake 3.28.3、GNU Make 4.3 和 `build-essential`。
+- 该容器在 x86_64 宿主上经 QEMU/binfmt 运行，只能用于 ARM64 正确性验证，不得作为原生 ARM64 性能结论。
+- 工具位于容器可写层；重启保留，删除并重建容器会丢失。验证源码必须放在容器独立目录，不覆盖任一 Agent 工作树。
