@@ -1,7 +1,7 @@
 #include <vna/logging/json_lines_logger.hpp>
 
 #include "json_line_formatter.hpp"
-#include "managed_path.hpp"
+#include "log_path_preflight.hpp"
 
 #include <spdlog/logger.h>
 #include <spdlog/pattern_formatter.h>
@@ -21,8 +21,6 @@
 
 namespace vna::logging {
 namespace {
-
-constexpr auto kActiveFilename = "vna.log.jsonl";
 
 class CheckedOstreamSink final : public spdlog::sinks::base_sink<std::mutex> {
 public:
@@ -51,48 +49,6 @@ private:
 
     std::ostream& stream_;
 };
-
-void validateOptions(const JsonLinesLoggerOptions& options) {
-    constexpr auto maxArchives =
-        spdlog::sinks::rotating_file_sink_mt::MaxFiles;
-    if (options.logDirectory.empty() || options.maxFileBytes == 0 ||
-        options.maxFiles == 0 || options.maxFiles - 1 > maxArchives) {
-        throw std::invalid_argument("invalid JSON Lines logger options");
-    }
-}
-
-std::filesystem::path archivePath(
-    const std::filesystem::path& active,
-    std::size_t index) {
-    return active.parent_path() /
-        (active.stem().string() + "." + std::to_string(index) +
-         active.extension().string());
-}
-
-void validateManagedFile(
-    const std::filesystem::path& path,
-    std::size_t maxFileBytes) {
-    const auto kind = classifyManagedPathNoFollow(path);
-    if (kind == ManagedPathKind::Unsafe) {
-        throw std::runtime_error("JSON Lines log path is not a regular file");
-    }
-    if (kind == ManagedPathKind::Regular &&
-        std::filesystem::file_size(path) > maxFileBytes) {
-        throw std::runtime_error("existing JSON Lines log file exceeds limit");
-    }
-}
-
-std::filesystem::path prepareLogDirectory(
-    const JsonLinesLoggerOptions& options) {
-    validateOptions(options);
-    std::filesystem::create_directories(options.logDirectory);
-    const auto active = options.logDirectory / kActiveFilename;
-    validateManagedFile(active, options.maxFileBytes);
-    for (std::size_t index = 1; index < options.maxFiles; ++index) {
-        validateManagedFile(archivePath(active, index), options.maxFileBytes);
-    }
-    return active;
-}
 
 spdlog::level::level_enum toSpdlogLevel(
     observability::LogLevel level) noexcept {
@@ -152,7 +108,7 @@ private:
         }
         sinks.push_back(
             std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
-                activePath.string(), options.maxFileBytes,
+                activePath.native(), options.maxFileBytes,
                 options.maxFiles - 1));
         auto logger = std::make_shared<spdlog::logger>(
             "vna-json-lines", sinks.begin(), sinks.end());
@@ -172,7 +128,7 @@ private:
 
 std::unique_ptr<observability::Logger> makeJsonLinesLogger(
     JsonLinesLoggerOptions options) {
-    const auto active = prepareLogDirectory(options);
+    const auto active = prepareLogFiles(options);
     return std::make_unique<SpdlogJsonLinesLogger>(options, active);
 }
 

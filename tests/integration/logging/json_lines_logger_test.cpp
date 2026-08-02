@@ -106,6 +106,21 @@ TEST(JsonLinesLoggerTest, WritesOnlyToFileWhenConsoleIsDisabled) {
     EXPECT_EQ(record.at("event"), "server.lifecycle");
 }
 
+TEST(JsonLinesLoggerTest, WritesThroughUnicodeLogDirectory) {
+    TemporaryDirectory directory;
+    const auto state = directory.path() /
+        std::filesystem::path{u8"\u65e5\u5fd7"};
+    auto options = JsonLinesLoggerOptions{.logDirectory = state};
+    options.console = nullptr;
+    auto logger = makeJsonLinesLogger(options);
+
+    ASSERT_TRUE(logger->write(completeEvent("unicode.path")));
+    ASSERT_TRUE(logger->flush());
+    EXPECT_EQ(nlohmann::json::parse(readFile(state / "vna.log.jsonl"))
+                  .at("event"),
+              "unicode.path");
+}
+
 TEST(JsonLinesLoggerTest, SinkFailureIsReportedAndRemainsTerminal) {
     TemporaryDirectory directory;
     FailingStreamBuffer buffer;

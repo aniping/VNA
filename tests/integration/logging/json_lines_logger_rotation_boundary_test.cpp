@@ -103,6 +103,24 @@ TEST_F(JsonLinesLoggerRotationBoundaryTest,
 }
 
 TEST_F(JsonLinesLoggerRotationBoundaryTest,
+       LowerRetentionRemovesExpiredArchivesOnRestart) {
+    const auto state = root_ / "retention-restart";
+    auto logger = makeJsonLinesLogger(optionsFor(state, 180, 4));
+    for (const char value : {'a', 'b', 'c', 'd', 'e'}) {
+        ASSERT_TRUE(logger->write(event(std::string(80, value))));
+    }
+    ASSERT_TRUE(logger->flush());
+    logger.reset();
+    ASSERT_EQ(fileCount(state), 4U);
+
+    logger = makeJsonLinesLogger(optionsFor(state, 180, 2));
+    ASSERT_TRUE(logger->flush());
+    EXPECT_EQ(fileCount(state), 2U);
+    EXPECT_FALSE(std::filesystem::exists(state / "vna.log.2.jsonl"));
+    EXPECT_FALSE(std::filesystem::exists(state / "vna.log.3.jsonl"));
+}
+
+TEST_F(JsonLinesLoggerRotationBoundaryTest,
        AcceptsExactEncodedLimitAndRejectsOneByteOver) {
     const auto probeState = root_ / "probe";
     auto probe = makeJsonLinesLogger(optionsFor(probeState, 1024, 1));
