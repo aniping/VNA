@@ -77,7 +77,7 @@ protected:
             operations_,
             query_,
             repository_,
-            root);
+            WebApiOptions{.webRoot = root});
         port_ = webApi_->bindToAnyPort("127.0.0.1");
         ASSERT_GT(port_, 0);
         serverThread_ = std::thread([this] {
@@ -97,7 +97,7 @@ protected:
                 operations_,
                 query_,
                 repository_,
-                root),
+                WebApiOptions{.webRoot = root}),
             std::invalid_argument);
     }
 

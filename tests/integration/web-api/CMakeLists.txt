@@ -16,6 +16,7 @@ endfunction()
 add_executable(
     vna_web_api_http_tests
     ../web_api_channel_state_test.cpp
+    ../web_api_command_observability_test.cpp
     ../web_api_error_test.cpp
     ../web_api_idempotency_test.cpp
     ../web_api_operation_test.cpp

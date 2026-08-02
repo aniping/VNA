@@ -156,15 +156,17 @@ int runServer() {
         std::move(preset.commandBusState)};
     vna::application::TraceDisplayFrameQuery displayFrameQuery{
         commandBus, publication.repository};
+    auto logger = makeServerLogger(paths.logDirectory);
     // WebApi validates index.html and assets without following unsafe paths.
-    // Construct it before the logger so a broken release never creates logs.
+    // The logger precedes its borrower so command handlers cannot outlive it.
     vna::web_api::WebApi webApi{
         commandBus,
         operationManager,
         displayFrameQuery,
         publication.repository,
-        paths.webRoot};
-    auto logger = makeServerLogger(paths.logDirectory);
+        {.webRoot = paths.webRoot,
+         .logger = logger.get(),
+         .logFailureReporter = reportEmergency}};
     try {
         return serveUntilStopped(webApi, *logger);
     } catch (...) {
