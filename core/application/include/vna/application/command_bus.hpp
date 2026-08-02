@@ -150,6 +150,8 @@ private:
         const UpdateTraceScalePerDivisionCommand& command);
     [[nodiscard]] CommandResult execute(const RemoveTraceCommand& command);
     [[nodiscard]] CommandResult execute(
+        const EnsureAllSParametersCommand& command);
+    [[nodiscard]] CommandResult execute(
         const StartSingleSweepCommand& command,
         const CommandEnvelope& envelope);
     [[nodiscard]] CommandResult commitTraceConfiguration(

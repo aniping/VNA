@@ -68,6 +68,8 @@ vna_configure_application_test(vna_application_trace_frame_tests)
 
 add_executable(
     vna_application_trace_command_tests
+    all_s_parameters_command_test.cpp
+    all_s_parameters_command_validation_test.cpp
     trace_frame_discard_command_test.cpp
     trace_command_test.cpp
     trace_configuration_transaction_test.cpp

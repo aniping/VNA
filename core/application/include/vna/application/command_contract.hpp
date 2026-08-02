@@ -101,6 +101,10 @@ struct RemoveTraceCommand {
     display_model::TraceId traceId;
 };
 
+struct EnsureAllSParametersCommand {
+    display_model::TraceId traceId;
+};
+
 struct StartSingleSweepCommand {
     domain::ChannelId channelId;
 };
@@ -115,6 +119,7 @@ using CommandPayload = std::variant<
     SetTraceMeasurementTypeCommand,
     UpdateTraceScalePerDivisionCommand,
     RemoveTraceCommand,
+    EnsureAllSParametersCommand,
     StartSingleSweepCommand>;
 
 using CommandValue = std::variant<
