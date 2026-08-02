@@ -112,7 +112,7 @@ std::array<std::string, 5> messages(
             measurementName(selected.measurement.type) + ", Trace " +
             std::to_string(selected.trace.id.value()) + ", " +
             std::to_string(plan.frequencyAxis.points) + " points, " +
-            frequency(plan.frequencyAxis.startFrequencyHz) + "–" +
+            frequency(plan.frequencyAxis.startFrequencyHz) + " to " +
             frequency(plan.frequencyAxis.stopFrequencyHz),
         "Continuous acquisition started: " + std::to_string(period) +
             " ms, ports " + ports(plan.sourcePorts) + ", IFBW " +

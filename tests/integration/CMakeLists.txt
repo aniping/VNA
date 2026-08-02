@@ -20,7 +20,10 @@ add_executable(
 )
 target_link_libraries(
     vna_server_startup_observability_tests
-    PRIVATE vna::server_startup_observability GTest::gtest_main
+    PRIVATE
+        vna::logging
+        vna::server_startup_observability
+        GTest::gtest_main
 )
 gtest_discover_tests(
     vna_server_startup_observability_tests PROPERTIES TIMEOUT 10)

@@ -1,10 +1,16 @@
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <filesystem>
+#include <ostream>
 #include <string>
+#include <streambuf>
+#include <system_error>
 #include <utility>
 #include <vector>
 
 #include <vna/application/factory_preset.hpp>
+#include <vna/logging/json_lines_logger.hpp>
 #include <vna/server/startup_observability.hpp>
 
 namespace vna::server {
@@ -22,6 +28,34 @@ public:
     std::vector<observability::LogEvent> events;
 };
 
+class AsciiOnlyConsoleBuffer final : public std::streambuf {
+protected:
+    std::streamsize xsputn(const char* data, std::streamsize size) override {
+        for (std::streamsize index = 0; index < size; ++index) {
+            if (static_cast<unsigned char>(data[index]) > 0x7fU) return 0;
+        }
+        return size;
+    }
+};
+
+class TemporaryLogDirectory final {
+public:
+    TemporaryLogDirectory()
+        : path{std::filesystem::temp_directory_path() /
+               ("vna-startup-console-" + std::to_string(
+                   std::chrono::steady_clock::now()
+                       .time_since_epoch().count()))} {
+        std::filesystem::create_directories(path);
+    }
+
+    ~TemporaryLogDirectory() {
+        std::error_code error;
+        std::filesystem::remove_all(path, error);
+    }
+
+    std::filesystem::path path;
+};
+
 TEST(StartupObservabilityTest, WritesStableStartupMilestonesInOrder) {
     RecordingLogger logger;
     const auto details = makeStartupLogDetails(
@@ -35,7 +69,7 @@ TEST(StartupObservabilityTest, WritesStableStartupMilestonesInOrder) {
     struct Expected { const char* event; const char* status; const char* message; };
     const std::vector<Expected> expected{
         {"server.lifecycle", "starting", "Starting Vector Network Analyzer server"},
-        {"server.factory_preset", "loaded", "Factory preset loaded: Channel 1, S21, Trace 1, 201 points, 10 MHz–26.5 GHz"},
+        {"server.factory_preset", "loaded", "Factory preset loaded: Channel 1, S21, Trace 1, 201 points, 10 MHz to 26.5 GHz"},
         {"server.continuous_acquisition", "running", "Continuous acquisition started: 100 ms, ports 1/2, IFBW 10 kHz, power -10 dBm"},
         {"server.display_publication", "running", "Live display publication started: Trace 1, Log Magnitude"},
         {"server.web_listener", "starting", "Starting Web service at http://127.0.0.1:8080/"},
@@ -71,6 +105,23 @@ TEST(StartupObservabilityTest, DistinguishesListenFailureFromStopped) {
     EXPECT_EQ(logger.events[1].name, "server.lifecycle");
     EXPECT_EQ(logger.events[1].status, "stopped");
     EXPECT_EQ(logger.events[1].message, "Vector Network Analyzer server stopped");
+}
+
+TEST(StartupObservabilityTest, WritesPresetMilestonesToAsciiOnlyConsole) {
+    TemporaryLogDirectory directory;
+    AsciiOnlyConsoleBuffer buffer;
+    std::ostream console{&buffer};
+    auto options = logging::JsonLinesLoggerOptions{directory.path, &console};
+    options.consoleFormat = logging::ConsoleFormat::HumanReadable;
+    auto logger = logging::makeJsonLinesLogger(std::move(options));
+    const auto details = makeStartupLogDetails(
+        application::makeFactoryPreset(),
+        "instrument-1",
+        "127.0.0.1",
+        8080);
+
+    EXPECT_TRUE(writeStartupMilestones(*logger, details));
+    EXPECT_TRUE(logger->flush());
 }
 
 }  // namespace

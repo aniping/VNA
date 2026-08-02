@@ -42,7 +42,7 @@ function Stop-ExactReleaseServer([string]$expectedPath) {
 function Assert-OrderedHumanMilestones([string]$text) {
     $expected = @(
         '[info] Starting Vector Network Analyzer server instrument_id=instrument-1',
-        '[info] Factory preset loaded: Channel 1, S21, Trace 1, 201 points, 10 MHz–26.5 GHz instrument_id=instrument-1',
+        '[info] Factory preset loaded: Channel 1, S21, Trace 1, 201 points, 10 MHz to 26.5 GHz instrument_id=instrument-1',
         '[info] Continuous acquisition started: 100 ms, ports 1/2, IFBW 10 kHz, power -10 dBm instrument_id=instrument-1',
         '[info] Live display publication started: Trace 1, Log Magnitude instrument_id=instrument-1',
         '[info] Starting Web service at http://127.0.0.1:8080/ instrument_id=instrument-1'
