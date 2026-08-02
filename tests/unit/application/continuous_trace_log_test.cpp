@@ -1,13 +1,17 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <condition_variable>
 #include <future>
+#include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <stop_token>
 #include <thread>
 #include <variant>
 
 #include <spdlog/spdlog.h>
+#include <spdlog/sinks/base_sink.h>
 
 #include <vna/application/command_bus.hpp>
 #include <vna/application/continuous_trace_publisher.hpp>
@@ -18,6 +22,48 @@
 namespace vna::application {
 namespace {
 using namespace std::chrono_literals;
+
+class FailingLogAttempt {
+public:
+    FailingLogAttempt() {
+        spdlog::drop("vna");
+        auto sink = std::make_shared<Sink>(*this);
+        auto logger = std::make_shared<spdlog::logger>("vna", std::move(sink));
+        logger->set_level(spdlog::level::debug);
+        logger->set_error_handler([](const std::string&) {});
+        spdlog::register_logger(std::move(logger));
+    }
+
+    ~FailingLogAttempt() { spdlog::drop("vna"); }
+
+    bool wait() {
+        std::unique_lock lock{mutex_};
+        return changed_.wait_for(lock, 2s, [this] { return attempted_; });
+    }
+
+private:
+    class Sink final : public spdlog::sinks::base_sink<std::mutex> {
+    public:
+        explicit Sink(FailingLogAttempt& owner) : owner_(owner) {}
+
+    private:
+        void sink_it_(const spdlog::details::log_msg&) override {
+            {
+                std::lock_guard lock{owner_.mutex_};
+                owner_.attempted_ = true;
+            }
+            owner_.changed_.notify_all();
+            throw std::runtime_error{"intentional test sink failure"};
+        }
+        void flush_() override {}
+
+        FailingLogAttempt& owner_;
+    };
+
+    std::mutex mutex_;
+    std::condition_variable changed_;
+    bool attempted_{false};
+};
 
 StateSnapshot traceState(
     std::uint64_t revision,
@@ -83,7 +129,7 @@ TracePublicationPlanHandle advancePlan(
 }
 
 TEST(ContinuousTraceLogTest, AttemptsOnlyFirstPublishedFramePerGeneration) {
-    spdlog::drop("vna");
+    FailingLogAttempt failingLog;
     acquisition::test_support::ControlledSource source;
     acquisition::ContinuousAcquisition acquisition{
         acquisition::test_support::validPlan(), source};
@@ -97,6 +143,7 @@ TEST(ContinuousTraceLogTest, AttemptsOnlyFirstPublishedFramePerGeneration) {
     ASSERT_TRUE(source.waitForRequest(1));
     source.release(1);
     ASSERT_NE(first.finish(), nullptr);
+    ASSERT_TRUE(failingLog.wait());
     vna::test::CapturedRuntimeLog log;
     SetWait second{repository, {1, 1}};
     ASSERT_TRUE(source.waitForRequest(2));
