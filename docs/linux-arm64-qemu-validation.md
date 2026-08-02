@@ -24,6 +24,7 @@ Git 是构建依赖：CMake 使用它把仓库内的补丁应用到构建目录�
 
 ## 执行前提
 
+- 用户已在当前任务中明确要求执行 Linux/ARM64 检查；没有本轮明确授权时，不得运行本文脚本或其中任何环境预检、配置、编译、链接、SSH、容器或产物检查步骤。
 - 在 Windows PowerShell 中、仓库根目录执行。
 - 当前分支必须是 `main`，`HEAD` 等于本地 `main`，工作树必须 clean。
 - `third-part/` Git submodule 已初始化，并与主仓库记录的 gitlink 一致。

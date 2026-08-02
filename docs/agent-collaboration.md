@@ -86,6 +86,7 @@
 
 以下环境是当前 Windows 开发主机上的验证设施，不是产品部署合同；每次使用前仍须重新核验版本和架构。
 
+- 只有用户在当前任务中明确要求检查 Linux/ARM64 时，才允许启动 WSL、容器、SSH、配置、编译、链接或 `readelf`；不得因历史派工、现有脚本、支持矩阵或“顺便验证”而自动执行。
 - WSL 发行版为 `Ubuntu`，其中的 Docker 容器为 `arm64-ssh`，启动命令为 `wsl -d Ubuntu -- docker start arm64-ssh`。
 - 通过 `ssh -i "%USERPROFILE%\.ssh\arm64-docker-ed25519" -p 2222 arm64@127.0.0.1` 连接；不得读取、复制或登记私钥内容。
 - 容器应报告 `linux/arm64` 与 `aarch64`，并提供 GCC/G++ 13.3.0、CMake 3.28.3、GNU Make 4.3 和 `build-essential`。
