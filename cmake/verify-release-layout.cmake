@@ -31,7 +31,7 @@ endfunction()
 function(require_managed_logs directory)
     file(GLOB entries RELATIVE "${directory}" "${directory}/*")
     foreach(entry IN LISTS entries)
-        if(NOT entry MATCHES "^vna\\.log\\.jsonl(\\.[1-9][0-9]*)?$")
+        if(NOT entry MATCHES "^vna(\\.[1-9])?\\.(log|jsonl)$")
             message(FATAL_ERROR "Unexpected release log entry: ${entry}")
         endif()
         set(log_path "${directory}/${entry}")
@@ -56,7 +56,7 @@ require_file("${RELEASE_ROOT}/web/index.html")
 require_file("${RELEASE_ROOT}/README.txt")
 require_entries("${RELEASE_ROOT}/web" "assets;index.html")
 if(ALLOW_EXISTING_LOGS)
-    # A previously run release can contain only files owned by RollingFile.
+    # A previously run release can contain only the two managed rolling sets.
     # Fresh staging still requires an empty logs directory below this branch.
     require_managed_logs("${RELEASE_ROOT}/logs")
 else()

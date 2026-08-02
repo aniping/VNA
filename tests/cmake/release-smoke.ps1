@@ -3,6 +3,8 @@ param(
     [string]$ReleaseRoot
 )
 
+. (Join-Path $PSScriptRoot 'release-smoke-support.ps1')
+
 $ErrorActionPreference = 'Stop'
 $release = (Resolve-Path -LiteralPath $ReleaseRoot).Path
 $serverPath = (Resolve-Path -LiteralPath (
@@ -27,90 +29,6 @@ $stdout = Join-Path $artifacts 'stdout.txt'
 $stderr = Join-Path $artifacts 'stderr.txt'
 $launcher = $null
 $server = $null
-
-function Wait-ForHealth([Diagnostics.Process]$process) {
-    $deadline = [DateTime]::UtcNow.AddSeconds(15)
-    do {
-        try {
-            return Invoke-WebRequest -UseBasicParsing `
-                'http://127.0.0.1:8080/api/v1/health' -TimeoutSec 1
-        } catch {
-            if ($process.HasExited) { return $null }
-            Start-Sleep -Milliseconds 100
-        }
-    } while ([DateTime]::UtcNow -lt $deadline)
-    return $null
-}
-
-function Read-Text([string]$path) {
-    if (Test-Path -LiteralPath $path) {
-        return Get-Content -LiteralPath $path -Raw
-    }
-    return ''
-}
-
-function Stop-ExactReleaseServer {
-    $candidates = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object { $_.ExecutablePath -eq $serverPath })
-    if ($candidates.Count -gt 1) {
-        throw "Refusing to stop $($candidates.Count) release server processes"
-    }
-    if ($candidates.Count -eq 0) { return }
-
-    $processId = $candidates[0].ProcessId
-    $confirmed = Get-CimInstance Win32_Process `
-        -Filter "ProcessId = $processId" -ErrorAction SilentlyContinue
-    if (-not $confirmed -or $confirmed.ExecutablePath -ne $serverPath) {
-        throw 'Release server PID changed before cleanup'
-    }
-    $process = Get-Process -Id $processId -ErrorAction Stop
-    Stop-Process -InputObject $process -Force
-    if (-not $process.WaitForExit(5000)) {
-        throw 'Release server did not exit during cleanup'
-    }
-}
-
-function Assert-OrderedHumanMilestones([string]$text) {
-    $expected = @(
-        '[info] Starting Vector Network Analyzer server instrument_id=instrument-1',
-        '[info] Factory preset loaded: Channel 1, S21, Trace 1, 201 points, 10 MHz–26.5 GHz instrument_id=instrument-1',
-        '[info] Continuous acquisition started: 100 ms, ports 1/2, IFBW 10 kHz, power -10 dBm instrument_id=instrument-1',
-        '[info] Live display publication started: Trace 1, Log Magnitude instrument_id=instrument-1',
-        '[info] Starting Web service at http://127.0.0.1:8080/ instrument_id=instrument-1'
-    )
-    $previous = -1
-    foreach ($milestone in $expected) {
-        $position = $text.IndexOf(
-            $milestone, $previous + 1, [StringComparison]::Ordinal)
-        if ($position -lt 0) { throw "Missing human milestone: $milestone" }
-        $previous = $position
-    }
-}
-
-function Assert-OrderedJsonMilestones([object[]]$records) {
-    $expected = @(
-        @('server.lifecycle', 'starting'),
-        @('server.factory_preset', 'loaded'),
-        @('server.continuous_acquisition', 'running'),
-        @('server.display_publication', 'running'),
-        @('server.web_listener', 'starting')
-    )
-    $cursor = 0
-    foreach ($milestone in $expected) {
-        while ($cursor -lt $records.Count -and
-               ($records[$cursor].event -ne $milestone[0] -or
-                $records[$cursor].status -ne $milestone[1])) {
-            $cursor++
-        }
-        if ($cursor -eq $records.Count) {
-            throw "Missing JSON milestone: $($milestone -join '/')"
-        }
-        if ($records[$cursor].instrument_id -ne 'instrument-1') {
-            throw "Milestone instrument ID is missing: $($milestone[0])"
-        }
-        $cursor++
-    }
-}
 
 try {
     $start = Join-Path $release 'start.cmd'
@@ -142,19 +60,38 @@ try {
     }
     Assert-OrderedHumanMilestones $console
 
-    $logPath = Join-Path $release 'logs\vna.jsonl'
-    $records = @(Get-Content -LiteralPath $logPath | ForEach-Object {
+    $textLogPath = Join-Path $release 'logs\vna.log'
+    $jsonLogPath = Join-Path $release 'logs\vna.jsonl'
+    Assert-OrderedHumanMilestones (Read-Text $textLogPath)
+    $records = @(Get-Content -LiteralPath $jsonLogPath | ForEach-Object {
         $_ | ConvertFrom-Json
     })
     Assert-OrderedJsonMilestones $records
 
+    $accepted = Invoke-CreateChannelCommand 'release-accepted' 0
+    $rejected = Invoke-CreateChannelCommand 'release-rejected' 0
+    if ($accepted.StatusCode -ne 200 -or $rejected.StatusCode -ne 409 -or
+        ($rejected.Body | ConvertFrom-Json).errorCode -ne
+            'state-revision-conflict') {
+        throw 'Release command responses do not match the audit fixture'
+    }
+    $console = Read-Text $stdout
+    $human = Read-Text $textLogPath
+    $records = @(Get-Content -LiteralPath $jsonLogPath | ForEach-Object {
+        $_ | ConvertFrom-Json
+    })
+    Assert-WebCommandLogs $console $records
+    Assert-WebCommandLogs $human $records
+
     # Acquisition runs continuously at about 10 Hz. Startup observability is
-    # intentionally low-cardinality, so neither sink should grow per frame.
+    # intentionally low-cardinality, so no sink should grow per frame.
     $consoleLength = $console.Length
+    $humanCount = @(Get-Content -LiteralPath $textLogPath).Count
     $recordCount = $records.Count
     Start-Sleep -Milliseconds 1200
     if ((Read-Text $stdout).Length -ne $consoleLength -or
-        @(Get-Content -LiteralPath $logPath).Count -ne $recordCount) {
+        @(Get-Content -LiteralPath $textLogPath).Count -ne $humanCount -or
+        @(Get-Content -LiteralPath $jsonLogPath).Count -ne $recordCount) {
         throw 'Startup sinks grew while only continuous frames were produced'
     }
 
@@ -163,12 +100,13 @@ try {
         ServerPid = $server[0].ProcessId
         Console = $console.Trim()
         LifecycleRecords = $records.Count
-        LogPath = $logPath
+        TextLogPath = $textLogPath
+        StructuredLogPath = $jsonLogPath
         Artifacts = $artifacts
     } | Format-List
 } finally {
     $cleanupFailure = $null
-    try { Stop-ExactReleaseServer } catch { $cleanupFailure = $_ }
+    try { Stop-ExactReleaseServer $serverPath } catch { $cleanupFailure = $_ }
     if ($launcher -and -not $launcher.WaitForExit(5000)) {
         Stop-Process -Id $launcher.Id -Force -ErrorAction SilentlyContinue
     }
@@ -212,10 +150,11 @@ try {
     }
     $failureError = Read-Text $failureStderr
     if ($failureError -notmatch 'ERROR: Vector Network Analyzer exited' -or
-        $failureError -notmatch 'Text log:') {
+        $failureError -notmatch
+            ('Text log: "' + [regex]::Escape($textLogPath) + '"')) {
         throw "Listen failure guidance is missing: $failureError"
     }
-    $failureRecords = @(Get-Content -LiteralPath $logPath | ForEach-Object {
+    $failureRecords = @(Get-Content -LiteralPath $jsonLogPath | ForEach-Object {
         $_ | ConvertFrom-Json
     })
     if (-not ($failureRecords | Where-Object {
@@ -225,10 +164,14 @@ try {
     })) {
         throw 'Authoritative listen_failed event is missing from JSONL'
     }
+    if ((Read-Text $textLogPath) -notmatch
+        'Web service failed to listen at http://127\.0\.0\.1:8080/') {
+        throw 'Text log is missing the listen failure'
+    }
     Write-Host "ListenFailureExitCode=$($failureLauncher.ExitCode)"
 } finally {
     $cleanupFailure = $null
-    try { Stop-ExactReleaseServer } catch { $cleanupFailure = $_ }
+    try { Stop-ExactReleaseServer $serverPath } catch { $cleanupFailure = $_ }
     if ($failureLauncher -and -not $failureLauncher.HasExited) {
         Stop-Process -Id $failureLauncher.Id -Force -ErrorAction SilentlyContinue
         if (-not $failureLauncher.WaitForExit(5000)) {
