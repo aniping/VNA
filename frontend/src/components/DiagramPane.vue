@@ -8,6 +8,7 @@ import type {
 import type { MultiFormatTraceDisplayFrame } from '../api/traceDisplayFrameSet'
 import CartesianCurve from './CartesianCurve.vue'
 import SmithCurve from './SmithCurve.vue'
+import SmithGrid from './SmithGrid.vue'
 import { phaseAxisRange, selectDiagramCurve } from './diagramCurveModel'
 import { noMeasurementDataMessage } from './diagramModel'
 import { traceColorForMeasurement } from './traceVisual'
@@ -28,13 +29,14 @@ const traceLabel = computed(() => {
   if (!props.trace) return 'No active trace'
   return formatName(props.trace.format)
 })
+const scaleSummary = computed(() => {
+  return props.trace?.format === 'smith' ? '200 mU/ Ref 1 U' : ''
+})
 const scaleTop = computed(() => scaleBoundary('top'))
 const scaleBottom = computed(() => scaleBoundary('bottom'))
 const curve = computed(() => selectDiagramCurve(props.trace, props.measurement, props.frame))
 
 function scaleBoundary(edge: 'top' | 'bottom'): string {
-  // Smith labels describe circle geometry; only Cartesian labels consume display-model Scale.
-  if (props.kind === 'smith') return edge === 'top' ? '1' : '0'
   if (props.trace?.format === 'phase') {
     const value = edge === 'top' ? phaseAxisRange.maximum : phaseAxisRange.minimum
     return `${value} degree`
@@ -83,6 +85,7 @@ function selectTrace(): void {
       <span class="trace-index">{{ trace ? `Trc${trace.id}` : 'Trc —' }}</span>
       <span v-if="measurement" class="measurement-chip">{{ measurement.type }}</span>
       <span class="trace-name">{{ traceLabel }}</span>
+      <span v-if="scaleSummary" class="trace-scale">{{ scaleSummary }}</span>
       <span class="strip-spacer" />
       <span
         class="diagram-identifier"
@@ -94,25 +97,11 @@ function selectTrace(): void {
     </header>
 
     <div class="plot-area" :class="kind">
-      <svg
-        v-if="kind === 'smith'"
-        class="smith-grid"
-        viewBox="-1 -1 2 2"
-        preserveAspectRatio="xMidYMid meet"
-        aria-hidden="true"
-      >
-        <circle cx="0" cy="0" r="1" class="grid-major" />
-        <line x1="-1" y1="0" x2="1" y2="0" class="grid-major" />
-        <circle cx="0.5" cy="0" r="0.5" />
-        <circle cx="0.67" cy="0" r="0.33" />
-        <circle cx="0.8" cy="0" r="0.2" />
-        <circle cx="1" cy="-1" r="1" />
-        <circle cx="1" cy="1" r="1" />
-      </svg>
-      <span class="scale-top" :title="trace?.format === 'logMagnitude' && !trace.scale ? 'Scale unavailable' : undefined">
+      <SmithGrid v-if="kind === 'smith'" />
+      <span v-if="kind === 'cartesian'" class="scale-top" :title="trace?.format === 'logMagnitude' && !trace.scale ? 'Scale unavailable' : undefined">
         {{ scaleTop }}
       </span>
-      <span class="scale-bottom" :title="trace?.format === 'logMagnitude' && !trace.scale ? 'Scale unavailable' : undefined">
+      <span v-if="kind === 'cartesian'" class="scale-bottom" :title="trace?.format === 'logMagnitude' && !trace.scale ? 'Scale unavailable' : undefined">
         {{ scaleBottom }}
       </span>
       <CartesianCurve
@@ -150,6 +139,7 @@ function selectTrace(): void {
 .trace-index { padding: 3px 5px; color: #dce5e8; background: transparent; }
 .measurement-chip { padding: 2px 5px; color: #1b1b11; background: var(--trace-color); font-weight: 700; }
 .trace-name { overflow: hidden; text-overflow: ellipsis; }
+.trace-scale { color: #dce5e8; }
 .strip-spacer { flex: 1; }
 .diagram-identifier { align-self: stretch; display: flex; align-items: center; gap: 5px; min-width: 31px; margin-right: -5px; padding: 0 5px; background: #33454d; }
 .diagram-identifier.active { background: #168fda; }
@@ -160,9 +150,6 @@ function selectTrace(): void {
 .scale-top { top: 4px; }
 .scale-bottom { bottom: 4px; }
 .plot-empty { position: absolute; inset: 0; display: grid; place-items: center; color: #536269; font-size: 12px; }
-.smith-grid { position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; fill: none; stroke: #4a606a; stroke-width: 1px; }
-.smith-grid :is(circle, line) { vector-effect: non-scaling-stroke; }
-.smith-grid .grid-major { stroke: #607580; }
 .channel-row { display: flex; align-items: center; justify-content: space-between; gap: 5px; padding: 0 4px; overflow: hidden; color: #d7e0e3; background: #202c32; font-size: 10px; white-space: nowrap; }
 .channel-id { padding: 3px 4px; color: #fff; background: #2c3c43; font-weight: 700; }
 .channel-id.active { background: #397cb4; }

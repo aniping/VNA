@@ -173,7 +173,8 @@ pnpm run dev
 会自动更新显示帧，Toolbar 的
 `Restart Sweep` 在当前发布版中暂不可用并按禁用处理。
 LogMagnitude、Phase 与 Smith 都直接绘制连续帧集中的后端样本；Phase 以 degree
-显示在固定 `[-180, 180]` 视域，Smith 直接投影复数平面坐标。切换 Measurement
+显示在固定 `[-180, 180]` 视域。Smith 直接投影复数平面坐标，并显示
+`200 mU/ Ref 1 U` 的标准归一化圆图；前端不计算阻抗或导纳。切换 Measurement
 或 Format 时保持同一实时连接并等待新 generation，网格保留且不显示旧身份曲线。
 `Maximize Diagram` 可切换活动 Diagram 的最大化状态；其余尚未实现的 Toolbar
 项保持禁用。

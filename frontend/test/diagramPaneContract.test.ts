@@ -40,13 +40,10 @@ test('DiagramPane delegates all three backend display formats to projection comp
 test('Cartesian and Smith grids remain mounted independently of measurement frames', () => {
   assert.match(openingTag('plot-area'), /:class="kind"/)
   assert.match(styles, /\.plot-area\.cartesian\s*\{[^}]*background-image:/)
-  const smithGrid = openingTag('smith-grid')
-  assert.match(smithGrid, /v-if="kind === 'smith'"/)
-  assert.doesNotMatch(smithGrid, /curve|frame/)
+  assert.match(template, /<SmithGrid\s+v-if="kind === 'smith'"/)
 })
 
-test('Smith grid strokes stay device-sized instead of covering the plot', () => {
-  assert.match(styles, /\.smith-grid\s+:is\(circle, line\)\s*\{[^}]*vector-effect:\s*non-scaling-stroke/)
-  const svgStyle = styles.match(/\.smith-grid\s*\{([^}]*)\}/)?.[1] ?? ''
-  assert.doesNotMatch(svgStyle, /vector-effect/)
+test('trace information reports the ZNB Smith scale and reference summary', () => {
+  assert.match(paneSource, /200 mU\/ Ref 1 U/)
+  assert.match(template, /class="trace-scale"/)
 })

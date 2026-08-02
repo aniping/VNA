@@ -116,6 +116,14 @@ M1.5 必须先交付以下可操作内容：
 - 服务连接状态和 `stateRevision`，融入状态栏而非另做 Dashboard 卡片。
 - 所有业务数据来自 `vna-server`，无静态业务 Mock。
 
+### Smith 圆图基线
+
+ZNB v74 第 107–108、443 页锁定 Smith 外圆为 `Ref 1 U`，信息条为
+`200 mU/ Ref 1 U`。圆图完整等比例居中，显示中心实轴、五等分径向圆、
+`0/.2/.5/1/2/5/10/∞` 等阻标签，以及上感性、下容性的正负等抗弧。
+前端不得显示笛卡尔式 `1/0` 边界标签，也不得把后端 `(real, imag)` 样本换算为
+阻抗、导纳或裁切到单位圆内。
+
 ## 8. Scale Softtool 基线
 
 本节依据 User Manual 41 的 PDF 页码与印刷页码 547-550；单窗口数值输入规则
@@ -167,8 +175,9 @@ Editor、单位键和 Step Size 面板在项目支持前不得伪造。
 `Max = Ref Value`，Ref Pos 为 0 时 `Min = Ref Value`。这些关系由 display-model
 后端维护，前端不得自行计算或用组件状态补齐。
 
-`DiagramPane` 当前显示的笛卡尔 `10 dB/-90 dB` 与 Smith `1/0` 仅为占位视觉，
-不得作为 Scale 真值、默认值或命令输入。真实标签必须来自 `StateSnapshot`。
+`DiagramPane` 的笛卡尔标签不得作为 Scale 命令输入；LogMagnitude 真值必须来自
+`StateSnapshot`。Smith 静态圆图几何遵循上述显示合同，不作为客户端 Scale
+业务状态，也不对后端样本做业务换算。
 
 第一条建议切片只覆盖活动笛卡尔 Trace 的 Scale/Div，并仍须等待后端状态与
 HTTP 契约明确批准。其他控件按上述顺序显示为禁用，不得先在客户端模拟成功。
