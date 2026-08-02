@@ -53,7 +53,7 @@ std::string formatTimestamp(std::chrono::system_clock::time_point timestamp) {
 
 }  // namespace
 
-std::string formatJsonLine(
+std::string formatJsonRecord(
     const observability::LogEvent& event,
     std::chrono::system_clock::time_point timestamp) {
     nlohmann::json record{
@@ -66,7 +66,7 @@ std::string formatJsonLine(
     if (event.instrumentId) record["instrument_id"] = *event.instrumentId;
     if (event.stateRevision) record["state_revision"] = *event.stateRevision;
     if (event.status) record["status"] = *event.status;
-    return record.dump() + '\n';
+    return record.dump();
 }
 
 }  // namespace vna::logging

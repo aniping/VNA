@@ -14,15 +14,12 @@ struct JsonLinesLoggerOptions {
     // Non-owning; when non-null it must outlive Logger and its I/O must return.
     // nullptr disables ordinary console JSON while retaining the file sink.
     std::ostream* console{&std::cout};
-    // Must be > 0; internal flush barriers are coalesced separately.
-    std::size_t queueCapacity{1024};
     // Both must be > 0; maxFiles includes the active log file.
     std::size_t maxFileBytes{10U * 1024U * 1024U};
     std::size_t maxFiles{10};
 };
 
-// For reliable delivery, the owner must flush after its final submit and get true;
-// destruction only performs a best-effort stop and may discard unfinished events.
+// Construction validates options and managed paths before opening the active file.
 [[nodiscard]] std::unique_ptr<observability::Logger> makeJsonLinesLogger(
     JsonLinesLoggerOptions options);
 

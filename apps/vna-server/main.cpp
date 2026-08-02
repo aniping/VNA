@@ -1,4 +1,3 @@
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -28,11 +27,8 @@
 
 namespace {
 
-using namespace std::chrono_literals;
-
 constexpr auto instrumentId = "instrument-1";
 constexpr auto lifecycleEventName = "server.lifecycle";
-constexpr auto logFlushTimeout = 2s;
 constexpr std::size_t traceCapacity = 1024;
 // A stable product seed makes the simulated frame sequence reproducible across
 // restarts without leaking simulation concerns into the acquisition plan.
@@ -70,10 +66,10 @@ vna::observability::LogLevel levelFor(LifecycleStatus status) {
     return vna::observability::LogLevel::Info;
 }
 
-bool submitLifecycle(
+bool writeLifecycle(
     vna::observability::Logger& logger,
     LifecycleStatus status) {
-    const auto result = logger.submit({
+    if (logger.write({
         .level = levelFor(status),
         .name = lifecycleEventName,
         .commandId = {},
@@ -81,9 +77,7 @@ bool submitLifecycle(
         .instrumentId = instrumentId,
         .stateRevision = {},
         .status = std::string{statusName(status)},
-    });
-    if (result == vna::observability::SubmitResult::Accepted ||
-        result == vna::observability::SubmitResult::EmergencyFallback) {
+    })) {
         return true;
     }
     reportEmergency("vna-server failed to record lifecycle event");
@@ -91,15 +85,11 @@ bool submitLifecycle(
 }
 
 bool flushLogs(
-    std::unique_ptr<vna::observability::Logger>& logger,
+    vna::observability::Logger& logger,
     std::string_view failureMessage) {
-    if (logger->flush(logFlushTimeout)) {
+    if (logger.flush()) {
         return true;
     }
-    // A blocked ostream cannot be cancelled portably. Relinquishing ownership
-    // prevents an unbounded best-effort destructor while process exit remains
-    // the first-version bounded fallback described by ADR-0005.
-    static_cast<void>(logger.release());
     reportEmergency(failureMessage);
     return false;
 }
@@ -144,8 +134,8 @@ struct PublicationState {
 
 int serveUntilStopped(
     vna::web_api::WebApi& webApi,
-    std::unique_ptr<vna::observability::Logger>& logger) {
-    if (!submitLifecycle(*logger, LifecycleStatus::Starting)) {
+    vna::observability::Logger& logger) {
+    if (!writeLifecycle(logger, LifecycleStatus::Starting)) {
         static_cast<void>(flushLogs(logger, "vna-server startup log flush failed"));
         return EXIT_FAILURE;
     }
@@ -158,12 +148,12 @@ int serveUntilStopped(
     constexpr int port = 8080;
     if (!webApi.listen(address, port)) {
         static_cast<void>(
-            submitLifecycle(*logger, LifecycleStatus::ListenFailed));
+            writeLifecycle(logger, LifecycleStatus::ListenFailed));
         static_cast<void>(flushLogs(logger, "vna-server final log flush failed"));
         return EXIT_FAILURE;
     }
     const auto stoppedRecorded =
-        submitLifecycle(*logger, LifecycleStatus::Stopped);
+        writeLifecycle(logger, LifecycleStatus::Stopped);
     const auto flushed = flushLogs(logger, "vna-server final log flush failed");
     return stoppedRecorded && flushed ? EXIT_SUCCESS : EXIT_FAILURE;
 }
@@ -219,11 +209,8 @@ int runServer() {
         paths.webRoot};
     auto logger = makeServerLogger(paths.logDirectory);
     try {
-        return serveUntilStopped(webApi, logger);
+        return serveUntilStopped(webApi, *logger);
     } catch (...) {
-        // submit/flush may allocate and are not noexcept. Release before the
-        // catch returns so stack unwinding never enters a blocking join.
-        static_cast<void>(logger.release());
         reportEmergency("vna-server failed during logged execution");
         return EXIT_FAILURE;
     }

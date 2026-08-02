@@ -3,10 +3,8 @@
 
 #include <array>
 #include <chrono>
-#include <condition_variable>
 #include <filesystem>
 #include <fstream>
-#include <mutex>
 #include <regex>
 #include <sstream>
 #include <streambuf>
@@ -32,47 +30,15 @@ public:
         std::filesystem::remove_all(path_, error);
     }
 
-    [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
+    const std::filesystem::path& path() const noexcept { return path_; }
 
 private:
     std::filesystem::path path_;
 };
 
-class ControlledStreamBuffer : public std::streambuf {
-public:
-    enum class Behavior { Block, Fail };
-
-    explicit ControlledStreamBuffer(Behavior behavior) : behavior_(behavior) {}
-
-    void waitForWrite() {
-        std::unique_lock lock{mutex_};
-        changed_.wait(lock, [this] { return writeStarted_; });
-    }
-
-    void release() {
-        const std::scoped_lock lock{mutex_};
-        released_ = true;
-        changed_.notify_all();
-    }
-
+class FailingStreamBuffer : public std::streambuf {
 protected:
-    std::streamsize xsputn(const char*, std::streamsize count) override {
-        std::unique_lock lock{mutex_};
-        writeStarted_ = true;
-        changed_.notify_all();
-        if (behavior_ == Behavior::Block) {
-            changed_.wait(lock, [this] { return released_; });
-            return count;
-        }
-        return 0;
-    }
-
-private:
-    Behavior behavior_;
-    std::mutex mutex_;
-    std::condition_variable changed_;
-    bool writeStarted_{false};
-    bool released_{false};
+    std::streamsize xsputn(const char*, std::streamsize) override { return 0; }
 };
 
 std::string readFile(const std::filesystem::path& path) {
@@ -93,8 +59,7 @@ observability::LogEvent completeEvent(std::string name) {
     };
 }
 
-TEST(JsonLinesLoggerTest, WritesStructuredEventToConsoleAndFile) {
-    using namespace std::chrono_literals;
+TEST(JsonLinesLoggerTest, WritesStructuredEventsToConsoleAndFile) {
     TemporaryDirectory directory;
     std::ostringstream console;
     auto logger = makeJsonLinesLogger({directory.path(), &console});
@@ -102,15 +67,13 @@ TEST(JsonLinesLoggerTest, WritesStructuredEventToConsoleAndFile) {
     const std::array eventNames{"command.started", "command.completed",
                                 "state.published"};
     for (const auto* name : eventNames) {
-        ASSERT_EQ(logger->submit(completeEvent(name)),
-                  observability::SubmitResult::Accepted);
+        ASSERT_TRUE(logger->write(completeEvent(name)));
     }
-    ASSERT_TRUE(logger->flush(1s));
+    ASSERT_TRUE(logger->flush());
 
-    const auto consoleLine = console.str();
-    ASSERT_EQ(consoleLine.back(), '\n');
-    ASSERT_EQ(consoleLine, readFile(directory.path() / "vna.log.jsonl"));
-    std::istringstream lines{consoleLine};
+    const auto consoleText = console.str();
+    ASSERT_EQ(consoleText, readFile(directory.path() / "vna.log.jsonl"));
+    std::istringstream lines{consoleText};
     const std::regex timestamp{R"(^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$)"};
     for (const auto* name : eventNames) {
         std::string line;
@@ -129,52 +92,30 @@ TEST(JsonLinesLoggerTest, WritesStructuredEventToConsoleAndFile) {
     EXPECT_EQ(lines.peek(), std::char_traits<char>::eof());
 }
 
-TEST(JsonLinesLoggerTest, WritesLifecycleEventOnlyToFileWhenConsoleIsDisabled) {
-    using namespace std::chrono_literals;
+TEST(JsonLinesLoggerTest, WritesOnlyToFileWhenConsoleIsDisabled) {
     TemporaryDirectory directory;
     auto options = JsonLinesLoggerOptions{.logDirectory = directory.path()};
     options.console = nullptr;
     auto logger = makeJsonLinesLogger(options);
 
-    ASSERT_EQ(logger->submit(completeEvent("server.lifecycle")),
-              observability::SubmitResult::Accepted);
-    ASSERT_TRUE(logger->flush(1s));
+    ASSERT_TRUE(logger->write(completeEvent("server.lifecycle")));
+    ASSERT_TRUE(logger->flush());
 
-    const auto contents = readFile(directory.path() / "vna.log.jsonl");
-    const auto record = nlohmann::json::parse(contents);
+    const auto record = nlohmann::json::parse(
+        readFile(directory.path() / "vna.log.jsonl"));
     EXPECT_EQ(record.at("event"), "server.lifecycle");
-    EXPECT_EQ(record.at("status"), "succeeded");
 }
 
-TEST(JsonLinesLoggerTest, FlushTimeoutDoesNotForgetAcceptedEvent) {
-    using namespace std::chrono_literals;
+TEST(JsonLinesLoggerTest, SinkFailureIsReportedAndRemainsTerminal) {
     TemporaryDirectory directory;
-    ControlledStreamBuffer buffer{ControlledStreamBuffer::Behavior::Block};
+    FailingStreamBuffer buffer;
     std::ostream console{&buffer};
+    console.exceptions(std::ios::badbit | std::ios::failbit);
     auto logger = makeJsonLinesLogger({directory.path(), &console});
 
-    ASSERT_EQ(logger->submit(completeEvent("blocked.event")),
-              observability::SubmitResult::Accepted);
-    buffer.waitForWrite();
-    EXPECT_FALSE(logger->flush(100ms));
-    buffer.release();
-    EXPECT_TRUE(logger->flush(1s));
-}
-
-TEST(JsonLinesLoggerTest, SinkFailureStopsFurtherSubmissions) {
-    using namespace std::chrono_literals;
-    TemporaryDirectory directory;
-    ControlledStreamBuffer buffer{ControlledStreamBuffer::Behavior::Fail};
-    std::ostream console{&buffer};
-    auto logger = makeJsonLinesLogger({directory.path(), &console});
-
-    ASSERT_EQ(logger->submit(completeEvent("failing.event")),
-              observability::SubmitResult::Accepted);
-    EXPECT_FALSE(logger->flush(1s));
-    EXPECT_TRUE(readFile(directory.path() / "vna.log.jsonl").empty());
-    EXPECT_EQ(logger->submit(completeEvent("after.failure")),
-              observability::SubmitResult::Stopped);
-    EXPECT_EQ(logger->statistics().sinkFailures, 1U);
+    EXPECT_FALSE(logger->write(completeEvent("failing.event")));
+    EXPECT_FALSE(logger->write(completeEvent("after.failure")));
+    EXPECT_FALSE(logger->flush());
 }
 
 }  // namespace

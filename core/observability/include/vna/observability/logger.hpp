@@ -1,6 +1,5 @@
 #pragma once
 
-#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -25,35 +24,15 @@ struct LogEvent {
     std::optional<std::string> status;
 };
 
-enum class SubmitResult {
-    Accepted,
-    DroppedLowSeverity,
-    EmergencyFallback,
-    RejectedHighSeverity,
-    RejectedOversized,
-    // The logger stopped accepting events after a terminal sink failure.
-    Stopped,
-};
-
-struct LoggerStatistics {
-    std::uint64_t droppedLowSeverity{0};
-    std::uint64_t emergencyFallbacks{0};
-    std::uint64_t rejectedHighSeverity{0};
-    std::uint64_t rejectedOversized{0};
-    std::uint64_t sinkFailures{0};
-};
-
 class Logger {
 public:
     virtual ~Logger() = default;
 
-    [[nodiscard]] virtual SubmitResult submit(LogEvent event) = 0;
-    // A stream-flush barrier for events Accepted before this call, not fsync.
-    // A timeout returns false without forgetting pending events.
-    [[nodiscard]] virtual bool flush(
-        std::chrono::milliseconds timeout) = 0;
-    [[nodiscard]] virtual LoggerStatistics statistics()
-        const noexcept = 0;
+    // Synchronous implementations return only after every configured sink was
+    // attempted. false reports encoding, size, or terminal sink failure.
+    [[nodiscard]] virtual bool write(LogEvent event) noexcept = 0;
+    // Flushes C++/library buffers, not the operating system's durable storage.
+    [[nodiscard]] virtual bool flush() noexcept = 0;
 };
 
 }  // namespace vna::observability

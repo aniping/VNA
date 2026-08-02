@@ -7,7 +7,7 @@
 
 namespace vna::logging {
 
-std::string formatJsonLine(
+std::string formatJsonRecord(
     const observability::LogEvent& event,
     std::chrono::system_clock::time_point timestamp);
 

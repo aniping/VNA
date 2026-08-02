@@ -1,7 +1,6 @@
 add_library(vna_logging
     src/json_line_formatter.cpp
-    src/json_lines_logger.cpp
-    src/rolling_file.cpp
+    src/spdlog_json_lines_logger.cpp
 )
 add_library(vna::logging ALIAS vna_logging)
 
