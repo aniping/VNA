@@ -112,7 +112,7 @@
 ### M1.5：可测试的本地网页壳
 
 交付：仅监听回环地址的最小 `vna-server`、StateSnapshot REST 接口和
-Vue 工作台骨架。前端按 [ZNA26 界面复刻基线](ui-zna26-reference.md) 实现，
+Vue 工作台骨架。前端按 [ZNB v74 界面复刻基线](ui-znb-v74-reference.md) 实现，
 首版采用官方 Single Window Mode 的 1280×800 主应用屏，必须读取真实服务端
 状态，不维护静态业务 Mock。
 
