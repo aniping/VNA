@@ -20,5 +20,5 @@ target_include_directories(
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 target_link_libraries(vna_logging PUBLIC vna::observability
-                      PRIVATE nlohmann_json::nlohmann_json)
+                      PRIVATE nlohmann_json::nlohmann_json spdlog::spdlog)
 target_compile_options(vna_logging PRIVATE -Wall -Wextra -Wpedantic)
