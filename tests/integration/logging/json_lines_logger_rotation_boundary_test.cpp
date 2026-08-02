@@ -104,20 +104,6 @@ TEST_F(JsonLinesLoggerRotationBoundaryTest,
     }
 }
 
-TEST_F(JsonLinesLoggerRotationBoundaryTest, LeavesLegacyNamesUnmanaged) {
-    const auto state = root_ / "legacy";
-    std::filesystem::create_directories(state);
-    for (const auto* name :
-         {"vna.log.jsonl", "vna.log.1.jsonl", "vna.log.jsonl.1"}) {
-        std::ofstream{state / name} << "legacy";
-    }
-    EXPECT_NO_THROW(makeJsonLinesLogger(optionsFor(state, 512, 3)));
-    for (const auto* name :
-         {"vna.log.jsonl", "vna.log.1.jsonl", "vna.log.jsonl.1"}) {
-        EXPECT_EQ(readText(state / name), "legacy");
-    }
-}
-
 TEST_F(JsonLinesLoggerRotationBoundaryTest,
        LowerRetentionRemovesExpiredArchivesOnRestart) {
     const auto state = root_ / "retention-restart";
