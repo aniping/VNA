@@ -43,7 +43,8 @@ export function replaceCompleteDisplayFramesForSnapshot(
   snapshot: StateSnapshot,
   minimumStateRevision: number,
 ): DisplayFrameSetMap | null {
-  if (frameSet.frames.some((frame) => frame.stateRevision < minimumStateRevision)) return null
+  if (snapshot.stateRevision < minimumStateRevision) return null
+  if (frameSet.frames.some((frame) => frame.stateRevision !== snapshot.stateRevision)) return null
   const next = replaceDisplayFramesForSnapshot(frameSet, snapshot)
   // All-S reconfiguration changes the whole publication plan. Requiring every authoritative
   // Trace and no extras rejects both partial and mixed-generation publications as one atom.

@@ -139,7 +139,5 @@ test('the publication barrier accepts only a complete compatible frame set', () 
   assert.deepEqual([...replaceCompleteDisplayFramesForSnapshot(complete, snapshot, 99)!.keys()], [
     11, 12, 13, 14,
   ])
-  assert.deepEqual([...replaceCompleteDisplayFramesForSnapshot(future, snapshot, 99)!.keys()], [
-    11, 12, 13, 14,
-  ])
+  assert.equal(replaceCompleteDisplayFramesForSnapshot(future, snapshot, 99), null)
 })
