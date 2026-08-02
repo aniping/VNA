@@ -51,6 +51,12 @@ target_link_libraries(
 )
 
 add_executable(
+    vna_application_sweep_preview_tests
+    sweep_preview_exchange_test.cpp
+)
+vna_configure_application_test(vna_application_sweep_preview_tests)
+
+add_executable(
     vna_application_trace_frame_tests
     trace_display_frame_query_test.cpp
     trace_display_frame_query_wait_test.cpp
@@ -87,6 +93,7 @@ add_custom_target(
     DEPENDS
         vna_application_command_tests
         vna_application_operation_tests
+        vna_application_sweep_preview_tests
         vna_application_sweep_tests
         vna_application_trace_command_tests
         vna_application_trace_frame_tests
