@@ -1,5 +1,6 @@
 add_executable(
     vna_simulation_tests
+    simulation_capture_test.cpp
     simulation_visibility_test.cpp
     simulation_sweep_test.cpp
 )

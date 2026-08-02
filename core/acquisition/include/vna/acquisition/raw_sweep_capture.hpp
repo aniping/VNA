@@ -58,6 +58,10 @@ using RawSweepChunkProducer = std::function<RawSweepChunkResult(
     std::stop_token)>;
 using RawSweepChunkObserver =
     std::function<void(const RawSweepPointRange&)>;
+using RawSweepCaptureSource = std::function<RawSweepCaptureResult(
+    const RawSweepCaptureRequest&,
+    const RawSweepChunkObserver&,
+    std::stop_token)>;
 
 // Drives source states and point ranges in plan order. The observer is a
 // synchronous progress seam and must return promptly; only the final return

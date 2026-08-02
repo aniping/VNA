@@ -1,6 +1,7 @@
 #include <vna/simulation/simulation_sweep.hpp>
 
 #include "open_port_leakage.hpp"
+#include "open_port_range.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -167,6 +168,38 @@ frames::RawSourceState makeLegacySourceState(
 }
 
 }  // namespace
+
+namespace detail {
+
+frames::Result<std::vector<frames::RawReceiverSample>> simulateOpenPortRange(
+    const OpenPortSweepPlan& plan,
+    std::uint32_t sourcePort,
+    std::uint32_t firstPoint,
+    std::uint32_t pointCount) {
+    if (const auto error = validatePlan(plan)) {
+        return frames::Result<std::vector<frames::RawReceiverSample>>{*error};
+    }
+    if (sourcePort == 0 || sourcePort > plan.portCount) {
+        return frames::Result<std::vector<frames::RawReceiverSample>>{
+            frames::FrameError{frames::FrameErrorCode::InvalidSourcePort}};
+    }
+    if (pointCount == 0 || firstPoint >= plan.frequencyAxis.points ||
+        pointCount > plan.frequencyAxis.points - firstPoint) {
+        return frames::Result<std::vector<frames::RawReceiverSample>>{
+            frames::FrameError{frames::FrameErrorCode::SampleCountMismatch}};
+    }
+    std::vector<frames::RawReceiverSample> samples;
+    samples.reserve(pointCount);
+    for (std::uint32_t point = firstPoint;
+         point < firstPoint + pointCount;
+         ++point) {
+        samples.push_back(makeSample(plan, point, sourcePort));
+    }
+    return frames::Result<std::vector<frames::RawReceiverSample>>{
+        std::move(samples)};
+}
+
+}  // namespace detail
 
 frames::Result<frames::RawReceiverPayload> simulateOpenPorts(
     const OpenPortSweepPlan& plan) {

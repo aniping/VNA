@@ -22,7 +22,9 @@ std::optional<frames::FrameError> validateRequest(
         axis.points > frames::kMaxSweepPoints || plan.portCount == 0 ||
         plan.portCount > frames::kMaxPortCount || plan.sourcePorts.empty() ||
         plan.sourcePorts.size() > plan.portCount || plan.ifBandwidthHz == 0 ||
-        !std::isfinite(plan.powerDbm)) {
+        !std::isfinite(plan.powerDbm) ||
+        plan.minimumSweepPeriod <
+            decltype(plan.minimumSweepPeriod)::zero()) {
         return error(frames::FrameErrorCode::InvalidAcquisitionSettings);
     }
     std::vector<bool> seen(plan.portCount + 1, false);
@@ -77,6 +79,48 @@ RawSweepChunkRequest makeChunkRequest(
     };
 }
 
+using SourceCaptureResult = std::variant<
+    frames::RawSourceState,
+    frames::FrameError,
+    RawSweepCaptureCanceled>;
+
+SourceCaptureResult captureSourceState(
+    const RawSweepCaptureRequest& request,
+    std::uint32_t sourcePort,
+    const RawSweepChunkProducer& producer,
+    const RawSweepChunkObserver& observer,
+    std::stop_token token) {
+    frames::RawSourceState source{.sourcePort = sourcePort, .samples = {}};
+    source.samples.reserve(request.plan.frequencyAxis.points);
+    for (std::uint32_t firstPoint = 0;
+         firstPoint < request.plan.frequencyAxis.points;) {
+        if (token.stop_requested()) {
+            return RawSweepCaptureCanceled{};
+        }
+        const auto expected = makeChunkRequest(request, sourcePort, firstPoint);
+        auto produced = producer(request.plan, expected, token);
+        if (token.stop_requested() ||
+            std::holds_alternative<RawSweepCaptureCanceled>(produced)) {
+            return RawSweepCaptureCanceled{};
+        }
+        if (const auto* failure = std::get_if<frames::FrameError>(&produced)) {
+            return *failure;
+        }
+        auto chunk = std::move(std::get<RawSweepPointRange>(produced));
+        if (const auto invalid =
+                validateRange(chunk, expected, request.plan.portCount)) {
+            return *invalid;
+        }
+        source.samples.insert(
+            source.samples.end(), chunk.samples.cbegin(), chunk.samples.cend());
+        if (observer) {
+            observer(chunk);
+        }
+        firstPoint += expected.pointCount;
+    }
+    return source;
+}
+
 }  // namespace
 
 RawSweepCaptureResult captureRawSweep(
@@ -96,42 +140,19 @@ RawSweepCaptureResult captureRawSweep(
     };
     payload.sourceStates.reserve(request.plan.sourcePorts.size());
     for (const auto sourcePort : request.plan.sourcePorts) {
-        frames::RawSourceState source{
-            .sourcePort = sourcePort,
-            .samples = {},
-        };
-        source.samples.reserve(request.plan.frequencyAxis.points);
-        for (std::uint32_t firstPoint = 0;
-             firstPoint < request.plan.frequencyAxis.points;) {
-            if (token.stop_requested()) {
-                return RawSweepCaptureCanceled{};
-            }
-            const auto chunkRequest =
-                makeChunkRequest(request, sourcePort, firstPoint);
-            auto produced = producer(request.plan, chunkRequest, token);
-            if (token.stop_requested() ||
-                std::holds_alternative<RawSweepCaptureCanceled>(produced)) {
-                return RawSweepCaptureCanceled{};
-            }
-            if (const auto* failure =
-                    std::get_if<frames::FrameError>(&produced)) {
-                return *failure;
-            }
-            auto chunk =
-                std::move(std::get<RawSweepPointRange>(produced));
-            if (const auto invalid = validateRange(
-                    chunk, chunkRequest, request.plan.portCount)) {
-                return *invalid;
-            }
-            source.samples.insert(
-                source.samples.end(),
-                chunk.samples.cbegin(), chunk.samples.cend());
-            if (observer) {
-                observer(chunk);
-            }
-            firstPoint += chunkRequest.pointCount;
+        auto captured = captureSourceState(
+            request, sourcePort, producer, observer, token);
+        if (const auto* failure = std::get_if<frames::FrameError>(&captured)) {
+            return *failure;
         }
-        payload.sourceStates.push_back(std::move(source));
+        if (std::holds_alternative<RawSweepCaptureCanceled>(captured)) {
+            return RawSweepCaptureCanceled{};
+        }
+        payload.sourceStates.push_back(
+            std::move(std::get<frames::RawSourceState>(captured)));
+    }
+    if (token.stop_requested()) {
+        return RawSweepCaptureCanceled{};
     }
     return payload;
 }

@@ -1,6 +1,7 @@
 add_library(
     vna_simulation
     src/open_port_leakage.cpp
+    src/simulation_capture.cpp
     src/simulation_sweep.cpp
 )
 add_library(vna::simulation ALIAS vna_simulation)
@@ -11,5 +12,10 @@ target_include_directories(
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-target_link_libraries(vna_simulation PUBLIC vna::raw_receiver_contracts)
+target_link_libraries(
+    vna_simulation
+    PUBLIC
+        vna::acquisition
+        vna::raw_receiver_contracts
+)
 target_compile_options(vna_simulation PRIVATE -Wall -Wextra -Wpedantic)
