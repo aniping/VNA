@@ -13,6 +13,7 @@ gtest_discover_tests(vna_frame_contract_tests NO_PRETTY_VALUES)
 
 add_executable(
     vna_measurement_tests
+    measurement/s_parameter_range_synthesizer_test.cpp
     measurement/s_parameter_synthesizer_test.cpp
     measurement/s11_synthesizer_test.cpp
 )

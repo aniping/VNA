@@ -1,4 +1,8 @@
-add_library(vna_measurement src/s11_synthesizer.cpp)
+add_library(
+    vna_measurement
+    src/s11_synthesizer.cpp
+    src/s_parameter_range_synthesizer.cpp
+)
 add_library(vna::measurement ALIAS vna_measurement)
 
 target_compile_features(vna_measurement PUBLIC cxx_std_20)
