@@ -7,15 +7,22 @@
 #include <variant>
 
 #include <vna/acquisition/raw_sweep_capture.hpp>
+#include <vna/application/operation_manager.hpp>
 #include <vna/application/sweep_preview_exchange.hpp>
 #include <vna/application/trace_publication_catalog.hpp>
 
 namespace vna::application {
 
+struct SweepRuntimeExecutionPolicy {
+    domain::SweepMode mode{domain::SweepMode::Continuous};
+    std::uint32_t sweepCount{1};
+};
+
 struct SweepRuntimePlan {
     acquisition::ContinuousAcquisitionPlan acquisition;
     TracePublicationPlanHandle publication;
     std::uint32_t maximumPointsPerChunk;
+    SweepRuntimeExecutionPolicy execution{};
 };
 
 enum class SweepRuntimeState {
@@ -24,6 +31,26 @@ enum class SweepRuntimeState {
     Retired,
     Failed,
 };
+
+enum class SweepRuntimePhase {
+    Hold,
+    Preparing,
+    Sweeping,
+    Publishing,
+};
+
+enum class SweepRuntimeRequestErrorCode {
+    Stopped,
+    Retired,
+    Failed,
+};
+
+struct SweepRuntimeRequestError {
+    SweepRuntimeRequestErrorCode code;
+};
+
+using SweepRuntimeRequestResult =
+    std::variant<OperationId, SweepRuntimeRequestError>;
 
 enum class SweepRuntimeFailureCode {
     CaptureFailed,
@@ -44,6 +71,7 @@ struct SweepRuntimeFailure {
 
 struct SweepRuntimeSnapshot {
     SweepRuntimeState state{SweepRuntimeState::Running};
+    SweepRuntimePhase phase{SweepRuntimePhase::Preparing};
     std::uint64_t attemptedSweeps{};
     std::uint64_t completedSweeps{};
     std::uint64_t rejectedSweeps{};
@@ -62,7 +90,8 @@ public:
         SweepRuntimePlan plan,
         acquisition::RawSweepCaptureSource source,
         SweepPreviewExchange& previews,
-        TracePublicationCatalog& catalog);
+        TracePublicationCatalog& catalog,
+        OperationManager& operations);
     ~SweepRuntime();
 
     SweepRuntime(const SweepRuntime&) = delete;
@@ -72,6 +101,8 @@ public:
 
     void stop() noexcept;
     void join();
+    [[nodiscard]] SweepRuntimeRequestResult requestRestart(
+        OperationSubmission submission);
     [[nodiscard]] SweepRuntimeSnapshot snapshot() const;
 
 private:

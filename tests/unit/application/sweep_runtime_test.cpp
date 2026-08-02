@@ -160,6 +160,7 @@ protected:
     TracePublicationCatalog catalog_{
         preset_.acquisitionChannelId, repository_, initialState(preset_)};
     SweepPreviewExchange previews_;
+    OperationManager operations_;
 };
 
 TEST_F(SweepRuntimeTest, RecoversThreeStructuredSweepFailures) {
@@ -169,7 +170,7 @@ TEST_F(SweepRuntimeTest, RecoversThreeStructuredSweepFailures) {
         CaptureOutcome::Success, CaptureOutcome::CaptureFailure,
         CaptureOutcome::ProcessingFailure, CaptureOutcome::Success}};
     SweepRuntime runtime{{acquisition::test_support::validPlan(), publication, 2},
-                         std::ref(source), previews_, catalog_};
+                         std::ref(source), previews_, catalog_, operations_};
 
     releaseSweep(source, 1);
     releaseSweep(source, 2);
@@ -196,7 +197,7 @@ TEST_F(SweepRuntimeTest, InvalidatesPreviewBeforeUnexpectedCancelFails) {
     ControlledCaptureSource source{{CaptureOutcome::Canceled}};
     SweepRuntime runtime{{acquisition::test_support::validPlan(),
                           catalog_.capture(), 2},
-                         std::ref(source), previews_, catalog_};
+                         std::ref(source), previews_, catalog_, operations_};
 
     ASSERT_TRUE(source.waitForRequest(1));
     source.releasePreview(1);
@@ -216,7 +217,7 @@ TEST_F(SweepRuntimeTest, GenerationAdvanceRetiresStalePlan) {
     const auto publication = catalog_.capture();
     ControlledCaptureSource source;
     SweepRuntime runtime{{acquisition::test_support::validPlan(), publication, 2},
-                         std::ref(source), previews_, catalog_};
+                         std::ref(source), previews_, catalog_, operations_};
     ASSERT_TRUE(source.waitForRequest(1));
     source.releasePreview(1);
     ASSERT_TRUE(previews_.waitForNext({0}).has_value());

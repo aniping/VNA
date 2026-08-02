@@ -11,21 +11,56 @@ SweepRuntimeImpl::SweepRuntimeImpl(
     SweepRuntimePlan plan,
     acquisition::RawSweepCaptureSource source,
     SweepPreviewExchange& previews,
-    TracePublicationCatalog& catalog)
+    TracePublicationCatalog& catalog,
+    OperationManager& operations)
     : plan_(std::move(plan)),
       source_(std::move(source)),
       previews_(previews),
-      catalog_(catalog) {
+      catalog_(catalog),
+      operations_(operations) {
     if (!source_ || plan_.publication == nullptr ||
-        plan_.maximumPointsPerChunk == 0) {
+        plan_.maximumPointsPerChunk == 0 || plan_.execution.sweepCount == 0 ||
+        plan_.execution.sweepCount > 100'000) {
         throw std::invalid_argument{"invalid sweep runtime plan"};
     }
+    snapshot_.phase = plan_.execution.mode == domain::SweepMode::Single
+        ? SweepRuntimePhase::Hold
+        : SweepRuntimePhase::Preparing;
     worker_ = std::jthread{[this](std::stop_token token) { run(token); }};
 }
 
 SweepRuntimeImpl::~SweepRuntimeImpl() { stop(); }
 
 void SweepRuntimeImpl::stop() noexcept {
+    std::optional<OperationId> queued;
+    std::optional<OperationId> activeWithoutSource;
+    std::optional<OperationId> activeWithSource;
+    std::shared_ptr<std::stop_source> activeStop;
+    {
+        std::lock_guard lock{mutex_};
+        queued = std::exchange(pendingOperation_, std::nullopt);
+        activeStop = activeStop_;
+        if (activeRequest_.has_value()) {
+            if (activeStop) {
+                activeWithSource = activeRequest_->operationId;
+            } else {
+                activeWithoutSource = activeRequest_->operationId;
+                activeRequest_.reset();
+            }
+        }
+    }
+    if (queued.has_value()) {
+        cancelWithoutSource(*queued);
+    }
+    if (activeWithoutSource.has_value()) {
+        cancelWithoutSource(*activeWithoutSource);
+    }
+    if (activeWithSource.has_value()) {
+        static_cast<void>(operations_.requestCancel(*activeWithSource));
+    }
+    if (activeStop) {
+        activeStop->request_stop();
+    }
     worker_.request_stop();
     notifyWorker();
     if (worker_.joinable()) {
@@ -83,13 +118,18 @@ SweepRuntime::SweepRuntime(
     SweepRuntimePlan plan,
     acquisition::RawSweepCaptureSource source,
     SweepPreviewExchange& previews,
-    TracePublicationCatalog& catalog)
+    TracePublicationCatalog& catalog,
+    OperationManager& operations)
     : impl_(std::make_unique<Impl>(
-          std::move(plan), std::move(source), previews, catalog)) {}
+          std::move(plan), std::move(source), previews, catalog, operations)) {}
 
 SweepRuntime::~SweepRuntime() = default;
 void SweepRuntime::stop() noexcept { impl_->stop(); }
 void SweepRuntime::join() { impl_->join(); }
+SweepRuntimeRequestResult SweepRuntime::requestRestart(
+    OperationSubmission submission) {
+    return impl_->requestRestart(std::move(submission));
+}
 SweepRuntimeSnapshot SweepRuntime::snapshot() const { return impl_->snapshot(); }
 
 }  // namespace vna::application

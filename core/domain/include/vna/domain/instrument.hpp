@@ -70,6 +70,7 @@ struct SweepSettings {
 // frame; those runtime facts belong to the acquisition lifecycle.
 enum class SweepMode {
     Continuous,
+    Single,
 };
 
 enum class TriggerSource {

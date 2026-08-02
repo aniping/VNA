@@ -62,6 +62,7 @@ vna_configure_application_test(vna_application_sweep_preview_tests)
 add_executable(
     vna_application_sweep_runtime_tests
     sweep_runtime_test.cpp
+    sweep_runtime_control_test.cpp
 )
 vna_configure_application_test(vna_application_sweep_runtime_tests)
 

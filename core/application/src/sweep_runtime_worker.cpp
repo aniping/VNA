@@ -22,6 +22,10 @@ void SweepRuntimeImpl::run(std::stop_token token) noexcept {
     std::uint64_t sequence = 1;
     try {
         while (!token.stop_requested()) {
+            if (!prepareCycle(token)) {
+                finish(SweepRuntimeState::Stopped);
+                return;
+            }
             const auto startedAt = std::chrono::steady_clock::now();
             recordAttempt();
             const auto disposition = capture(sequence, token);
@@ -34,6 +38,9 @@ void SweepRuntimeImpl::run(std::stop_token token) noexcept {
                 return;
             }
             ++sequence;
+            if (disposition == SweepDisposition::Canceled) {
+                continue;
+            }
             if (!paceUntil(
                     startedAt + plan_.acquisition.minimumSweepPeriod,
                     token)) {
@@ -54,6 +61,14 @@ SweepDisposition SweepRuntimeImpl::capture(
     std::stop_token token) {
     const auto identity = SweepPreviewIdentity{
         plan_.publication->generation, acquisition::SweepId{sequence}};
+    std::shared_ptr<std::stop_source> cycleStop;
+    {
+        std::lock_guard lock{mutex_};
+        activeIdentity_ = identity;
+        cycleStop = activeStop_;
+    }
+    std::stop_callback stopCycle{
+        token, [cycleStop] { cycleStop->request_stop(); }};
     SweepPreviewAssembler assembler{{
         plan_.acquisition,
         plan_.publication,
@@ -78,17 +93,26 @@ SweepDisposition SweepRuntimeImpl::capture(
             rejectPreview(identity);
         }
     };
+    {
+        std::lock_guard lock{mutex_};
+        snapshot_.phase = SweepRuntimePhase::Sweeping;
+    }
     auto captured = source_(
         {plan_.acquisition, identity.sweepId, sequence,
          plan_.maximumPointsPerChunk},
-        observer, token);
-    if (token.stop_requested()) {
+        observer, cycleStop->get_token());
+    if (cycleStop->stop_requested()) {
         invalidate(identity);
-        return SweepDisposition::Continue;
+        cancelActiveAfterSource();
+        return SweepDisposition::Canceled;
     }
     if (std::holds_alternative<
             acquisition::RawSweepCaptureCanceled>(captured)) {
         throw std::logic_error{"capture canceled without a stop request"};
+    }
+    {
+        std::lock_guard lock{mutex_};
+        snapshot_.phase = SweepRuntimePhase::Publishing;
     }
     return complete(sequence, identity, std::move(captured));
 }
@@ -130,7 +154,13 @@ SweepDisposition SweepRuntimeImpl::complete(
             SweepRuntimeFailureCode::PublicationRejected, sequence, *error));
         return SweepDisposition::Continue;
     }
+    {
+        std::lock_guard lock{mutex_};
+        activeStop_.reset();
+        activeIdentity_.reset();
+    }
     recordCompleted();
+    completeRequestedSweep(frames::FrameId{sequence});
     return SweepDisposition::Continue;
 }
 
