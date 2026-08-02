@@ -23,8 +23,6 @@
 
 namespace vna::logging {
 namespace {
-using namespace std::chrono_literals;
-
 constexpr std::size_t kThreadCount = 8;
 constexpr std::size_t kEventsPerThread = 20;
 constexpr std::size_t kEventCount = kThreadCount * kEventsPerThread;
@@ -77,11 +75,10 @@ observability::LogEvent concurrentEvent(
     return event;
 }
 
-std::vector<observability::SubmitResult> submitConcurrently(
+std::vector<std::uint8_t> writeConcurrently(
     observability::Logger& logger) {
     StartGate gate{kThreadCount};
-    std::vector<observability::SubmitResult> results(
-        kEventCount, observability::SubmitResult::Stopped);
+    std::vector<std::uint8_t> results(kEventCount, 0);
     std::vector<std::thread> workers;
     workers.reserve(kThreadCount);
     for (std::size_t threadIndex = 0;
@@ -91,8 +88,8 @@ std::vector<observability::SubmitResult> submitConcurrently(
             for (std::size_t eventIndex = 0;
                  eventIndex < kEventsPerThread; ++eventIndex) {
                 const auto index = threadIndex * kEventsPerThread + eventIndex;
-                results[index] = logger.submit(concurrentEvent(
-                    eventId(threadIndex, eventIndex), index));
+                results[index] = static_cast<std::uint8_t>(logger.write(
+                    concurrentEvent(eventId(threadIndex, eventIndex), index)));
             }
         });
     }
@@ -110,11 +107,17 @@ std::string readText(const std::filesystem::path& path) {
 bool isManagedLogName(std::string_view name) {
     constexpr std::string_view active = "vna.log.jsonl";
     if (name == active) return true;
-    const auto prefix = std::string{active} + ".";
+    constexpr std::string_view prefix = "vna.log.";
+    constexpr std::string_view extension = ".jsonl";
     if (name.rfind(prefix, 0) != 0) return false;
-    const auto suffix = name.substr(prefix.size());
-    return !suffix.empty() && suffix.front() != '0' &&
-        std::all_of(suffix.begin(), suffix.end(), [](char value) {
+    if (name.size() <= prefix.size() + extension.size() ||
+        name.substr(name.size() - extension.size()) != extension) {
+        return false;
+    }
+    const auto index = name.substr(
+        prefix.size(), name.size() - prefix.size() - extension.size());
+    return !index.empty() && index.front() != '0' &&
+        std::all_of(index.begin(), index.end(), [](char value) {
             return value >= '0' && value <= '9';
         });
 }
@@ -210,22 +213,15 @@ protected:
 TEST_F(JsonLinesLoggerConcurrencyTest,
        PreservesEveryJsonLineAcrossConcurrentSubmittersAndRotation) {
     JsonLinesLoggerOptions options{directory_, &console_};
-    options.queueCapacity = kEventCount;
     options.maxFileBytes = 1024;
     options.maxFiles = kEventCount;
     auto logger = makeJsonLinesLogger(options);
 
-    const auto results = submitConcurrently(*logger);
+    const auto results = writeConcurrently(*logger);
     EXPECT_TRUE(std::all_of(results.begin(), results.end(), [](auto result) {
-        return result == observability::SubmitResult::Accepted;
+        return result == 1;
     }));
-    ASSERT_TRUE(logger->flush(5s));
-    const auto statistics = logger->statistics();
-    EXPECT_EQ(statistics.droppedLowSeverity, 0U);
-    EXPECT_EQ(statistics.emergencyFallbacks, 0U);
-    EXPECT_EQ(statistics.rejectedHighSeverity, 0U);
-    EXPECT_EQ(statistics.rejectedOversized, 0U);
-    EXPECT_EQ(statistics.sinkFailures, 0U);
+    ASSERT_TRUE(logger->flush());
 
     const auto files = readFileOutput(directory_, options.maxFileBytes);
     EXPECT_GT(files.files, 1U);
