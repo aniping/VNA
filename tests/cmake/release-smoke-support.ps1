@@ -39,46 +39,6 @@ function Stop-ExactReleaseServer([string]$expectedPath) {
     }
 }
 
-function Assert-OrderedHumanMilestones([string]$text) {
-    $expected = @(
-        '[info] Starting Vector Network Analyzer server instrument_id=instrument-1',
-        '[info] Factory preset loaded: Channel 1, S21, Trace 1, 201 points, 10 MHz to 26.5 GHz instrument_id=instrument-1',
-        '[info] Continuous acquisition started: 100 ms, ports 1/2, IFBW 10 kHz, power -10 dBm instrument_id=instrument-1',
-        '[info] Live display publication started: Trace 1, Log Magnitude instrument_id=instrument-1',
-        '[info] Starting Web service at http://127.0.0.1:8080/ instrument_id=instrument-1'
-    )
-    $previous = -1
-    foreach ($milestone in $expected) {
-        $position = $text.IndexOf(
-            $milestone, $previous + 1, [StringComparison]::Ordinal)
-        if ($position -lt 0) { throw "Missing human milestone: $milestone" }
-        $previous = $position
-    }
-}
-
-function Assert-OrderedJsonMilestones([object[]]$records) {
-    $expected = @(
-        @('server.lifecycle', 'starting'),
-        @('server.factory_preset', 'loaded'),
-        @('server.continuous_acquisition', 'running'),
-        @('server.display_publication', 'running'),
-        @('server.web_listener', 'starting')
-    )
-    $cursor = 0
-    foreach ($milestone in $expected) {
-        while ($cursor -lt $records.Count -and
-               ($records[$cursor].event -ne $milestone[0] -or
-                $records[$cursor].status -ne $milestone[1])) { $cursor++ }
-        if ($cursor -eq $records.Count) {
-            throw "Missing JSON milestone: $($milestone -join '/')"
-        }
-        if ($records[$cursor].instrument_id -ne 'instrument-1') {
-            throw "Milestone instrument ID is missing: $($milestone[0])"
-        }
-        $cursor++
-    }
-}
-
 function Invoke-CreateChannelCommand(
     [string]$commandId,
     [uint64]$expectedRevision) {
@@ -109,42 +69,5 @@ function Invoke-CreateChannelCommand(
         }
     } finally {
         $client.Dispose()
-    }
-}
-
-function Assert-WebCommandLogs(
-    [string]$human,
-    [object[]]$records) {
-    $lines = @($human -split '\r?\n')
-    $acceptedHuman = @($lines | Where-Object {
-        $_ -match '\[info\] Create channel succeeded ' -and
-        $_ -match 'command_id=release-accepted(?: |$)' -and
-        $_ -match 'state_revision=1(?: |$)'
-    })
-    $rejectedHuman = @($lines | Where-Object {
-        $_ -match '\[warning\] Create channel rejected ' -and
-        $_ -match 'command_id=release-rejected(?: |$)' -and
-        $_ -match 'state_revision=1(?: |$)' -and
-        $_ -match 'error_code=state-revision-conflict(?: |$)'
-    })
-    if ($acceptedHuman.Count -ne 1 -or $rejectedHuman.Count -ne 1) {
-        throw 'Human command audit entries are missing or duplicated'
-    }
-    $accepted = @($records | Where-Object {
-        $_.event -eq 'web.command.create_channel' -and
-        $_.command_id -eq 'release-accepted' -and $_.status -eq 'succeeded' -and
-        $_.message -eq 'Create channel succeeded' -and
-        $_.state_revision -eq 1 -and
-        -not $_.PSObject.Properties['error_code']
-    })
-    $rejected = @($records | Where-Object {
-        $_.event -eq 'web.command.create_channel' -and
-        $_.command_id -eq 'release-rejected' -and $_.status -eq 'rejected' -and
-        $_.message -eq 'Create channel rejected' -and
-        $_.state_revision -eq 1 -and
-        $_.error_code -eq 'state-revision-conflict'
-    })
-    if ($accepted.Count -ne 1 -or $rejected.Count -ne 1) {
-        throw 'Structured command audit entries are missing or duplicated'
     }
 }

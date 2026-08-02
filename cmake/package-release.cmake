@@ -96,7 +96,6 @@ if(EXISTS "${backup_dir}" OR IS_SYMLINK "${backup_dir}")
         assert_private_path("${final_dir}")
         run_step("existing release validation" "${source_dir}"
             "${CMAKE_COMMAND}" "-DRELEASE_ROOT=${final_dir}"
-            -DALLOW_EXISTING_LOGS=ON
             -P "${source_dir}/cmake/verify-release-layout.cmake")
         remove_private_tree("${backup_dir}")
     else()
@@ -106,7 +105,6 @@ if(EXISTS "${backup_dir}" OR IS_SYMLINK "${backup_dir}")
         endif()
         run_step("restored release validation" "${source_dir}"
             "${CMAKE_COMMAND}" "-DRELEASE_ROOT=${final_dir}"
-            -DALLOW_EXISTING_LOGS=ON
             -P "${source_dir}/cmake/verify-release-layout.cmake")
     endif()
 endif()
@@ -156,7 +154,6 @@ if(EXISTS "${final_dir}" OR IS_SYMLINK "${final_dir}")
     endif()
     run_step("existing release validation" "${source_dir}"
         "${CMAKE_COMMAND}" "-DRELEASE_ROOT=${final_dir}"
-        -DALLOW_EXISTING_LOGS=ON
         -P "${source_dir}/cmake/verify-release-layout.cmake")
     file(RENAME "${final_dir}" "${backup_dir}" RESULT park_result)
     if(NOT park_result STREQUAL "0")

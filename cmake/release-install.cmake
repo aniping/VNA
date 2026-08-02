@@ -48,10 +48,3 @@ install(
     DESTINATION .
     COMPONENT ${vna_release_component}
 )
-
-# Empty directories are not source artifacts. Create logs only inside the
-# explicit install prefix so configure and ordinary builds remain side-effect free.
-install(
-    CODE [[file(MAKE_DIRECTORY "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/logs")]]
-    COMPONENT ${vna_release_component}
-)

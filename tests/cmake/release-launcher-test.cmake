@@ -8,7 +8,6 @@ endforeach()
 
 file(MAKE_DIRECTORY
     "${TEST_TEMP_DIR}/release/bin"
-    "${TEST_TEMP_DIR}/release/logs"
     "${TEST_TEMP_DIR}/outside"
 )
 
@@ -60,10 +59,8 @@ if(NOT success_result EQUAL 0)
 endif()
 require_contains("${success_output}" "Starting Vector Network Analyzer")
 require_contains("${success_output}" "Web URL: http://127.0.0.1:8080/")
-require_contains("${success_output}" "Text log:")
-require_contains("${success_output}" "Structured log:")
-if(success_output MATCHES "\"event\"|server\.lifecycle")
-    message(FATAL_ERROR "Launcher exposed structured JSON: ${success_output}")
+if(success_output MATCHES "Text log:|Structured log:")
+    message(FATAL_ERROR "Launcher exposed removed log paths: ${success_output}")
 endif()
 
 run_launcher(7 failure_output failure_result)
@@ -71,4 +68,3 @@ if(NOT failure_result EQUAL 7)
     message(FATAL_ERROR "Launcher did not preserve exit code 7: ${failure_result}")
 endif()
 require_contains("${failure_output}" "ERROR: Vector Network Analyzer exited")
-require_contains("${failure_output}" "Text log:")

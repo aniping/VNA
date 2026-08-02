@@ -29,6 +29,7 @@ $stdout = Join-Path $artifacts 'stdout.txt'
 $stderr = Join-Path $artifacts 'stderr.txt'
 $launcher = $null
 $server = $null
+$logsPath = Join-Path $release 'logs'
 
 try {
     $start = Join-Path $release 'start.cmd'
@@ -53,55 +54,28 @@ try {
     $console = Read-Text $stdout
     if ($console -notmatch 'Starting Vector Network Analyzer' -or
         $console -notmatch 'Web URL: http://127\.0\.0\.1:8080/' -or
-        $console -notmatch 'Text log: .*logs\\vna\.log' -or
-        $console -notmatch 'Structured log: .*logs\\vna\.jsonl' -or
-        $console -match '"event"\s*:|(?m)^\s*\{') {
+        $console -match 'Text log:|Structured log:') {
         throw "Unexpected launcher output: $console"
     }
-    Assert-OrderedHumanMilestones $console
-
-    $textLogPath = Join-Path $release 'logs\vna.log'
-    $jsonLogPath = Join-Path $release 'logs\vna.jsonl'
-    Assert-OrderedHumanMilestones (Read-Text $textLogPath)
-    $records = @(Get-Content -LiteralPath $jsonLogPath | ForEach-Object {
-        $_ | ConvertFrom-Json
-    })
-    Assert-OrderedJsonMilestones $records
+    if (Test-Path -LiteralPath $logsPath) {
+        throw 'Release created the removed logs directory'
+    }
 
     $accepted = Invoke-CreateChannelCommand 'release-accepted' 0
     $rejected = Invoke-CreateChannelCommand 'release-rejected' 0
     if ($accepted.StatusCode -ne 200 -or $rejected.StatusCode -ne 409 -or
         ($rejected.Body | ConvertFrom-Json).errorCode -ne
             'state-revision-conflict') {
-        throw 'Release command responses do not match the audit fixture'
+        throw 'Release command responses do not match the HTTP fixture'
     }
-    $console = Read-Text $stdout
-    $human = Read-Text $textLogPath
-    $records = @(Get-Content -LiteralPath $jsonLogPath | ForEach-Object {
-        $_ | ConvertFrom-Json
-    })
-    Assert-WebCommandLogs $console $records
-    Assert-WebCommandLogs $human $records
-
-    # Acquisition runs continuously at about 10 Hz. Startup observability is
-    # intentionally low-cardinality, so no sink should grow per frame.
-    $consoleLength = $console.Length
-    $humanCount = @(Get-Content -LiteralPath $textLogPath).Count
-    $recordCount = $records.Count
-    Start-Sleep -Milliseconds 1200
-    if ((Read-Text $stdout).Length -ne $consoleLength -or
-        @(Get-Content -LiteralPath $textLogPath).Count -ne $humanCount -or
-        @(Get-Content -LiteralPath $jsonLogPath).Count -ne $recordCount) {
-        throw 'Startup sinks grew while only continuous frames were produced'
+    if (Test-Path -LiteralPath $logsPath) {
+        throw 'Web commands recreated the removed logs directory'
     }
 
     [pscustomobject]@{
         HealthStatus = $health.StatusCode
         ServerPid = $server[0].ProcessId
         Console = $console.Trim()
-        LifecycleRecords = $records.Count
-        TextLogPath = $textLogPath
-        StructuredLogPath = $jsonLogPath
         Artifacts = $artifacts
     } | Format-List
 } finally {
@@ -113,8 +87,7 @@ try {
     if ($launcher -and $launcher.HasExited) {
         $errorText = Read-Text $stderr
         if ($launcher.ExitCode -eq 0 -or
-            $errorText -notmatch 'ERROR: Vector Network Analyzer exited' -or
-            $errorText -notmatch 'Text log:') {
+            $errorText -notmatch 'ERROR: Vector Network Analyzer exited') {
             throw "Nonzero launcher guidance is missing: $errorText"
         }
     }
@@ -142,31 +115,17 @@ try {
     }
 
     $failureConsole = Read-Text $failureStdout
-    Assert-OrderedHumanMilestones $failureConsole
-    if ($failureConsole -notmatch
-        '\[error\] Web service failed to listen at http://127\.0\.0\.1:8080/ instrument_id=instrument-1' -or
-        $failureConsole -match '"event"\s*:|(?m)^\s*\{') {
+    if ($failureConsole -notmatch 'Starting Vector Network Analyzer' -or
+        $failureConsole -notmatch 'Web URL: http://127\.0\.0\.1:8080/' -or
+        $failureConsole -match 'Text log:|Structured log:') {
         throw "Listen failure console output is invalid: $failureConsole"
     }
     $failureError = Read-Text $failureStderr
-    if ($failureError -notmatch 'ERROR: Vector Network Analyzer exited' -or
-        $failureError -notmatch
-            ('Text log: "' + [regex]::Escape($textLogPath) + '"')) {
+    if ($failureError -notmatch 'ERROR: Vector Network Analyzer exited') {
         throw "Listen failure guidance is missing: $failureError"
     }
-    $failureRecords = @(Get-Content -LiteralPath $jsonLogPath | ForEach-Object {
-        $_ | ConvertFrom-Json
-    })
-    if (-not ($failureRecords | Where-Object {
-        $_.event -eq 'server.web_listener' -and
-        $_.status -eq 'listen_failed' -and
-        $_.instrument_id -eq 'instrument-1'
-    })) {
-        throw 'Authoritative listen_failed event is missing from JSONL'
-    }
-    if ((Read-Text $textLogPath) -notmatch
-        'Web service failed to listen at http://127\.0\.0\.1:8080/') {
-        throw 'Text log is missing the listen failure'
+    if (Test-Path -LiteralPath $logsPath) {
+        throw 'Listen failure created the removed logs directory'
     }
     Write-Host "ListenFailureExitCode=$($failureLauncher.ExitCode)"
 } finally {
