@@ -20,6 +20,7 @@ add_executable(
     ../web_api_idempotency_test.cpp
     ../web_api_operation_test.cpp
     ../web_api_scale_test.cpp
+    ../web_api_state_cache_test.cpp
     ../web_api_trace_measurement_test.cpp
     ../web_api_text_id_test.cpp
     ../web_api_test.cpp

@@ -138,6 +138,7 @@ void WebApi::Impl::installRoutes() {
     server_.Get(
         "/api/v1/state",
         [this](const httplib::Request&, httplib::Response& response) {
+            response.set_header("Cache-Control", "no-store");
             response.set_content(
                 detail::encodeState(commandBus_.snapshot()),
                 "application/json");
