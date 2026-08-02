@@ -38,6 +38,13 @@ install(
     DESTINATION web/assets
     COMPONENT ${vna_release_component}
 )
+# Runtime data is created only by the explicit portable install. Ordinary
+# builds remain intermediates and never create a release log directory.
+install(
+    DIRECTORY
+    DESTINATION logs
+    COMPONENT ${vna_release_component}
+)
 install(
     PROGRAMS "${CMAKE_SOURCE_DIR}/packaging/${vna_release_launcher}"
     DESTINATION .

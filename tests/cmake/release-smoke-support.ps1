@@ -14,7 +14,7 @@ function Wait-ForHealth([Diagnostics.Process]$process) {
 
 function Read-Text([string]$path) {
     if (Test-Path -LiteralPath $path) {
-        return Get-Content -LiteralPath $path -Raw
+        return Get-Content -LiteralPath $path -Raw -Encoding UTF8
     }
     return ''
 }

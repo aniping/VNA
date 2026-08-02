@@ -41,7 +41,7 @@ git submodule update --init --recursive
 - GoogleTest `v1.17.0`
 - cpp-httplib `v0.51.0`
 - JSON for Modern C++ `v3.12.0`
-- spdlog `v1.17.0`（仅保留第三方源码，当前不参与构建）
+- spdlog `v1.17.0`（以静态库构建，仅用于私有运行日志实现）
 
 前端包通过 `frontend/pnpm-lock.yaml` 固定精确版本，安装产物位于被忽略的
 `frontend/node_modules/`，不提交到仓库。
@@ -120,9 +120,9 @@ Linux/GCC 使用相同目录结构，以下命令同样从仓库根运行：
 `/api/v1/health`、`/api/v1/state`
 和 `/api/v1/commands` 验证当前 HTTP 切片。
 `/api/v1/state` 的成功响应使用 `Cache-Control: no-store`，客户端不得缓存状态快照。
-启动脚本输出启动状态和 Web URL；服务非零退出时额外输出一行错误提示并
-保留原始退出码，不自动打开浏览器。当前版本不包含运行日志系统，后续方案
-需重新设计和决策。
+启动脚本输出启动状态、Web URL 和 `logs/vna.log` 路径；服务非零退出时额外
+输出一行错误提示并保留原始退出码，不自动打开浏览器。运行日志是同步写入的
+中文人类文本，单文件最大 10 MiB，活动文件加四个归档；不产生 JSONL。
 `/api/v1/commands` 的失败响应保留 `status` 与 `stateRevision`，并提供稳定的
 `errorCode` 供客户端区分具体错误。
 `commandId`、`sessionId` 和 `instrumentId` 必须为 1..128 bytes，且不得包含
