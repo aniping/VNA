@@ -1,8 +1,10 @@
 # Linux/ARM64 QEMU 验证
 
 本文记录项目固定的 Linux/ARM64 补充验证环境和可重复执行脚本。该环境运行在
-x86-64 Windows 宿主上的 QEMU/binfmt 模拟层，只验证编译、链接和功能正确性，
-不能代表原生 ARM64 性能，也不扩大[平台支持矩阵](support-matrix.md)中的正式承诺。
+x86-64 Windows 宿主上的 QEMU/binfmt 模拟层，只验证 `vna-server` 的编译、链接
+与产物架构，不能代表原生 ARM64 性能，也不扩大
+[平台支持矩阵](support-matrix.md)中的正式承诺。功能真值仍由 Windows/MinGW
+测试、打包和真实进程验收提供；本地 QEMU 门禁不运行 CTest、服务或 HTTP。
 
 ## 固定环境
 
@@ -176,12 +178,9 @@ git --version
     ("cd '$remoteSource' && cmake -S . -B build-arm64 " +
      "-G 'Unix Makefiles' -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Debug " +
      '-DCMAKE_CXX_COMPILER=g++')
-  Invoke-TimedArm64Ssh 'FOCUSED_BUILD' `
+  Invoke-TimedArm64Ssh 'SERVER_BUILD' `
     ("cd '$remoteSource' && cmake --build build-arm64 " +
-     '--target vna_logging_tests vna-server -- -j2')
-  Invoke-TimedArm64Ssh 'LOGGING_TESTS' `
-    ("cd '$remoteSource' && ctest --test-dir build-arm64 " +
-     "-R 'JsonLinesLogger' --no-tests=error --output-on-failure -j1")
+     '--target vna-server -- -j2')
 
   Invoke-Arm64Ssh @"
 set -eu
@@ -196,14 +195,7 @@ assert_aarch64_elf() {
 }
 assert_aarch64_elf build-arm64/third-part/spdlog/CMakeFiles/spdlog.dir/src/spdlog.cpp.o
 assert_aarch64_elf build-arm64/apps/vna-server/vna-server
-assert_aarch64_elf build-arm64/tests/integration/vna_logging_tests
 "@
-
-  Invoke-TimedArm64Ssh 'FULL_BUILD' `
-    "cd '$remoteSource' && cmake --build build-arm64 -- -j2"
-  Invoke-TimedArm64Ssh 'FULL_CTEST' `
-    ("cd '$remoteSource' && ctest --test-dir build-arm64 " +
-     '--no-tests=error --output-on-failure -j1')
 }
 finally {
   if ($remoteSource -and $remoteSource -match $remotePattern) {
@@ -232,10 +224,10 @@ finally {
 
 ## 结果判定
 
-通过必须同时满足：环境报告 `aarch64`；根配置成功；聚焦日志测试和完整 CTest
-均无失败；spdlog 为静态库；`readelf` 对 spdlog 对象、`vna-server` 和
-`vna_logging_tests` 都报告 `ELF64`、little-endian、`AArch64`。报告分别记录
-配置、聚焦构建、聚焦测试、完整构建和完整 CTest 的 wall time。
+通过必须同时满足：环境报告 `aarch64`；根配置成功；`vna-server` 编译和链接
+成功；spdlog 为静态库；`readelf` 对 spdlog 对象和 `vna-server` 都报告
+`ELF64`、little-endian、`AArch64`。报告分别记录配置与服务端构建的 wall time。
 
 若预检缺少 Git、编译器或 `readelf`，应停止并报告缺失工具，不得把未执行目标
-描述为通过。QEMU 下的低速属于预期现象；不要用这些耗时推断真实 ARM64 设备性能。
+描述为通过。该脚本不执行 Linux 功能测试；QEMU 下的低速属于预期现象，不得用
+这些耗时推断真实 ARM64 设备性能。
