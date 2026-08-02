@@ -37,9 +37,11 @@ void SweepRuntimeImpl::stop() noexcept {
     std::optional<OperationId> activeWithSource;
     std::shared_ptr<std::stop_source> activeStop;
     {
-        std::lock_guard lock{mutex_};
+        std::unique_lock lock{mutex_};
+        changed_.wait(lock, [&] { return !finalizingPublication_; });
         queued = std::exchange(pendingOperation_, std::nullopt);
         activeStop = activeStop_;
+        cycleCancellationRequested_ = activeStop != nullptr;
         if (activeRequest_.has_value()) {
             if (activeStop) {
                 activeWithSource = activeRequest_->operationId;
@@ -49,14 +51,15 @@ void SweepRuntimeImpl::stop() noexcept {
             }
         }
     }
-    if (queued.has_value()) {
-        cancelWithoutSource(*queued);
-    }
-    if (activeWithoutSource.has_value()) {
-        cancelWithoutSource(*activeWithoutSource);
-    }
-    if (activeWithSource.has_value()) {
-        static_cast<void>(operations_.requestCancel(*activeWithSource));
+    auto invariant = cancelDetachedRequests(queued, activeWithoutSource);
+    try {
+        if (activeWithSource.has_value()) {
+            requireTransition(
+                operations_.requestCancel(*activeWithSource),
+                "requestCancel");
+        }
+    } catch (...) {
+        invariant = invariant == nullptr ? std::current_exception() : invariant;
     }
     if (activeStop) {
         activeStop->request_stop();
@@ -65,6 +68,9 @@ void SweepRuntimeImpl::stop() noexcept {
     notifyWorker();
     if (worker_.joinable()) {
         worker_.join();
+    }
+    if (invariant != nullptr) {
+        failTerminal(invariant, queued, activeWithoutSource);
     }
 }
 
@@ -102,7 +108,9 @@ void SweepRuntimeImpl::reject(SweepRuntimeFailure value) {
 
 void SweepRuntimeImpl::finish(SweepRuntimeState state) noexcept {
     std::lock_guard lock{mutex_};
-    snapshot_.state = state;
+    if (snapshot_.state == SweepRuntimeState::Running) {
+        snapshot_.state = state;
+    }
 }
 
 }  // namespace vna::application::internal

@@ -82,8 +82,9 @@ struct SweepRuntimeSnapshot {
 };
 
 // The runtime is the sole owner of one capture source and starts one worker.
-// Exchange and catalog are borrowed and must outlive it. Owner-serialized
-// lifecycle calls must not race destruction or be called from source/observer.
+// Exchange, catalog, and operation manager are borrowed and must outlive it.
+// Owner-serialized lifecycle calls must not race destruction or be called from
+// the source/observer callbacks.
 class SweepRuntime final {
 public:
     SweepRuntime(

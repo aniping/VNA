@@ -25,6 +25,7 @@ add_library(
     src/sweep_preview_validation.cpp
     src/sweep_runtime.cpp
     src/sweep_runtime_control.cpp
+    src/sweep_runtime_operation.cpp
     src/sweep_runtime_worker.cpp
     src/trace_display_frame_query.cpp
     src/trace_display_frame_repository.cpp

@@ -9,6 +9,7 @@
 #include <thread>
 
 #include <vna/application/sweep_runtime.hpp>
+#include <vna/application/sweep_preview_assembler.hpp>
 
 namespace vna::application::internal {
 
@@ -18,6 +19,17 @@ struct ActiveSweepRequest {
     OperationId operationId;
     std::uint32_t remainingSweeps;
 };
+
+struct RestartAdmission {
+    OperationId createdId;
+    std::optional<OperationId> queued{};
+    std::optional<OperationId> activeWithoutSource{};
+    std::shared_ptr<std::stop_source> activeStop{};
+    std::optional<SweepPreviewIdentity> activeIdentity{};
+    std::exception_ptr invariant{};
+};
+
+using RestartAdmissionResult = std::variant<RestartAdmission, SweepRuntimeRequestError>;
 
 // The public runtime stays a narrow lifecycle seam. Its worker details live in
 // this private type so control can grow without bloating its public facade.
@@ -33,18 +45,27 @@ public:
 
     void stop() noexcept;
     void join();
-    [[nodiscard]] SweepRuntimeRequestResult requestRestart(
-        OperationSubmission submission);
+    [[nodiscard]] SweepRuntimeRequestResult requestRestart(OperationSubmission submission);
     [[nodiscard]] SweepRuntimeSnapshot snapshot() const;
 private:
     [[nodiscard]] bool prepareCycle(std::stop_token token);
     void completeRequestedSweep(frames::FrameId frameId);
+    void failRequestedSweep(const SweepRuntimeFailure& failure);
     void cancelActiveAfterSource();
-    void cancelWithoutSource(OperationId operationId);
+    void retireAfterSource() noexcept;
+    [[nodiscard]] std::exception_ptr cancelDetachedRequests(
+        std::optional<OperationId> queued, std::optional<OperationId> active) noexcept;
+    [[nodiscard]] RestartAdmissionResult admitRestart(OperationSubmission submission);
+    void requireTransition(OperationResult result, const char* transition);
+    void settleTerminalFailure(OperationId operationId) noexcept;
+    void observePreviewRange(
+        SweepPreviewAssembler& assembler,
+        bool& previewRejected,
+        SweepPreviewIdentity identity,
+        const acquisition::RawSweepPointRange& range);
     void run(std::stop_token token) noexcept;
     [[nodiscard]] SweepDisposition capture(
-        std::uint64_t sequence,
-        std::stop_token token);
+        std::uint64_t sequence, std::stop_token token);
     [[nodiscard]] SweepDisposition complete(
         std::uint64_t sequence,
         SweepPreviewIdentity identity,
@@ -57,9 +78,13 @@ private:
     void recordCompleted();
     void reject(SweepRuntimeFailure failure);
     void rejectPreview(SweepPreviewIdentity identity) noexcept;
+    [[nodiscard]] bool claimPublication() noexcept;
     void invalidate(SweepPreviewIdentity identity) noexcept;
     void finish(SweepRuntimeState state) noexcept;
-    void failTerminal(std::exception_ptr failure) noexcept;
+    void failTerminal(
+        std::exception_ptr failure,
+        std::optional<OperationId> detachedFirst = std::nullopt,
+        std::optional<OperationId> detachedSecond = std::nullopt) noexcept;
 
     const SweepRuntimePlan plan_;
     const acquisition::RawSweepCaptureSource source_;
@@ -73,6 +98,9 @@ private:
     std::optional<ActiveSweepRequest> activeRequest_;
     std::shared_ptr<std::stop_source> activeStop_;
     std::optional<SweepPreviewIdentity> activeIdentity_;
+    bool finalizingPublication_{};
+    bool cycleCancellationRequested_{};
+    bool admissionClosed_{};
     std::jthread worker_;
 };
 
