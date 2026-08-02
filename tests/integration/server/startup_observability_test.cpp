@@ -26,18 +26,20 @@ TEST(StartupObservabilityTest, WritesStableStartupMilestonesInOrder) {
 
     ASSERT_TRUE(writeStartupMilestones(logger, "instrument-1"));
 
-    const std::vector<std::pair<std::string, std::string>> expected{
-        {"server.lifecycle", "starting"},
-        {"server.factory_preset", "loaded"},
-        {"server.continuous_acquisition", "running"},
-        {"server.display_publication", "running"},
-        {"server.web_listener", "starting"},
+    struct Expected { const char* event; const char* status; const char* message; };
+    const std::vector<Expected> expected{
+        {"server.lifecycle", "starting", "Starting Vector Network Analyzer server"},
+        {"server.factory_preset", "loaded", "Factory preset loaded"},
+        {"server.continuous_acquisition", "running", "Continuous acquisition started"},
+        {"server.display_publication", "running", "Live display publication started"},
+        {"server.web_listener", "starting", "Starting Web service"},
     };
     ASSERT_EQ(logger.events.size(), expected.size());
     for (std::size_t index = 0; index < expected.size(); ++index) {
         EXPECT_EQ(logger.events[index].level, observability::LogLevel::Info);
-        EXPECT_EQ(logger.events[index].name, expected[index].first);
-        EXPECT_EQ(logger.events[index].status, expected[index].second);
+        EXPECT_EQ(logger.events[index].name, expected[index].event);
+        EXPECT_EQ(logger.events[index].status, expected[index].status);
+        EXPECT_EQ(logger.events[index].message, expected[index].message);
         EXPECT_EQ(logger.events[index].instrumentId, "instrument-1");
     }
 }
@@ -52,9 +54,11 @@ TEST(StartupObservabilityTest, DistinguishesListenFailureFromStopped) {
     EXPECT_EQ(logger.events[0].level, observability::LogLevel::Error);
     EXPECT_EQ(logger.events[0].name, "server.web_listener");
     EXPECT_EQ(logger.events[0].status, "listen_failed");
+    EXPECT_EQ(logger.events[0].message, "Web service failed to listen");
     EXPECT_EQ(logger.events[1].level, observability::LogLevel::Info);
     EXPECT_EQ(logger.events[1].name, "server.lifecycle");
     EXPECT_EQ(logger.events[1].status, "stopped");
+    EXPECT_EQ(logger.events[1].message, "Vector Network Analyzer server stopped");
 }
 
 }  // namespace

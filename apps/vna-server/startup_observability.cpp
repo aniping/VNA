@@ -10,6 +10,7 @@ namespace {
 struct Milestone {
     std::string_view event;
     std::string_view status;
+    std::string_view message;
 };
 
 bool writeMilestone(
@@ -20,6 +21,7 @@ bool writeMilestone(
     return logger.write({
         .level = level,
         .name = std::string{milestone.event},
+        .message = std::string{milestone.message},
         .commandId = {},
         .sessionId = {},
         .instrumentId = std::string{instrumentId},
@@ -29,14 +31,19 @@ bool writeMilestone(
 }
 
 constexpr std::array startupMilestones{
-    Milestone{"server.lifecycle", "starting"},
-    Milestone{"server.factory_preset", "loaded"},
-    Milestone{"server.continuous_acquisition", "running"},
-    Milestone{"server.display_publication", "running"},
-    Milestone{"server.web_listener", "starting"},
+    Milestone{"server.lifecycle", "starting",
+              "Starting Vector Network Analyzer server"},
+    Milestone{"server.factory_preset", "loaded", "Factory preset loaded"},
+    Milestone{"server.continuous_acquisition", "running",
+              "Continuous acquisition started"},
+    Milestone{"server.display_publication", "running",
+              "Live display publication started"},
+    Milestone{"server.web_listener", "starting", "Starting Web service"},
 };
-constexpr Milestone listenFailed{"server.web_listener", "listen_failed"};
-constexpr Milestone stopped{"server.lifecycle", "stopped"};
+constexpr Milestone listenFailed{
+    "server.web_listener", "listen_failed", "Web service failed to listen"};
+constexpr Milestone stopped{
+    "server.lifecycle", "stopped", "Vector Network Analyzer server stopped"};
 
 }  // namespace
 

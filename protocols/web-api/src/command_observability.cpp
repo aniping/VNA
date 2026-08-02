@@ -6,38 +6,45 @@
 namespace vna::web_api::detail {
 namespace {
 
-struct CommandEventName {
-    const char* operator()(const application::CreateChannelCommand&) const {
-        return "web.command.create_channel";
+struct CommandDescription {
+    const char* event;
+    const char* action;
+};
+
+struct DescribeCommand {
+    CommandDescription operator()(const application::CreateChannelCommand&) const {
+        return {"web.command.create_channel", "Create channel"};
     }
-    const char* operator()(const application::UpdateChannelSweepCommand&) const {
-        return "web.command.update_channel_sweep";
+    CommandDescription operator()(const application::UpdateChannelSweepCommand&) const {
+        return {"web.command.update_channel_sweep", "Update channel sweep"};
     }
-    const char* operator()(const application::CreateMeasurementCommand&) const {
-        return "web.command.create_measurement";
+    CommandDescription operator()(const application::CreateMeasurementCommand&) const {
+        return {"web.command.create_measurement", "Create measurement"};
     }
-    const char* operator()(const application::CreateWindowCommand&) const {
-        return "web.command.create_window";
+    CommandDescription operator()(const application::CreateWindowCommand&) const {
+        return {"web.command.create_window", "Create display window"};
     }
-    const char* operator()(const application::CreateTraceCommand&) const {
-        return "web.command.create_trace";
+    CommandDescription operator()(const application::CreateTraceCommand&) const {
+        return {"web.command.create_trace", "Create trace"};
     }
-    const char* operator()(const application::UpdateTraceFormatCommand&) const {
-        return "web.command.update_trace_format";
+    CommandDescription operator()(const application::UpdateTraceFormatCommand&) const {
+        return {"web.command.update_trace_format", "Update trace format"};
     }
-    const char* operator()(
+    CommandDescription operator()(
         const application::SetTraceMeasurementTypeCommand&) const {
-        return "web.command.set_trace_measurement_type";
+        return {"web.command.set_trace_measurement_type",
+                "Set trace measurement type"};
     }
-    const char* operator()(
+    CommandDescription operator()(
         const application::UpdateTraceScalePerDivisionCommand&) const {
-        return "web.command.update_trace_scale_per_division";
+        return {"web.command.update_trace_scale_per_division",
+                "Update trace scale per division"};
     }
-    const char* operator()(const application::RemoveTraceCommand&) const {
-        return "web.command.remove_trace";
+    CommandDescription operator()(const application::RemoveTraceCommand&) const {
+        return {"web.command.remove_trace", "Remove trace"};
     }
-    const char* operator()(const application::StartSingleSweepCommand&) const {
-        return "web.command.start_single_sweep";
+    CommandDescription operator()(const application::StartSingleSweepCommand&) const {
+        return {"web.command.start_single_sweep", "Start single sweep"};
     }
 };
 
@@ -51,10 +58,13 @@ bool recordWebCommand(
     const bool succeeded =
         std::holds_alternative<application::CommandSuccess>(result.outcome);
     try {
+        const auto description = std::visit(DescribeCommand{}, command.payload);
         const auto written = logger->write({
             .level = succeeded ? observability::LogLevel::Info
                                : observability::LogLevel::Warning,
-            .name = std::visit(CommandEventName{}, command.payload),
+            .name = description.event,
+            .message = std::string{description.action} +
+                (succeeded ? " succeeded" : " rejected"),
             .commandId = command.commandId.value(),
             .sessionId = command.sessionId.value(),
             .instrumentId = command.instrumentId.value(),

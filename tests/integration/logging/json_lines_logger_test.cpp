@@ -73,6 +73,7 @@ observability::LogEvent completeEvent(std::string name) {
     return {
         .level = observability::LogLevel::Info,
         .name = std::move(name),
+        .message = "Create channel succeeded",
         .commandId = "command-1",
         .sessionId = "session-1",
         .instrumentId = "instrument-1",
@@ -103,6 +104,7 @@ TEST(JsonLinesLoggerTest, WritesStructuredEventsToConsoleAndFile) {
         const auto record = nlohmann::json::parse(line);
         EXPECT_EQ(record.at("level"), "info");
         EXPECT_EQ(record.at("event"), name);
+        EXPECT_EQ(record.at("message"), "Create channel succeeded");
         EXPECT_EQ(record.at("command_id"), "command-1");
         EXPECT_EQ(record.at("session_id"), "session-1");
         EXPECT_EQ(record.at("instrument_id"), "instrument-1");
@@ -129,7 +131,7 @@ TEST(JsonLinesLoggerTest, WritesHumanConsoleAndStructuredFileFromSameEvent) {
         readFile(directory.path() / "vna.jsonl"));
     EXPECT_EQ(console.str(), human);
     const std::regex humanLine{
-        R"(^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2} \[info\] command\.completed status=succeeded command_id=command-1 session_id=session-1 instrument_id=instrument-1 state_revision=42\n$)"};
+        R"(^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2} \[info\] Create channel succeeded command_id=command-1 session_id=session-1 instrument_id=instrument-1 state_revision=42\n$)"};
     EXPECT_TRUE(std::regex_match(human, humanLine));
     EXPECT_EQ(record.at("event"), "command.completed");
     EXPECT_EQ(parseTimestamp(std::string_view{human}.substr(0, 29)),
@@ -138,6 +140,21 @@ TEST(JsonLinesLoggerTest, WritesHumanConsoleAndStructuredFileFromSameEvent) {
         const auto parsed = nlohmann::json::parse(human);
         static_cast<void>(parsed);
     }, nlohmann::json::parse_error);
+}
+
+TEST(JsonLinesLoggerTest, RejectsUnsafeHumanMessage) {
+    TemporaryDirectory directory;
+    auto options = JsonLinesLoggerOptions{.logDirectory = directory.path()};
+    options.console = nullptr;
+    auto logger = makeJsonLinesLogger(options);
+
+    for (const auto* message : {"", "Forged line\n[error] accepted"}) {
+        auto event = completeEvent("unsafe.message");
+        event.message = message;
+        EXPECT_FALSE(logger->write(std::move(event)));
+    }
+    EXPECT_TRUE(readFile(directory.path() / "vna.log").empty());
+    EXPECT_TRUE(readFile(directory.path() / "vna.jsonl").empty());
 }
 
 TEST(JsonLinesLoggerTest, WritesOnlyToFileWhenConsoleIsDisabled) {

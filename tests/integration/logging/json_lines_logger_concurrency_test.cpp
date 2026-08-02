@@ -67,6 +67,7 @@ observability::LogEvent concurrentEvent(
     observability::LogEvent event{};
     event.level = observability::LogLevel::Info;
     event.name = kEventName;
+    event.message = "Concurrent logging event submitted";
     event.commandId = std::move(id);
     event.sessionId = "concurrency-session";
     event.instrumentId = "instrument-1";

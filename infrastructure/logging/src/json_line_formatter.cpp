@@ -60,6 +60,7 @@ std::string formatJsonRecord(
         {"timestamp", formatTimestamp(timestamp)},
         {"level", levelName(event.level)},
         {"event", event.name},
+        {"message", event.message},
     };
     if (event.commandId) record["command_id"] = *event.commandId;
     if (event.sessionId) record["session_id"] = *event.sessionId;

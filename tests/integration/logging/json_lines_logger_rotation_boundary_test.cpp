@@ -34,6 +34,7 @@ observability::LogEvent event(std::string name) {
     return {
         .level = observability::LogLevel::Info,
         .name = std::move(name),
+        .message = std::string(120, 'm'),
     };
 }
 
@@ -96,7 +97,7 @@ TEST_F(JsonLinesLoggerRotationBoundaryTest,
         const auto state = root_ / ("retain-" + std::to_string(maxFiles));
         auto logger = makeJsonLinesLogger(optionsFor(state, 300, maxFiles));
         for (const char value : {'a', 'b', 'c', 'd', 'e'}) {
-            ASSERT_TRUE(logger->write(event(std::string(180, value))));
+            ASSERT_TRUE(logger->write(event(std::string(80, value))));
         }
         ASSERT_TRUE(logger->flush());
         EXPECT_EQ(fileCount(state), maxFiles * 2U);
@@ -122,7 +123,7 @@ TEST_F(JsonLinesLoggerRotationBoundaryTest,
     const auto state = root_ / "retention-restart";
     auto logger = makeJsonLinesLogger(optionsFor(state, 300, 4));
     for (const char value : {'a', 'b', 'c', 'd', 'e'}) {
-        ASSERT_TRUE(logger->write(event(std::string(180, value))));
+        ASSERT_TRUE(logger->write(event(std::string(80, value))));
     }
     ASSERT_TRUE(logger->flush());
     logger.reset();

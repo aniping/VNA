@@ -72,11 +72,11 @@ function Stop-ExactReleaseServer {
 
 function Assert-OrderedHumanMilestones([string]$text) {
     $expected = @(
-        '[info] server.lifecycle status=starting instrument_id=instrument-1',
-        '[info] server.factory_preset status=loaded instrument_id=instrument-1',
-        '[info] server.continuous_acquisition status=running instrument_id=instrument-1',
-        '[info] server.display_publication status=running instrument_id=instrument-1',
-        '[info] server.web_listener status=starting instrument_id=instrument-1'
+        '[info] Starting Vector Network Analyzer server instrument_id=instrument-1',
+        '[info] Factory preset loaded instrument_id=instrument-1',
+        '[info] Continuous acquisition started instrument_id=instrument-1',
+        '[info] Live display publication started instrument_id=instrument-1',
+        '[info] Starting Web service instrument_id=instrument-1'
     )
     $previous = -1
     foreach ($milestone in $expected) {
@@ -206,7 +206,7 @@ try {
     $failureConsole = Read-Text $failureStdout
     Assert-OrderedHumanMilestones $failureConsole
     if ($failureConsole -notmatch
-        '\[error\] server\.web_listener status=listen_failed instrument_id=instrument-1' -or
+        '\[error\] Web service failed to listen instrument_id=instrument-1' -or
         $failureConsole -match '"event"\s*:|(?m)^\s*\{') {
         throw "Listen failure console output is invalid: $failureConsole"
     }

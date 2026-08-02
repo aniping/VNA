@@ -78,9 +78,9 @@ public:
             message.payload.begin(), message.payload.end());
         auto output = localTimestamp(message.time) + " [" +
             record.at("level").get<std::string>() + "] " +
-            record.at("event").get<std::string>();
-        for (const auto key : {"status", "command_id", "session_id",
-                               "instrument_id", "state_revision"}) {
+            record.at("message").get<std::string>();
+        for (const auto key : {"command_id", "session_id", "instrument_id",
+                               "state_revision"}) {
             appendContext(output, record, key);
         }
         output += '\n';

@@ -103,7 +103,8 @@ TEST_F(JsonLinesLoggerRotationTest, RotatesBeforeWritingFullFile) {
     auto logger = makeJsonLinesLogger(options);
     for (const char value : {'a', 'b'}) {
         ASSERT_TRUE(logger->write({.level = observability::LogLevel::Info,
-                                   .name = std::string(180, value)}));
+                                   .name = std::string(80, value),
+                                   .message = std::string(120, 'm')}));
     }
     ASSERT_TRUE(logger->flush());
 

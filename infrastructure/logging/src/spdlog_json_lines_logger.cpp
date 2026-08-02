@@ -17,6 +17,7 @@
 #include <ostream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -106,6 +107,14 @@ spdlog::level::level_enum toSpdlogLevel(
     return spdlog::level::off;
 }
 
+bool isSafeHumanMessage(std::string_view message) noexcept {
+    if (message.empty()) return false;
+    for (const unsigned char value : message) {
+        if (value <= 0x1fU || value == 0x7fU) return false;
+    }
+    return true;
+}
+
 class SpdlogJsonLinesLogger final : public observability::Logger {
 public:
     SpdlogJsonLinesLogger(
@@ -123,6 +132,7 @@ public:
     bool write(observability::LogEvent event) noexcept override {
         if (failed_.load(std::memory_order_acquire)) return false;
         try {
+            if (!isSafeHumanMessage(event.message)) return false;
             const auto timestamp = std::chrono::system_clock::now();
             const auto record = formatJsonRecord(event, timestamp);
             if (record.size() > maxRecordBytes_) return false;
