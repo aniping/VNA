@@ -41,6 +41,7 @@ git submodule update --init --recursive
 - GoogleTest `v1.17.0`
 - cpp-httplib `v0.51.0`
 - JSON for Modern C++ `v3.12.0`
+- spdlog `v1.17.0`（compiled static）
 
 前端包通过 `frontend/pnpm-lock.yaml` 固定精确版本，安装产物位于被忽略的
 `frontend/node_modules/`，不提交到仓库。
