@@ -2,6 +2,7 @@ import type { MultiFormatTraceDisplayFrame } from '../api/traceDisplayFrameSet.t
 import type { MeasurementSnapshot, TraceSnapshot } from '../api/vnaApi.ts'
 import type { CartesianAxisRange, CartesianSamples } from '../plot/cartesianProjection.ts'
 import type { SmithComplexPoint } from '../plot/smithProjection.ts'
+import { phaseAxisRange } from './cartesianAxisModel.ts'
 
 interface CartesianCurveModel {
   readonly kind: 'cartesian'
@@ -19,8 +20,6 @@ interface SmithCurveModel {
 }
 
 export type DiagramCurveModel = CartesianCurveModel | SmithCurveModel
-
-export const phaseAxisRange = { minimum: -180, maximum: 180 } as const
 
 function identityMatches(
   trace: TraceSnapshot,

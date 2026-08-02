@@ -32,18 +32,21 @@ test('DiagramPane delegates all three backend display formats to projection comp
   assert.match(paneSource, /<CartesianCurve[\s\S]*?curve\?\.kind === 'cartesian'/)
   assert.match(paneSource, /:unit="curve\.unit"/)
   assert.match(paneSource, /<SmithCurve[\s\S]*?curve\?\.kind === 'smith'/)
-  assert.match(paneSource, /phaseAxisRange\.maximum/)
-  assert.match(paneSource, /phaseAxisRange\.minimum/)
+  assert.match(paneSource, /<CartesianAxisOverlay\s+v-if="axis"\s+:axis="axis"/)
   assert.doesNotMatch(paneSource, /log10|atan2|impedance|admittance/i)
 })
 
 test('Cartesian and Smith grids remain mounted independently of measurement frames', () => {
   assert.match(openingTag('plot-area'), /:class="kind"/)
-  assert.match(styles, /\.plot-area\.cartesian\s*\{[^}]*background-image:/)
+  const grid = styles.match(/\.plot-area\.cartesian\s*\{([^}]*)\}/)?.[1] ?? ''
+  assert.equal(grid.match(/linear-gradient/g)?.length, 2)
+  assert.match(grid, /background-size:\s*100% 10%, 10% 100%/)
+  assert.doesNotMatch(grid, /5%/)
   assert.match(template, /<SmithGrid\s+v-if="kind === 'smith'"/)
 })
 
-test('trace information reports the ZNB Smith scale and reference summary', () => {
+test('trace information reports the ZNB scale and reference summaries', () => {
+  assert.match(paneSource, /formatCartesianScaleSummary\(axis\.value\)/)
   assert.match(paneSource, /200 mU\/ Ref 1 U/)
   assert.match(template, /class="trace-scale"/)
 })

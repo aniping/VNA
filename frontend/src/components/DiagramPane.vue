@@ -6,10 +6,15 @@ import type {
   TraceSnapshot,
 } from '../api/vnaApi'
 import type { MultiFormatTraceDisplayFrame } from '../api/traceDisplayFrameSet'
+import CartesianAxisOverlay from './CartesianAxisOverlay.vue'
 import CartesianCurve from './CartesianCurve.vue'
 import SmithCurve from './SmithCurve.vue'
 import SmithGrid from './SmithGrid.vue'
-import { phaseAxisRange, selectDiagramCurve } from './diagramCurveModel'
+import {
+  formatCartesianScaleSummary,
+  selectCartesianAxis,
+} from './cartesianAxisModel'
+import { selectDiagramCurve } from './diagramCurveModel'
 import { noMeasurementDataMessage } from './diagramModel'
 import { traceColorForMeasurement } from './traceVisual'
 
@@ -29,23 +34,12 @@ const traceLabel = computed(() => {
   if (!props.trace) return 'No active trace'
   return formatName(props.trace.format)
 })
+const axis = computed(() => selectCartesianAxis(props.trace))
 const scaleSummary = computed(() => {
-  return props.trace?.format === 'smith' ? '200 mU/ Ref 1 U' : ''
+  if (props.trace?.format === 'smith') return '200 mU/ Ref 1 U'
+  return axis.value ? formatCartesianScaleSummary(axis.value) : ''
 })
-const scaleTop = computed(() => scaleBoundary('top'))
-const scaleBottom = computed(() => scaleBoundary('bottom'))
 const curve = computed(() => selectDiagramCurve(props.trace, props.measurement, props.frame))
-
-function scaleBoundary(edge: 'top' | 'bottom'): string {
-  if (props.trace?.format === 'phase') {
-    const value = edge === 'top' ? phaseAxisRange.maximum : phaseAxisRange.minimum
-    return `${value} degree`
-  }
-  const scale = props.trace?.scale
-  if (!scale) return '—'
-  const value = edge === 'top' ? scale.maximum : scale.minimum
-  return `${value} ${scale.unit}`
-}
 
 function formatName(format: string): string {
   const names: Record<string, string> = {
@@ -98,12 +92,7 @@ function selectTrace(): void {
 
     <div class="plot-area" :class="kind">
       <SmithGrid v-if="kind === 'smith'" />
-      <span v-if="kind === 'cartesian'" class="scale-top" :title="trace?.format === 'logMagnitude' && !trace.scale ? 'Scale unavailable' : undefined">
-        {{ scaleTop }}
-      </span>
-      <span v-if="kind === 'cartesian'" class="scale-bottom" :title="trace?.format === 'logMagnitude' && !trace.scale ? 'Scale unavailable' : undefined">
-        {{ scaleBottom }}
-      </span>
+      <CartesianAxisOverlay v-if="axis" :axis="axis" />
       <CartesianCurve
         v-if="curve?.kind === 'cartesian'"
         :trace-id="curve.traceId"
@@ -145,10 +134,7 @@ function selectTrace(): void {
 .diagram-identifier.active { background: #168fda; }
 .diagram-identifier b { font-weight: 700; }
 .plot-area { position: relative; overflow: hidden; background-color: #020404; color: #8ca0a8; }
-.plot-area.cartesian { background-image: linear-gradient(#40515a 1px, transparent 1px), linear-gradient(90deg, #40515a 1px, transparent 1px), linear-gradient(#26343a 1px, transparent 1px), linear-gradient(90deg, #26343a 1px, transparent 1px); background-size: 100% 20%, 12.5% 100%, 100% 10%, 6.25% 100%; }
-.scale-top, .scale-bottom { position: absolute; left: 4px; z-index: 2; font-size: 10px; }
-.scale-top { top: 4px; }
-.scale-bottom { bottom: 4px; }
+.plot-area.cartesian { background-image: linear-gradient(#40515a 1px, transparent 1px), linear-gradient(90deg, #40515a 1px, transparent 1px); background-size: 100% 10%, 10% 100%; }
 .plot-empty { position: absolute; inset: 0; display: grid; place-items: center; color: #536269; font-size: 12px; }
 .channel-row { display: flex; align-items: center; justify-content: space-between; gap: 5px; padding: 0 4px; overflow: hidden; color: #d7e0e3; background: #202c32; font-size: 10px; white-space: nowrap; }
 .channel-id { padding: 3px 4px; color: #fff; background: #2c3c43; font-weight: 700; }

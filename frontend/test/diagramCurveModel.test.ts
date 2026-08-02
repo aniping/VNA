@@ -63,7 +63,7 @@ test('uses the frozen Phase degree viewport and preserves backend samples', () =
   assert.deepEqual(curve, {
     kind: 'cartesian', traceId: 31, label: 'Phase', unit: 'degree',
     samples: { frequenciesHz: common.frequenciesHz, values: [-180, 0, 179.5] },
-    range: { minimum: -180, maximum: 180 },
+    range: { minimum: -225, maximum: 225 },
   })
 })
 
