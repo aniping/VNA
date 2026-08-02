@@ -18,20 +18,3 @@ vna_prepare_patched_cpp_httplib(httplib)
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 set(JSON_Install OFF CACHE BOOL "" FORCE)
 add_subdirectory(nlohmann-json EXCLUDE_FROM_ALL)
-
-# Keep the logging dependency compiled and private; examples, tests, benchmarks,
-# and install rules belong to upstream and are not part of this product build.
-set(SPDLOG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
-set(SPDLOG_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
-set(SPDLOG_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-set(SPDLOG_BUILD_BENCH OFF CACHE BOOL "" FORCE)
-set(SPDLOG_INSTALL OFF CACHE BOOL "" FORCE)
-if(WIN32)
-    set(SPDLOG_WCHAR_FILENAMES ON CACHE BOOL "" FORCE)
-endif()
-add_subdirectory(spdlog EXCLUDE_FROM_ALL)
-
-get_target_property(VNA_SPDLOG_TYPE spdlog TYPE)
-if(NOT VNA_SPDLOG_TYPE STREQUAL "STATIC_LIBRARY")
-    message(FATAL_ERROR "VectorNetworkAnalyzer requires compiled static spdlog")
-endif()
