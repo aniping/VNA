@@ -209,7 +209,7 @@ HAL 面向完整测量能力，而不是寄存器、SPI 或 ADC 的薄包装。�
 
 ### 5.6 横切基础设施
 
-持久化、追踪、安全、配置和插件注册为横切能力。它们通过明确接口服务于各层，不反向拥有领域规则。当前日志实现已撤销，恢复前必须另立架构决策。
+持久化、追踪、安全、配置和插件注册为横切能力。它们通过明确接口服务于各层，不反向拥有领域规则。当前运行日志遵循 ADR-0010：spdlog 仅作为私有实现依赖，不建立公共 Logger 或领域依赖。
 
 ## 6. 模块依赖规则
 
@@ -680,6 +680,7 @@ vna-platform/
 - [ADR-0007：在 Scale 和 Marker 前拆分显示模型](adr/0007-separate-display-model.md)
 - [ADR-0008：以 Operation 完成栅栏实现 SCPI 同步](adr/0008-operation-fences-for-scpi-synchronization.md)
 - [ADR-0009：一次原始帧驱动多端口连续显示](adr/0009-multiport-continuous-display.md)
+- [ADR-0010：采用单一同步文本运行日志](adr/0010-single-text-runtime-log.md)
 
 第一阶段的具体范围和验收标准见 [第一阶段实施范围](phase-1.md)。
 其中的功能排除项是第一阶段历史范围；后续阶段以新增 ADR 记录扩展契约。
