@@ -111,8 +111,8 @@ TEST_F(TraceScaleCommandTest, UpdatesScaleAndIncrementsRevisionOnce) {
     ASSERT_EQ(snapshot.display.traces.size(), 1U);
     const auto& scale = snapshot.display.traces[0].scale.value();
     EXPECT_DOUBLE_EQ(scale.scalePerDivision, 5.0);
-    EXPECT_DOUBLE_EQ(scale.minimum, -40.0);
-    EXPECT_DOUBLE_EQ(scale.maximum, 10.0);
+    EXPECT_DOUBLE_EQ(scale.minimum, -45.0);
+    EXPECT_DOUBLE_EQ(scale.maximum, 5.0);
 }
 
 TEST_F(TraceScaleCommandTest, RejectsMissingTraceWithoutChangingState) {

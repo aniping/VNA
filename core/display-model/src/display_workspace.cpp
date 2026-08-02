@@ -16,7 +16,7 @@ DisplayWorkspace::defaultScaleFor(TraceFormat format) {
     return CartesianScaleState{
         .scalePerDivision = 10.0,
         .referenceValue = 0.0,
-        .referencePosition = 8.0,
+        .referencePosition = 9.0,
     };
 }
 

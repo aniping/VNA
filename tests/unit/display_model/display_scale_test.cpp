@@ -22,9 +22,9 @@ TEST(DisplayScaleTest, CreatesLogMagnitudeWithOfficialDefaultScale) {
     const auto& scale = snapshot.traces[0].scale.value();
     EXPECT_DOUBLE_EQ(scale.scalePerDivision, 10.0);
     EXPECT_DOUBLE_EQ(scale.referenceValue, 0.0);
-    EXPECT_DOUBLE_EQ(scale.referencePosition, 8.0);
-    EXPECT_DOUBLE_EQ(scale.minimum, -80.0);
-    EXPECT_DOUBLE_EQ(scale.maximum, 20.0);
+    EXPECT_DOUBLE_EQ(scale.referencePosition, 9.0);
+    EXPECT_DOUBLE_EQ(scale.minimum, -90.0);
+    EXPECT_DOUBLE_EQ(scale.maximum, 10.0);
     EXPECT_EQ(scale.unit, ScaleUnit::Decibel);
 }
 
@@ -46,9 +46,9 @@ TEST(DisplayScaleTest, UpdatesScalePerDivisionAndDerivedRange) {
     const auto& scale = snapshot.traces[0].scale.value();
     EXPECT_DOUBLE_EQ(scale.scalePerDivision, 5.0);
     EXPECT_DOUBLE_EQ(scale.referenceValue, 0.0);
-    EXPECT_DOUBLE_EQ(scale.referencePosition, 8.0);
-    EXPECT_DOUBLE_EQ(scale.minimum, -40.0);
-    EXPECT_DOUBLE_EQ(scale.maximum, 10.0);
+    EXPECT_DOUBLE_EQ(scale.referencePosition, 9.0);
+    EXPECT_DOUBLE_EQ(scale.minimum, -45.0);
+    EXPECT_DOUBLE_EQ(scale.maximum, 5.0);
     EXPECT_EQ(scale.unit, ScaleUnit::Decibel);
 }
 
@@ -76,8 +76,8 @@ TEST_P(
     const auto snapshot = workspace.snapshot();
     const auto& scale = snapshot.traces[0].scale.value();
     EXPECT_DOUBLE_EQ(scale.scalePerDivision, 10.0);
-    EXPECT_DOUBLE_EQ(scale.minimum, -80.0);
-    EXPECT_DOUBLE_EQ(scale.maximum, 20.0);
+    EXPECT_DOUBLE_EQ(scale.minimum, -90.0);
+    EXPECT_DOUBLE_EQ(scale.maximum, 10.0);
 }
 
 INSTANTIATE_TEST_SUITE_P(
@@ -91,7 +91,7 @@ INSTANTIATE_TEST_SUITE_P(
         std::numeric_limits<double>::quiet_NaN(),
         std::numeric_limits<double>::max()));
 
-TEST(DisplayScaleTest, AppliesScalePolicyAcrossFormatTransitions) {
+TEST(DisplayScaleTest, KeepsScaleWhenFormatDoesNotChange) {
     DisplayWorkspace workspace;
     const auto windowId = workspace.createWindow();
     const auto trace = workspace.createTrace(
@@ -107,34 +107,36 @@ TEST(DisplayScaleTest, AppliesScalePolicyAcrossFormatTransitions) {
     EXPECT_DOUBLE_EQ(
         workspace.snapshot().traces[0].scale->scalePerDivision,
         5.0);
+}
+
+TEST(DisplayScaleTest, RestoresOfficialDefaultAcrossFormatTransitions) {
+    DisplayWorkspace workspace;
+    const auto windowId = workspace.createWindow();
+    const auto trace = workspace.createTrace(
+        windowId,
+        domain::MeasurementId{7},
+        TraceFormat::LogMagnitude);
+    ASSERT_TRUE(trace.hasValue());
+    ASSERT_TRUE(
+        workspace.updateTraceScalePerDivision(trace.value(), 5.0).hasValue());
 
     ASSERT_TRUE(workspace.updateTraceFormat(
         trace.value(), TraceFormat::Phase).hasValue());
     EXPECT_FALSE(workspace.snapshot().traces[0].scale.has_value());
-    const auto phaseUpdate =
-        workspace.updateTraceScalePerDivision(trace.value(), 2.0);
-    ASSERT_FALSE(phaseUpdate.hasValue());
-    EXPECT_EQ(
-        phaseUpdate.error().code,
-        DisplayErrorCode::ScaleNotSupportedForFormat);
 
     ASSERT_TRUE(workspace.updateTraceFormat(
         trace.value(), TraceFormat::Smith).hasValue());
     EXPECT_FALSE(workspace.snapshot().traces[0].scale.has_value());
-    const auto smithUpdate =
-        workspace.updateTraceScalePerDivision(trace.value(), 2.0);
-    ASSERT_FALSE(smithUpdate.hasValue());
-    EXPECT_EQ(
-        smithUpdate.error().code,
-        DisplayErrorCode::ScaleNotSupportedForFormat);
 
     ASSERT_TRUE(workspace.updateTraceFormat(
         trace.value(), TraceFormat::LogMagnitude).hasValue());
     const auto snapshot = workspace.snapshot();
     const auto& restored = snapshot.traces[0].scale.value();
     EXPECT_DOUBLE_EQ(restored.scalePerDivision, 10.0);
-    EXPECT_DOUBLE_EQ(restored.minimum, -80.0);
-    EXPECT_DOUBLE_EQ(restored.maximum, 20.0);
+    EXPECT_DOUBLE_EQ(restored.referenceValue, 0.0);
+    EXPECT_DOUBLE_EQ(restored.referencePosition, 9.0);
+    EXPECT_DOUBLE_EQ(restored.minimum, -90.0);
+    EXPECT_DOUBLE_EQ(restored.maximum, 10.0);
 }
 
 class UnsupportedScaleFormatTest

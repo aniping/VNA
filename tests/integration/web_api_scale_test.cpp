@@ -62,7 +62,7 @@ void expectScale(
     double maximum) {
     EXPECT_EQ(scale.at("scalePerDivision"), scalePerDivision);
     EXPECT_EQ(scale.at("referenceValue"), 0.0);
-    EXPECT_EQ(scale.at("referencePosition"), 8.0);
+    EXPECT_EQ(scale.at("referencePosition"), 9.0);
     EXPECT_EQ(scale.at("minimum"), minimum);
     EXPECT_EQ(scale.at("maximum"), maximum);
     EXPECT_EQ(scale.at("unit"), "dB");
@@ -174,8 +174,8 @@ TEST_F(WebApiScaleTest, UpdatesScaleAndReturnsTargetIsolatedState) {
     const auto& traces = instrument.at("traces");
     EXPECT_EQ(traces.at(0).at("id"), targetTraceId);
     EXPECT_EQ(traces.at(1).at("id"), otherTraceId);
-    expectScale(traces.at(0).at("scale"), 5.0, -40.0, 10.0);
-    expectScale(traces.at(1).at("scale"), 10.0, -80.0, 20.0);
+    expectScale(traces.at(0).at("scale"), 5.0, -45.0, 5.0);
+    expectScale(traces.at(1).at("scale"), 10.0, -90.0, 10.0);
 }
 
 TEST_F(WebApiScaleTest, MapsMissingTraceToValidationError) {
@@ -202,7 +202,7 @@ TEST_F(WebApiScaleTest, RejectsNonPositiveScalePerDivision) {
     const auto state = getState();
     EXPECT_EQ(state.at("stateRevision"), revision_);
     expectScale(state.at("instrument").at("traces").at(0).at("scale"),
-                10.0, -80.0, 20.0);
+                10.0, -90.0, 10.0);
 }
 
 TEST_F(WebApiScaleTest, RejectsPhaseAndSmithAndSerializesNullScale) {
