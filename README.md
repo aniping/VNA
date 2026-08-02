@@ -124,6 +124,8 @@ Linux/GCC 使用相同目录结构，以下命令同样从仓库根运行：
 输出一行错误提示并保留原始退出码，不自动打开浏览器。运行日志是同步写入的
 中文人类文本，单文件最大 10 MiB，活动文件加四个归档；不产生 JSONL。日志只记录
 成功解码后的写命令业务结果，不记录 GET、静态资源、WebSocket 或帧推送请求。
+连续采集仅在每个配置代次首个完整帧集发布后记录一条 DEBUG，并在采集终止
+失败时记录一条 ERROR；正常约 10 Hz 帧流不会逐帧写日志。
 `/api/v1/commands` 的失败响应保留 `status` 与 `stateRevision`，并提供稳定的
 `errorCode` 供客户端区分具体错误。
 `commandId`、`sessionId` 和 `instrumentId` 必须为 1..128 bytes，且不得包含

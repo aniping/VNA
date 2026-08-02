@@ -9,7 +9,55 @@
 #include <utility>
 #include <variant>
 
+#include <spdlog/spdlog.h>
+
 namespace vna::application {
+namespace {
+
+const char* failureCode(
+    acquisition::ContinuousAcquisitionFailureCode code) noexcept {
+    using acquisition::ContinuousAcquisitionFailureCode;
+    switch (code) {
+    case ContinuousAcquisitionFailureCode::SourceFailed:
+        return "source-failed";
+    case ContinuousAcquisitionFailureCode::RawFrameRejected:
+        return "raw-frame-rejected";
+    case ContinuousAcquisitionFailureCode::UnexpectedFailure:
+        return "unexpected-failure";
+    }
+    return "unknown";
+}
+
+void logFirstPublishedSet(
+    const acquisition::RawFrame& raw,
+    const TracePublicationPlan& plan,
+    std::size_t traceCount) noexcept {
+    try {
+        if (const auto logger = spdlog::get("vna")) {
+            logger->debug(
+                "[连续扫频] 已发布配置代次首个完整显示帧 | generation={} "
+                "| revision={} | frame_id={} | sweep_id={} | sequence={} "
+                "| trace_count={}",
+                plan.generation, plan.stateRevision,
+                raw.context.frameId.value(), raw.context.sweepId.value(),
+                raw.context.sequenceNumber, traceCount);
+        }
+    } catch (...) {}
+}
+
+void logAcquisitionFailure(
+    const acquisition::ContinuousAcquisitionFailure& failure) noexcept {
+    try {
+        if (const auto logger = spdlog::get("vna")) {
+            logger->error(
+                "[连续扫频] 持续采集已停止 | attempted_sequence={} | "
+                "error_code={}",
+                failure.attemptedSequence, failureCode(failure.code));
+        }
+    } catch (...) {}
+}
+
+}  // namespace
 
 class ContinuousTracePublisher::Impl {
 public:
@@ -62,6 +110,9 @@ private:
                 acquisition::ContinuousAcquisitionState::Failed) {
                 finish(ContinuousTracePublisherState::AcquisitionFailed,
                        acquisition.failure);
+                if (acquisition.failure.has_value()) {
+                    logAcquisitionFailure(*acquisition.failure);
+                }
                 return;
             }
             if (acquisition.state ==
@@ -91,9 +142,13 @@ private:
                 reject();
                 return;
             }
-            std::lock_guard lock{mutex_};
-            ++snapshot_.publishedFrames;
-            snapshot_.lastPublishedSequence = raw.context.sequenceNumber;
+            recordPublished(raw.context.sequenceNumber);
+            // Mark before best-effort logging so a broken sink cannot create a
+            // 10 Hz retry storm for the same immutable configuration.
+            if (logAttemptedGeneration_ != plan->generation) {
+                logAttemptedGeneration_ = plan->generation;
+                logFirstPublishedSet(raw, *plan, plan->targets.size());
+            }
         } catch (...) {
             reject();
         }
@@ -110,6 +165,12 @@ private:
         ++snapshot_.rejectedFrames;
     }
 
+    void recordPublished(std::uint64_t sequence) noexcept {
+        std::lock_guard lock{mutex_};
+        ++snapshot_.publishedFrames;
+        snapshot_.lastPublishedSequence = sequence;
+    }
+
     void finish(
         ContinuousTracePublisherState state,
         std::optional<acquisition::ContinuousAcquisitionFailure> failure = {}) {
@@ -122,6 +183,7 @@ private:
     TracePublicationCatalog& catalog_;
     mutable std::mutex mutex_;
     ContinuousTracePublisherSnapshot snapshot_;
+    std::optional<std::uint64_t> logAttemptedGeneration_;
     std::jthread worker_;
 };
 

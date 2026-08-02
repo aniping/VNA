@@ -92,6 +92,7 @@ try {
         '[配置命令] 创建通道请求已成功处理 | command_id=release-accepted | session_id=release-smoke | instrument_id=instrument-1 | revision=1 | channel_id=2',
         '[配置命令] 创建通道请求被拒绝 | command_id=release-rejected | session_id=release-smoke | instrument_id=instrument-1 | revision=1 | error_code=state-revision-conflict'
     )
+    $null = Wait-ForText $logFile '[连续扫频] 已发布配置代次首个完整显示帧 | generation=1 | revision=0 | frame_id=1 | sweep_id=1 | sequence=1 | trace_count=1'
 
     [pscustomobject]@{
         HealthStatus = $health.StatusCode

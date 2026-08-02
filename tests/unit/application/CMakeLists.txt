@@ -32,6 +32,7 @@ vna_configure_application_test(vna_application_operation_tests)
 add_executable(
     vna_application_sweep_tests
     continuous_trace_failure_test.cpp
+    continuous_trace_log_test.cpp
     continuous_trace_publisher_test.cpp
     continuous_trace_plan_test.cpp
     continuous_trace_dynamic_test.cpp
@@ -45,7 +46,9 @@ add_executable(
     single_sweep_trace_retirement_test.cpp
 )
 vna_configure_application_test(vna_application_sweep_tests)
-target_link_libraries(vna_application_sweep_tests PRIVATE vna::simulation)
+target_link_libraries(
+    vna_application_sweep_tests PRIVATE spdlog::spdlog vna::simulation
+)
 
 add_executable(
     vna_application_trace_frame_tests

@@ -38,6 +38,6 @@ target_include_directories(
 target_link_libraries(
     vna_application
     PUBLIC vna::acquisition vna::display_model vna::domain vna::frame_contracts
-    PRIVATE Threads::Threads vna::data_plane vna::measurement
+    PRIVATE Threads::Threads spdlog::spdlog vna::data_plane vna::measurement
 )
 target_compile_options(vna_application PRIVATE -Wall -Wextra -Wpedantic)
