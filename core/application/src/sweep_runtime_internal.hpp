@@ -29,6 +29,11 @@ struct RestartAdmission {
     std::exception_ptr invariant{};
 };
 
+struct PendingSweepRuntimeConfiguration {
+    SweepRuntimePlan plan;
+    PreparedTracePublicationPlan publication;
+};
+
 using RestartAdmissionResult = std::variant<RestartAdmission, SweepRuntimeRequestError>;
 
 // The public runtime stays a narrow lifecycle seam. Its worker details live in
@@ -45,10 +50,15 @@ public:
 
     void stop() noexcept;
     void join();
+    [[nodiscard]] SweepRuntimeConfigurationPrepareResult prepareConfiguration(
+        const StateSnapshot& candidate);
+    void commitConfiguration(
+        PreparedSweepRuntimeConfiguration prepared) noexcept;
     [[nodiscard]] SweepRuntimeRequestResult requestRestart(OperationSubmission submission);
     [[nodiscard]] SweepRuntimeSnapshot snapshot() const;
 private:
     [[nodiscard]] bool prepareCycle(std::stop_token token);
+    void applyPendingConfiguration();
     void completeRequestedSweep(frames::FrameId frameId);
     void failRequestedSweep(const SweepRuntimeFailure& failure);
     void cancelActiveAfterSource();
@@ -86,7 +96,7 @@ private:
         std::optional<OperationId> detachedFirst = std::nullopt,
         std::optional<OperationId> detachedSecond = std::nullopt) noexcept;
 
-    const SweepRuntimePlan plan_;
+    SweepRuntimePlan plan_;
     const acquisition::RawSweepCaptureSource source_;
     SweepPreviewExchange& previews_;
     TracePublicationCatalog& catalog_;
@@ -98,6 +108,7 @@ private:
     std::optional<ActiveSweepRequest> activeRequest_;
     std::shared_ptr<std::stop_source> activeStop_;
     std::optional<SweepPreviewIdentity> activeIdentity_;
+    std::unique_ptr<PendingSweepRuntimeConfiguration> pendingConfiguration_;
     bool finalizingPublication_{};
     bool cycleCancellationRequested_{};
     bool admissionClosed_{};
@@ -105,3 +116,13 @@ private:
 };
 
 }  // namespace vna::application::internal
+
+namespace vna::application::detail {
+
+struct PreparedSweepRuntimeConfigurationState {
+    internal::SweepRuntimeImpl* owner;
+    std::unique_lock<std::mutex> gate;
+    std::unique_ptr<internal::PendingSweepRuntimeConfiguration> pending;
+};
+
+}  // namespace vna::application::detail

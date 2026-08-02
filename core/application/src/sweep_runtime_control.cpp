@@ -88,6 +88,7 @@ RestartAdmissionResult SweepRuntimeImpl::admitRestart(
 bool SweepRuntimeImpl::prepareCycle(std::stop_token token) {
     auto cycleStop = std::make_shared<std::stop_source>();
     std::unique_lock lock{mutex_};
+    applyPendingConfiguration();
     if (!activeRequest_.has_value() &&
         plan_.execution.mode == domain::SweepMode::Single) {
         changed_.wait(lock, [&] {

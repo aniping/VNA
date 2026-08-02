@@ -15,6 +15,10 @@
 
 namespace vna::application {
 
+namespace internal {
+class SweepGenerationTransaction;
+}
+
 enum class TraceDisplayFrameErrorCode {
     InvalidFrameId,
     InvalidTraceId,
@@ -121,6 +125,7 @@ public:
     void discard(display_model::TraceId traceId) noexcept;
 
 private:
+    friend class internal::SweepGenerationTransaction;
     struct WaitState {
         std::condition_variable changed;
         std::size_t waiters{0};

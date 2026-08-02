@@ -13,6 +13,11 @@
 
 namespace vna::application {
 
+namespace internal {
+class SweepGenerationTransaction;
+class SweepRuntimeImpl;
+}
+
 struct StateSnapshot;
 
 struct TracePublicationTarget {
@@ -53,6 +58,8 @@ struct TracePublicationCatalogError {
 class PreparedTracePublicationPlan {
 private:
     friend class TracePublicationCatalog;
+    friend class internal::SweepGenerationTransaction;
+    friend class internal::SweepRuntimeImpl;
     // The immutable base token rejects out-of-order non-material commits even
     // when both candidates intentionally keep the same generation.
     PreparedTracePublicationPlan(
@@ -93,6 +100,7 @@ public:
         TraceDisplayFrameSet frameSet);
 
 private:
+    friend class internal::SweepGenerationTransaction;
     domain::ChannelId acquisitionChannelId_;
     TraceDisplayFrameRepository& repository_;
     mutable std::mutex mutex_;

@@ -13,6 +13,55 @@
 
 namespace vna::application {
 
+struct StateSnapshot;
+
+namespace detail {
+struct PreparedSweepRuntimeConfigurationState;
+}
+
+namespace internal {
+class SweepRuntimeImpl;
+}
+
+enum class SweepRuntimeConfigurationErrorCode {
+    Stopped,
+    Retired,
+    Failed,
+    UnsupportedSweepConfiguration,
+    TraceConfigurationRejected,
+};
+
+struct SweepRuntimeConfigurationError {
+    SweepRuntimeConfigurationErrorCode code;
+};
+
+// Preparation owns the short staging gate. Dropping this move-only value
+// releases that gate without publishing a pending plan or changing generation.
+class PreparedSweepRuntimeConfiguration {
+public:
+    PreparedSweepRuntimeConfiguration(
+        PreparedSweepRuntimeConfiguration&&) noexcept;
+    PreparedSweepRuntimeConfiguration& operator=(
+        PreparedSweepRuntimeConfiguration&&) noexcept;
+    ~PreparedSweepRuntimeConfiguration();
+
+    PreparedSweepRuntimeConfiguration(
+        const PreparedSweepRuntimeConfiguration&) = delete;
+    PreparedSweepRuntimeConfiguration& operator=(
+        const PreparedSweepRuntimeConfiguration&) = delete;
+
+private:
+    explicit PreparedSweepRuntimeConfiguration(
+        std::unique_ptr<detail::PreparedSweepRuntimeConfigurationState> state);
+
+    std::unique_ptr<detail::PreparedSweepRuntimeConfigurationState> state_;
+    friend class internal::SweepRuntimeImpl;
+};
+
+using SweepRuntimeConfigurationPrepareResult = std::variant<
+    PreparedSweepRuntimeConfiguration,
+    SweepRuntimeConfigurationError>;
+
 struct SweepRuntimeExecutionPolicy {
     domain::SweepMode mode{domain::SweepMode::Continuous};
     std::uint32_t sweepCount{1};
@@ -102,6 +151,10 @@ public:
 
     void stop() noexcept;
     void join();
+    [[nodiscard]] SweepRuntimeConfigurationPrepareResult prepareConfiguration(
+        const StateSnapshot& candidate);
+    void commitConfiguration(
+        PreparedSweepRuntimeConfiguration prepared) noexcept;
     [[nodiscard]] SweepRuntimeRequestResult requestRestart(
         OperationSubmission submission);
     [[nodiscard]] SweepRuntimeSnapshot snapshot() const;

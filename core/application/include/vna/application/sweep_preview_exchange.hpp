@@ -14,6 +14,10 @@
 
 namespace vna::application {
 
+namespace internal {
+class SweepGenerationTransaction;
+}
+
 struct SweepPreviewIdentity {
     std::uint64_t generation;
     acquisition::SweepId sweepId;
@@ -114,6 +118,7 @@ public:
         std::stop_token token = {}) const;
 
 private:
+    friend class internal::SweepGenerationTransaction;
     mutable std::mutex mutex_;
     mutable std::condition_variable changed_;
     std::uint64_t generation_{1};

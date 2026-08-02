@@ -1,5 +1,6 @@
 #include <vna/application/sweep_runtime.hpp>
 
+
 #include "sweep_runtime_internal.hpp"
 
 #include <stdexcept>
@@ -117,6 +118,18 @@ void SweepRuntimeImpl::finish(SweepRuntimeState state) noexcept {
 
 namespace vna::application {
 
+PreparedSweepRuntimeConfiguration::PreparedSweepRuntimeConfiguration(
+    std::unique_ptr<detail::PreparedSweepRuntimeConfigurationState> state)
+    : state_(std::move(state)) {}
+
+PreparedSweepRuntimeConfiguration::PreparedSweepRuntimeConfiguration(
+    PreparedSweepRuntimeConfiguration&&) noexcept = default;
+PreparedSweepRuntimeConfiguration&
+PreparedSweepRuntimeConfiguration::operator=(
+    PreparedSweepRuntimeConfiguration&&) noexcept = default;
+PreparedSweepRuntimeConfiguration::~PreparedSweepRuntimeConfiguration() =
+    default;
+
 class SweepRuntime::Impl final : public internal::SweepRuntimeImpl {
 public:
     using SweepRuntimeImpl::SweepRuntimeImpl;
@@ -134,6 +147,14 @@ SweepRuntime::SweepRuntime(
 SweepRuntime::~SweepRuntime() = default;
 void SweepRuntime::stop() noexcept { impl_->stop(); }
 void SweepRuntime::join() { impl_->join(); }
+SweepRuntimeConfigurationPrepareResult SweepRuntime::prepareConfiguration(
+    const StateSnapshot& candidate) {
+    return impl_->prepareConfiguration(candidate);
+}
+void SweepRuntime::commitConfiguration(
+    PreparedSweepRuntimeConfiguration prepared) noexcept {
+    impl_->commitConfiguration(std::move(prepared));
+}
 SweepRuntimeRequestResult SweepRuntime::requestRestart(
     OperationSubmission submission) {
     return impl_->requestRestart(std::move(submission));
