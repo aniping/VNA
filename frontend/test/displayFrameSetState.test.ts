@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   filterDisplayFrameSetForSnapshot,
+  replaceCompleteDisplayFramesForSnapshot,
   replaceDisplayFramesForSnapshot,
   retainDisplayFramesForSnapshot,
 } from '../src/api/displayFrameSetState.ts'
@@ -101,4 +102,44 @@ test('retains old frames only while their complete identity still matches state'
     },
   })
   assert.deepEqual([...retainDisplayFramesForSnapshot(current, changed).keys()], [])
+})
+
+test('the publication barrier accepts only a complete compatible frame set', () => {
+  const frames = [
+    { ...common, traceId: 11, measurementId: 21, measurementType: 'S21',
+      format: 'logMagnitude', valueUnit: 'dB', values: [-70, -71, -72] },
+    { ...common, traceId: 12, measurementId: 22, measurementType: 'S11',
+      format: 'phase', valueUnit: 'degree', values: [-45, 0, 45] },
+    { ...common, traceId: 13, measurementId: 23, measurementType: 'S12',
+      format: 'smith', valueUnit: 'U', values: [[0, 0], [0.1, 0.2], [1, 0]] },
+    { ...common, traceId: 14, measurementId: 24, measurementType: 'S22',
+      format: 'phase', valueUnit: 'degree', values: [-90, 0, 90] },
+  ]
+  const freshFrames = frames.map((frame) => ({ ...frame, stateRevision: 99 }))
+  const complete = decodeTraceDisplayFrameSet({
+    generation: 3, sequenceNumber: 9, frames: freshFrames,
+  })
+  const partial = decodeTraceDisplayFrameSet({
+    generation: 3, sequenceNumber: 9, frames: freshFrames.slice(0, 1),
+  })
+  const stale = decodeTraceDisplayFrameSet({ generation: 3, sequenceNumber: 9, frames })
+  const futureFrames = freshFrames.map((frame) => ({ ...frame, stateRevision: 100 }))
+  const future = decodeTraceDisplayFrameSet({
+    generation: 3, sequenceNumber: 9, frames: futureFrames,
+  })
+  const extra = decodeTraceDisplayFrameSet({
+    generation: 3,
+    sequenceNumber: 9,
+    frames: [...freshFrames, { ...freshFrames[0], traceId: 15, measurementId: 25 }],
+  })
+
+  assert.equal(replaceCompleteDisplayFramesForSnapshot(partial, snapshot, 99), null)
+  assert.equal(replaceCompleteDisplayFramesForSnapshot(stale, snapshot, 99), null)
+  assert.equal(replaceCompleteDisplayFramesForSnapshot(extra, snapshot, 99), null)
+  assert.deepEqual([...replaceCompleteDisplayFramesForSnapshot(complete, snapshot, 99)!.keys()], [
+    11, 12, 13, 14,
+  ])
+  assert.deepEqual([...replaceCompleteDisplayFramesForSnapshot(future, snapshot, 99)!.keys()], [
+    11, 12, 13, 14,
+  ])
 })

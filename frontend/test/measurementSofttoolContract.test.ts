@@ -11,7 +11,7 @@ const app = readSource('src/App.vue')
 const template = softtool.match(/<template>([\s\S]*?)<\/template>/)?.[1] ?? ''
 const styles = softtool.match(/<style scoped>([\s\S]*?)<\/style>/)?.[1] ?? ''
 
-test('Meas exposes only the four supported S-Parameter command buttons', () => {
+test('Meas exposes the four choices and one All S-Params command', () => {
   assert.doesNotMatch(softtool, /Format|Create Trace|New Channel|TraceSetup|ChannelSetup/)
   assert.doesNotMatch(softtool, /@keydown|@keyup|@submit/)
   assert.match(softtool, /All S-Params/)
@@ -22,7 +22,12 @@ test('Meas exposes only the four supported S-Parameter command buttons', () => {
   assert.equal(choices.length, 1)
   assert.match(choices[0], /:disabled="isMeasurementChoiceDisabled\(/)
   assert.match(choices[0], /@click="emit\('updateMeasurementType', parameter\)"/)
-  const unsupported = buttons.filter((button) => !choices.includes(button))
+  const allButton = buttons.find((button) => button.includes('isAllSParametersDisabled')) ?? ''
+  assert.match(allButton, /:disabled="isAllSParametersDisabled\(hasActiveTrace, disabled, busy\)"/)
+  assert.match(allButton, /@click="emit\('ensureAllSParameters'\)"/)
+  assert.match(softtool, /hasActiveTrace: boolean/)
+  assert.match(softtool, /ensureAllSParameters: \[\]/)
+  const unsupported = buttons.filter((button) => !choices.includes(button) && button !== allButton)
   assert.equal(unsupported.every((button) => /\sdisabled(?:\s|>)/.test(button)), true)
   assert.equal(unsupported.every((button) => !button.includes('@click')), true)
   assert.match(template, /measurementType === parameter/)
@@ -33,7 +38,7 @@ test('Meas exposes only the four supported S-Parameter command buttons', () => {
 test('production UI has no create Channel, Measurement, Trace, or Window path', () => {
   const productionSources = `${app}\n${mainScreen}`
   const handler = app.match(
-    /async function handleUpdateTraceMeasurementType[\s\S]*?\r?\n}\r?\n\r?\nfunction replaceFrame/,
+    /async function handleUpdateTraceMeasurementType[\s\S]*?\r?\n}\r?\n\r?\nasync function handleEnsure/,
   )?.[0] ?? ''
   assert.doesNotMatch(productionSources, /createChannel|createMeasurement|createTrace|createWindow/)
   assert.match(mainScreen, /<MeasurementSofttool[\s\S]*?:measurement-type=[\s\S]*?:busy=/)

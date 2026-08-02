@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { traceColorForMeasurement } from '../src/components/traceVisual.ts'
+import { traceColorForTrace } from '../src/components/traceVisual.ts'
 
-test('manual-default S21 uses green while other Traces retain the existing first color', () => {
-  assert.equal(traceColorForMeasurement('S21'), '#54d454')
-  assert.equal(traceColorForMeasurement('S11'), '#f2db24')
-  assert.equal(traceColorForMeasurement(undefined), '#f2db24')
+test('stable Trace identities select the project palette with factory Trc1 green', () => {
+  assert.equal(traceColorForTrace(1), '#54d454')
+  assert.equal(traceColorForTrace(2), '#f2db24')
+  assert.equal(traceColorForTrace(3), '#36c5d8')
+  assert.equal(traceColorForTrace(4), '#d879e8')
+  assert.equal(traceColorForTrace(1), '#54d454')
+  assert.equal(traceColorForTrace(undefined), '#f2db24')
 })

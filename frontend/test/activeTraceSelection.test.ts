@@ -32,3 +32,22 @@ test('authoritative measurement refresh preserves the active Trace and Window', 
   assert.equal(selection.activeTrace.value?.windowId, 7)
   assert.equal(selection.activeMeasurement.value?.type, 'S11')
 })
+
+test('adding the All S-Parameter quartet keeps the preset S21 Trace active', async () => {
+  const initial = snapshot('S21', 11)
+  const state = ref<StateSnapshot | null>(initial)
+  const selection = useActiveTrace(state)
+  const expanded = structuredClone(initial)
+  expanded.instrument.windows.push({ id: 8 }, { id: 9 }, { id: 10 })
+  expanded.instrument.traces.push(
+    { ...expanded.instrument.traces[0], id: 4, windowId: 8 },
+    { ...expanded.instrument.traces[0], id: 5, windowId: 9 },
+    { ...expanded.instrument.traces[0], id: 6, windowId: 10 },
+  )
+
+  state.value = expanded
+  await nextTick()
+
+  assert.equal(selection.activeTraceId.value, 3)
+  assert.equal(selection.activeTrace.value?.windowId, 7)
+})

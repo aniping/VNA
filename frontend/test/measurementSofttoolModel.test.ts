@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   logicalPorts,
+  isAllSParametersDisabled,
   isMeasurementChoiceDisabled,
   measurementCategories,
   physicalPorts,
@@ -26,6 +27,13 @@ test('only a different S-Parameter is selectable for a healthy active Trace', ()
   assert.equal(isMeasurementChoiceDisabled(undefined, 'S11', false, false), true)
   assert.equal(isMeasurementChoiceDisabled('S21', 'S11', true, false), true)
   assert.equal(isMeasurementChoiceDisabled('S21', 'S11', false, true), true)
+})
+
+test('All S-Params requires an active Trace and available controls', () => {
+  assert.equal(isAllSParametersDisabled(true, false, false), false)
+  assert.equal(isAllSParametersDisabled(false, false, false), true)
+  assert.equal(isAllSParametersDisabled(true, true, false), true)
+  assert.equal(isAllSParametersDisabled(true, false, true), true)
 })
 
 test('the displayed logical port pair follows the authoritative measurement identity', () => {

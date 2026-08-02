@@ -35,6 +35,7 @@ const props = defineProps<{
   frames: ReadonlyMap<number, MultiFormatTraceDisplayFrame>
 }>()
 const emit = defineEmits<{
+  ensureAllSParameters: [traceId: number]
   updateTraceMeasurementType: [traceId: number, measurementType: MeasurementType]
   updateSweep: [channelId: number, sweep: SweepSettings]
   updateTraceFormat: [traceId: number, format: TraceFormat]
@@ -129,6 +130,10 @@ function forwardMeasurementTypeUpdate(measurementType: MeasurementType): void {
   if (activeTrace.value) emit('updateTraceMeasurementType', activeTrace.value.id, measurementType)
 }
 
+function forwardAllSParameters(): void {
+  if (activeTrace.value) emit('ensureAllSParameters', activeTrace.value.id)
+}
+
 function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
   emit('updateTraceScalePerDivision', traceId, value)
 }
@@ -169,8 +174,10 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
       <MeasurementSofttool
         v-if="activeSofttool === 'measurement'"
         :measurement-type="activeMeasurement?.type"
+        :has-active-trace="Boolean(activeTrace)"
         :disabled="workspace.controlsDisabled"
         :busy="busy"
+        @ensure-all-s-parameters="forwardAllSParameters"
         @update-measurement-type="forwardMeasurementTypeUpdate"
       />
       <FormatSofttool

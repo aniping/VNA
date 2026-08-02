@@ -38,6 +38,20 @@ export function replaceDisplayFramesForSnapshot(
   return new Map(compatible.frames.map((frame) => [frame.traceId, frame]))
 }
 
+export function replaceCompleteDisplayFramesForSnapshot(
+  frameSet: TraceDisplayFrameSet,
+  snapshot: StateSnapshot,
+  minimumStateRevision: number,
+): DisplayFrameSetMap | null {
+  if (frameSet.frames.some((frame) => frame.stateRevision < minimumStateRevision)) return null
+  const next = replaceDisplayFramesForSnapshot(frameSet, snapshot)
+  // All-S reconfiguration changes the whole publication plan. Requiring every authoritative
+  // Trace and no extras rejects both partial and mixed-generation publications as one atom.
+  const exactSize = next.size === snapshot.instrument.traces.length
+    && next.size === frameSet.frames.length
+  return exactSize ? next : null
+}
+
 export function retainDisplayFramesForSnapshot(
   current: DisplayFrameSetMap,
   snapshot: StateSnapshot,

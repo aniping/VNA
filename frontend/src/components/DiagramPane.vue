@@ -16,7 +16,7 @@ import {
 } from './cartesianAxisModel'
 import { selectDiagramCurve } from './diagramCurveModel'
 import { noMeasurementDataMessage } from './diagramModel'
-import { traceColorForMeasurement } from './traceVisual'
+import { traceColorForTrace } from './traceVisual'
 
 const props = defineProps<{
   windowId: number
@@ -28,7 +28,7 @@ const props = defineProps<{
   active: boolean
 }>()
 const emit = defineEmits<{ select: [traceId: number] }>()
-const traceColor = computed(() => traceColorForMeasurement(props.measurement?.type))
+const traceColor = computed(() => traceColorForTrace(props.trace?.id))
 
 const traceLabel = computed(() => {
   if (!props.trace) return 'No active trace'

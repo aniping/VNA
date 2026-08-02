@@ -141,6 +141,13 @@ export async function setTraceMeasurementType(
   return sendCommand(stateRevision, 'setTraceMeasurementType', { traceId, measurementType })
 }
 
+export async function ensureAllSParameters(
+  stateRevision: number,
+  traceId: number,
+): Promise<CommandResult<unknown>> {
+  return sendCommand(stateRevision, 'ensureAllSParameters', { traceId })
+}
+
 export async function updateTraceScalePerDivision(
   stateRevision: number,
   traceId: number,

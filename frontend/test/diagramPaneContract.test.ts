@@ -50,3 +50,8 @@ test('trace information reports the ZNB scale and reference summaries', () => {
   assert.match(paneSource, /200 mU\/ Ref 1 U/)
   assert.match(template, /class="trace-scale"/)
 })
+
+test('Trace color follows stable Trace identity rather than mutable measurement type', () => {
+  assert.match(paneSource, /traceColorForTrace\(props\.trace\?\.id\)/)
+  assert.doesNotMatch(paneSource, /traceColorForMeasurement/)
+})

@@ -23,6 +23,14 @@ export function portPairForMeasurement(type: MeasurementType | undefined): strin
   return type?.slice(1) ?? '—'
 }
 
+export function isAllSParametersDisabled(
+  hasActiveTrace: boolean,
+  controlsDisabled: boolean,
+  busy: boolean,
+): boolean {
+  return !hasActiveTrace || controlsDisabled || busy
+}
+
 export function isMeasurementChoiceDisabled(
   current: MeasurementType | undefined,
   candidate: MeasurementType,

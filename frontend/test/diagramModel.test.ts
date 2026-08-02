@@ -41,6 +41,25 @@ const snapshot: StateSnapshot = {
   },
 }
 
+function createAllSParameterSnapshot(): StateSnapshot {
+  const state = structuredClone(snapshot)
+  state.instrument.measurements = [
+    { id: 21, channelId: 11, type: 'S21' },
+    { id: 22, channelId: 11, type: 'S22' },
+    { id: 23, channelId: 11, type: 'S11' },
+    { id: 24, channelId: 11, type: 'S12' },
+  ]
+  state.instrument.windows = [{ id: 31 }, { id: 32 }, { id: 33 }, { id: 34 }]
+  const presetTrace = state.instrument.traces[0]
+  state.instrument.traces = [
+    presetTrace,
+    { ...presetTrace, id: 42, windowId: 32, measurementId: 22 },
+    { ...presetTrace, id: 43, windowId: 33, measurementId: 23 },
+    { ...presetTrace, id: 44, windowId: 34, measurementId: 24 },
+  ]
+  return state
+}
+
 test('one real Window produces exactly one Diagram with its related S21 Trace', () => {
   const diagrams = selectDisplayDiagrams(snapshot)
 
@@ -85,6 +104,56 @@ test('active Diagram follows its selected Trace without changing Window order', 
     first: [{ windowId: 31, active: true }, { windowId: 32, active: false }],
     second: [{ windowId: 31, active: false }, { windowId: 32, active: true }],
   })
+})
+
+test('a complete two-port set uses the finite ZNB S-Parameter matrix', () => {
+  const diagrams = selectDisplayDiagrams(createAllSParameterSnapshot(), 41)
+
+  assert.deepEqual(
+    diagrams.map(({ measurement, trace, active }) => ({
+      measurement: measurement?.type,
+      traceId: trace?.id,
+      active,
+    })),
+    [
+      { measurement: 'S11', traceId: 43, active: false },
+      { measurement: 'S12', traceId: 44, active: false },
+      { measurement: 'S21', traceId: 41, active: true },
+      { measurement: 'S22', traceId: 42, active: false },
+    ],
+  )
+})
+
+test('an incomplete four-Window state preserves authoritative Window order', () => {
+  const state = createAllSParameterSnapshot()
+  state.instrument.traces = state.instrument.traces.filter((trace) => trace.measurementId !== 23)
+
+  assert.deepEqual(
+    selectDisplayDiagrams(state, 41).map(({ windowId }) => windowId),
+    [31, 32, 33, 34],
+  )
+})
+
+test('four S-Parameters across Channels do not activate the finite matrix', () => {
+  const state = createAllSParameterSnapshot()
+  state.instrument.channels.push({ ...state.instrument.channels[0], id: 12 })
+  const s11 = state.instrument.measurements.find((item) => item.type === 'S11')
+  if (s11) s11.channelId = 12
+
+  assert.deepEqual(
+    selectDisplayDiagrams(state, 41).map(({ windowId }) => windowId),
+    [31, 32, 33, 34],
+  )
+})
+
+test('a Window with multiple Traces does not activate the finite matrix', () => {
+  const state = createAllSParameterSnapshot()
+  state.instrument.traces.push({ ...state.instrument.traces[0], id: 45 })
+
+  assert.deepEqual(
+    selectDisplayDiagrams(state, 41).map(({ windowId }) => windowId),
+    [31, 32, 33, 34],
+  )
 })
 
 test('every supported format keeps the same grid empty state while awaiting its next frame set', () => {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import {
+  ensureAllSParameters,
   fetchState,
   setTraceMeasurementType,
   updateChannelSweep,
@@ -13,6 +14,7 @@ import {
 } from './api/vnaApi'
 import {
   removeDisplayFrame,
+  replaceCompleteDisplayFramesForSnapshot,
   replaceDisplayFramesForSnapshot,
   retainDisplayFramesForSnapshot,
   type DisplayFrameSetMap,
@@ -32,6 +34,7 @@ const displayError = ref('')
 const commandBusy = ref(false)
 const frames = shallowRef<DisplayFrameSetMap>(new Map())
 let pendingFrameTraceId: number | null = null
+let pendingAllSParametersRevision: number | null = null
 let stopLiveDisplay: (() => void) | null = null
 
 function resizeInstrument(): void {
@@ -40,7 +43,9 @@ function resizeInstrument(): void {
 
 async function refreshState(): Promise<void> {
   const snapshot = await fetchState()
-  frames.value = retainDisplayFramesForSnapshot(frames.value, snapshot)
+  frames.value = pendingAllSParametersRevision === null
+    ? retainDisplayFramesForSnapshot(frames.value, snapshot)
+    : new Map()
   state.value = snapshot
   // A successful authoritative refresh makes full frame identity sufficient again.
   pendingFrameTraceId = null
@@ -98,8 +103,43 @@ async function handleUpdateTraceMeasurementType(
   }
 }
 
+async function handleEnsureAllSParameters(traceId: number): Promise<void> {
+  if (!state.value || commandBusy.value) return
+  commandBusy.value = true
+  try {
+    const previousRevision = state.value.stateRevision
+    const result = await ensureAllSParameters(previousRevision, traceId)
+    // A changed revision invalidates the whole publication plan. A backend no-op keeps its
+    // still-compatible FrameSet, while a real change waits on the next atomic four-Trace set.
+    if (result.stateRevision !== previousRevision) {
+      pendingAllSParametersRevision = result.stateRevision
+      frames.value = new Map()
+    }
+    await refreshState()
+    serviceError.value = ''
+  } catch (error) {
+    serviceError.value = error instanceof Error ? error.message : 'Command failed'
+  } finally {
+    commandBusy.value = false
+  }
+}
+
 function replaceFrameSet(frameSet: TraceDisplayFrameSet): void {
   if (!state.value) return
+  if (pendingAllSParametersRevision !== null) {
+    if (state.value.stateRevision < pendingAllSParametersRevision) return
+    const minimumRevision = pendingAllSParametersRevision
+    const complete = replaceCompleteDisplayFramesForSnapshot(
+      frameSet,
+      state.value,
+      minimumRevision,
+    )
+    if (!complete) return
+    frames.value = complete
+    pendingAllSParametersRevision = null
+    displayError.value = ''
+    return
+  }
   let next = replaceDisplayFramesForSnapshot(frameSet, state.value)
   if (pendingFrameTraceId !== null) next = removeDisplayFrame(next, pendingFrameTraceId)
   frames.value = next
@@ -163,6 +203,7 @@ onBeforeUnmount(() => {
         :display-error="displayError"
         :busy="commandBusy"
         :frames="frames"
+        @ensure-all-s-parameters="handleEnsureAllSParameters"
         @update-trace-measurement-type="handleUpdateTraceMeasurementType"
         @update-sweep="handleUpdateSweep"
         @update-trace-format="handleUpdateTraceFormat"

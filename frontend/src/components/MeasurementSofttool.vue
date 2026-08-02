@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { MeasurementType } from '../api/vnaApi'
 import {
+  isAllSParametersDisabled,
   isMeasurementChoiceDisabled,
   logicalPorts,
   measurementCategories,
@@ -12,11 +13,13 @@ import {
 
 const props = defineProps<{
   measurementType: MeasurementType | undefined
+  hasActiveTrace: boolean
   disabled: boolean
   busy: boolean
 }>()
 const emit = defineEmits<{
   updateMeasurementType: [measurementType: MeasurementType]
+  ensureAllSParameters: []
 }>()
 // Snapshot identity remains the only selected-state authority; emitting never changes it locally.
 const portPair = computed(() => portPairForMeasurement(props.measurementType))
@@ -49,7 +52,14 @@ const portPair = computed(() => portPairForMeasurement(props.measurementType))
             {{ parameter }}
           </button>
         </div>
-        <button class="full-width" type="button" disabled>All S-Params</button>
+        <button
+          class="full-width"
+          type="button"
+          :disabled="isAllSParametersDisabled(hasActiveTrace, disabled, busy)"
+          @click="emit('ensureAllSParameters')"
+        >
+          All S-Params
+        </button>
         <button class="full-width" type="button" disabled>S-Param Wizard <span>›</span></button>
         <h2>Balanced Ports</h2>
         <button class="topology" type="button" aria-label="Balanced Ports topology" disabled>
