@@ -4,8 +4,7 @@
 
 namespace vna::web_api::detail {
 
-// HTTP encoding and observability share one stable error catalog so a browser
-// response and its audit event can never describe different outcomes.
+// Keep the HTTP status and stable error token in one exhaustive catalog.
 struct CommandOutcomeInfo {
     const char* responseStatus;
     int httpStatus;

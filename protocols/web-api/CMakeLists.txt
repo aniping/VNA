@@ -1,7 +1,6 @@
 add_library(
     vna_web_api
     src/command_json_decoder.cpp
-    src/command_observability.cpp
     src/command_outcome_info.cpp
     src/display_frame_http_handler.cpp
     src/display_frame_json_codec.cpp
@@ -32,7 +31,6 @@ target_link_libraries(
     vna_web_api
     PUBLIC
         vna::application
-        vna::observability
     PRIVATE
         httplib::httplib
         nlohmann_json::nlohmann_json

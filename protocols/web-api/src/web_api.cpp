@@ -1,6 +1,5 @@
 #include <vna/web_api/web_api.hpp>
 
-#include "command_observability.hpp"
 #include "display_frame_http_handler.hpp"
 #include "display_frame_stream.hpp"
 #include "json_codec.hpp"
@@ -32,13 +31,6 @@ private:
     detail::DisplayFrameStream& stream_;
 };
 
-void validateObservabilityOptions(const WebApiOptions& options) {
-    if (options.logger != nullptr && !options.logFailureReporter) {
-        throw std::invalid_argument{
-            "WebApi logger requires an independent failure reporter"};
-    }
-}
-
 void rejectInvalidCommand(httplib::Response& response) {
     response.status = httplib::StatusCode::BadRequest_400;
     response.set_content(R"({"error":"invalidCommand"})", "application/json");
@@ -46,8 +38,6 @@ void rejectInvalidCommand(httplib::Response& response) {
 
 void handleCommand(
     application::CommandBus& commandBus,
-    observability::Logger* logger,
-    const LogFailureReporter& reportLogFailure,
     const httplib::Request& request,
     httplib::Response& response) {
     const auto command = detail::decodeCommand(request.body);
@@ -56,14 +46,6 @@ void handleCommand(
         return;
     }
     const auto commandResult = commandBus.dispatch(*command);
-    if (!detail::recordWebCommand(logger, *command, commandResult) &&
-        reportLogFailure) {
-        try {
-            reportLogFailure("web command log write or flush failed");
-        } catch (...) {
-            // Emergency reporting cannot be allowed to rewrite the response.
-        }
-    }
     const auto responseBody = detail::encodeCommandResult(commandResult);
     response.status = responseBody.httpStatus;
     response.set_content(responseBody.body, "application/json");
@@ -108,8 +90,6 @@ public:
         : commandBus_(commandBus),
           operations_(operations),
           displayFrames_(displayFrames),
-          logger_(options.logger),
-          reportLogFailure_(options.logFailureReporter),
           displayStream_(displayRepository) {
         installRoutes();
         displayStream_.install(server_);
@@ -125,8 +105,6 @@ public:
     application::CommandBus& commandBus_;
     const application::OperationManager& operations_;
     const application::TraceDisplayFrameQuery& displayFrames_;
-    observability::Logger* logger_;
-    LogFailureReporter reportLogFailure_;
     // Server precedes the stream so reverse destruction keeps every transport
     // alive until all registered stream handlers have returned.
     httplib::Server server_;
@@ -140,7 +118,6 @@ WebApi::WebApi(
     const application::TraceDisplayFrameRepository& displayRepository,
     WebApiOptions options)
     : impl_([&] {
-          validateObservabilityOptions(options);
           options.webRoot = detail::validateWebRoot(options.webRoot);
           return std::make_unique<Impl>(
               commandBus,
@@ -170,8 +147,7 @@ void WebApi::Impl::installRoutes() {
     server_.Post(
         "/api/v1/commands",
         [this](const httplib::Request& request, httplib::Response& response) {
-            handleCommand(
-                commandBus_, logger_, reportLogFailure_, request, response);
+            handleCommand(commandBus_, request, response);
         });
     server_.Get(
         R"(/api/v1/operations/([^/]*))",

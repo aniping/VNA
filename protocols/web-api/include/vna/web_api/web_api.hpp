@@ -1,34 +1,19 @@
 #pragma once
 
 #include <filesystem>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
-#include <string_view>
 
 #include <vna/application/command_bus.hpp>
 #include <vna/application/operation_manager.hpp>
 #include <vna/application/trace_display_frame_query.hpp>
 #include <vna/application/trace_display_frame_repository.hpp>
 
-namespace vna::observability {
-class Logger;
-}
-
 namespace vna::web_api {
-
-using LogFailureReporter = std::function<void(std::string_view)>;
 
 struct WebApiOptions {
     std::optional<std::filesystem::path> webRoot;
-    // Non-owning; when non-null it must outlive WebApi and may be called by
-    // concurrent HTTP handlers. Reads and frame delivery are deliberately quiet.
-    observability::Logger* logger{};
-    // Required when logger is set. This independent callable must not use that
-    // logger or its sinks; it must support concurrent calls, outlive WebApi's
-    // captured references, and eventually return. Thrown exceptions are ignored.
-    LogFailureReporter logFailureReporter;
 };
 
 class WebApi {
