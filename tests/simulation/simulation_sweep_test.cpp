@@ -139,12 +139,12 @@ TEST(SimulationSweepTest, LocksKnownDeterministicRawPoint) {
 
     ASSERT_TRUE(result.hasValue());
     const auto& point = result.value().sourceStates[0].samples[0];
-    EXPECT_DOUBLE_EQ(point.reference.real, 1.0000007382009457);
-    EXPECT_DOUBLE_EQ(point.reference.imaginary, 9.1762821777476313e-7);
-    EXPECT_DOUBLE_EQ(point.responses[0].real, 1.0000076258302051);
-    EXPECT_DOUBLE_EQ(point.responses[0].imaginary, 9.4904936105068039e-6);
-    EXPECT_DOUBLE_EQ(point.responses[1].real, 0.00099963779006614299);
-    EXPECT_DOUBLE_EQ(point.responses[1].imaginary, 0.0013090789141456628);
+    EXPECT_DOUBLE_EQ(point.reference.real, 1.0000073820094573);
+    EXPECT_DOUBLE_EQ(point.reference.imaginary, 9.1762821777476308e-6);
+    EXPECT_DOUBLE_EQ(point.responses[0].real, 1.0000762583020506);
+    EXPECT_DOUBLE_EQ(point.responses[0].imaginary, 9.4904936105068025e-5);
+    EXPECT_DOUBLE_EQ(point.responses[1].real, 0.00099651377022354952);
+    EXPECT_DOUBLE_EQ(point.responses[1].imaginary, 0.001389736342026225);
 }
 
 TEST(SimulationSweepTest, ProducesFiniteBoundedMaximumSweep) {

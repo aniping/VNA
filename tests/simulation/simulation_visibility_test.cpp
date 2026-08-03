@@ -126,7 +126,8 @@ TEST(SimulationVisibilityTest, AdjacentFramesKeepTrendButRetainNoiseMotion) {
     }
 
     EXPECT_TRUE(rawSampleChanged);
-    EXPECT_LT(maximumDbMotion, 0.75);
+    EXPECT_GT(maximumDbMotion, 0.8);
+    EXPECT_LT(maximumDbMotion, 4.0);
 }
 
 TEST(SimulationVisibilityTest, IfBandwidthAndPowerChangeOnlyNoiseMotion) {
@@ -154,8 +155,8 @@ TEST(SimulationVisibilityTest, IfBandwidthAndPowerChangeOnlyNoiseMotion) {
     EXPECT_GT(wideMotion, quietMotion);
     EXPECT_GT(weakMotion, quietMotion);
     EXPECT_DOUBLE_EQ(wideMotion, weakMotion);
-    EXPECT_LT(distance(quietMean, wideMean), 5.0e-6);
-    EXPECT_LT(distance(quietMean, weakMean), 5.0e-6);
+    EXPECT_LT(distance(quietMean, wideMean), 3.0e-5);
+    EXPECT_LT(distance(quietMean, weakMean), 3.0e-5);
 }
 
 }  // namespace

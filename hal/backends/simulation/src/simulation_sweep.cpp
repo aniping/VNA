@@ -83,7 +83,7 @@ double noiseScale(const OpenPortSweepPlan& plan) {
     const auto bandwidthFactor =
         std::sqrt(static_cast<double>(plan.ifBandwidthHz) / 1'000.0);
     const auto powerFactor = std::pow(10.0, (-10.0 - plan.powerDbm) / 20.0);
-    return std::clamp(1.0e-5 * bandwidthFactor * powerFactor, 1.0e-8, 1.0e-3);
+    return std::clamp(1.0e-4 * bandwidthFactor * powerFactor, 1.0e-8, 1.0e-3);
 }
 
 frames::ComplexSample receiverNoise(
