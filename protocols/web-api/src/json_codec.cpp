@@ -50,6 +50,8 @@ const char* sweepModeName(domain::SweepMode mode) {
     switch (mode) {
         case domain::SweepMode::Continuous:
             return "continuous";
+        case domain::SweepMode::Single:
+            return "single";
     }
     return "unknown";
 }

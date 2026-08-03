@@ -96,6 +96,21 @@ TEST_F(WebApiChannelStateTest, FactoryPresetExposesChannelStateAtRevisionZero) {
     expectContinuousWithNoTrigger(channels.at(0));
 }
 
+TEST_F(WebApiChannelStateTest, SingleModeUsesStableWireName) {
+    const auto updated = commandBus_.dispatch({
+        application::CommandId{"single-mode"},
+        application::SessionId{"channel-state-test"},
+        application::InstrumentId{"instrument-1"},
+        application::CommandOrigin::Web, 0,
+        application::UpdateChannelSweepControlCommand{
+            domain::ChannelId{1}, domain::SweepMode::Single, 1}});
+    ASSERT_EQ(updated.stateRevision, 1U);
+
+    const auto state = getState();
+    const auto& channel = state.at("instrument").at("channels").at(0);
+    EXPECT_EQ(channel.at("sweepMode"), "single");
+}
+
 TEST_F(WebApiChannelStateTest, CommandCreatedChannelUsesSupportedState) {
     const auto result = postCreateChannel();
 
