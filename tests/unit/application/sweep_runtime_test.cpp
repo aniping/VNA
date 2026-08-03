@@ -219,7 +219,8 @@ TEST_F(SweepRuntimeTest, GenerationAdvanceRetiresStalePlan) {
     SweepRuntime runtime{{acquisition::test_support::validPlan(), publication, 2,
                           {domain::SweepMode::Single, 1}},
                          std::ref(source), previews_, catalog_, operations_};
-    const auto operation = std::get<OperationId>(runtime.requestRestart({
+    const auto operation = std::get<OperationId>(runtime.requestRestart(
+        domain::ChannelId{1}, {
         CommandId{"restart-stale"}, SessionId{"session-1"}, 1}));
     ASSERT_TRUE(source.waitForRequest(1));
     source.releasePreview(1);

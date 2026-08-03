@@ -93,6 +93,7 @@ enum class SweepRuntimeRequestErrorCode {
     Stopped,
     Retired,
     Failed,
+    UnsupportedChannel,
 };
 
 struct SweepRuntimeRequestError {
@@ -165,6 +166,7 @@ public:
     void commitConfiguration(
         PreparedSweepRuntimeConfiguration prepared) noexcept;
     [[nodiscard]] SweepRuntimeRequestResult requestRestart(
+        domain::ChannelId channelId,
         OperationSubmission submission);
     [[nodiscard]] SweepRuntimeSnapshot snapshot() const;
 

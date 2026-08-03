@@ -161,8 +161,9 @@ void SweepRuntime::commitConfiguration(
     impl_->commitConfiguration(std::move(prepared));
 }
 SweepRuntimeRequestResult SweepRuntime::requestRestart(
+    domain::ChannelId channelId,
     OperationSubmission submission) {
-    return impl_->requestRestart(std::move(submission));
+    return impl_->requestRestart(channelId, std::move(submission));
 }
 SweepRuntimeSnapshot SweepRuntime::snapshot() const { return impl_->snapshot(); }
 

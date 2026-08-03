@@ -22,10 +22,15 @@ CommandResult CommandBus::execute(
     }
     // Runtime already owns the full immutable publication plan. Admission
     // carries correlation only; it must not rebuild a legacy one-Trace plan.
-    const auto submitted = sweepRuntime_.requestRestart({
+    const auto submitted = sweepRuntime_.requestRestart(command.channelId, {
         envelope.commandId, envelope.sessionId, stateRevision_});
-    if (std::holds_alternative<SweepRuntimeRequestError>(submitted)) {
-        return applicationError(ApplicationErrorCode::ResourceBusy);
+    if (const auto* error =
+            std::get_if<SweepRuntimeRequestError>(&submitted)) {
+        const auto code = error->code ==
+                SweepRuntimeRequestErrorCode::UnsupportedChannel
+            ? ApplicationErrorCode::UnsupportedSweepConfiguration
+            : ApplicationErrorCode::ResourceBusy;
+        return applicationError(code);
     }
     const auto operationId = std::get<OperationId>(submitted);
     return CommandResult{

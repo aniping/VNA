@@ -60,7 +60,8 @@ TEST_F(SweepRuntimeInvariantTest, OperationMismatchFailsRuntimeWithoutOrphan) {
         {acquisition::test_support::validPlan(), catalog_.capture(), 2,
          {domain::SweepMode::Single, 1}},
         source, previews_, catalog_, operations_};
-    const auto operationId = std::get<OperationId>(runtime.requestRestart({
+    const auto operationId = std::get<OperationId>(runtime.requestRestart(
+        domain::ChannelId{1}, {
         CommandId{"restart-invariant"}, SessionId{"session-1"}, 5}));
     const auto preview = waitBounded(previews_, SweepPreviewCursor{0});
     auto tampered = OperationResult{OperationError{

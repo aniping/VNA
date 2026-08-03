@@ -100,7 +100,8 @@ TEST(SweepRuntimeOperationRevisionTest,
          {domain::SweepMode::Single, 2}},
         std::ref(source), previews, catalog, operations};
 
-    const auto operationId = std::get<OperationId>(runtime.requestRestart({
+    const auto operationId = std::get<OperationId>(runtime.requestRestart(
+        domain::ChannelId{1}, {
         CommandId{"restart-two-plans"}, SessionId{"session-1"}, 7}));
     auto fence = operations.captureFence(SessionId{"session-1"});
     std::promise<void> completed;

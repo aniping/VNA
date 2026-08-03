@@ -54,7 +54,8 @@ public:
         const StateSnapshot& candidate);
     void commitConfiguration(
         PreparedSweepRuntimeConfiguration prepared) noexcept;
-    [[nodiscard]] SweepRuntimeRequestResult requestRestart(OperationSubmission submission);
+    [[nodiscard]] SweepRuntimeRequestResult requestRestart(
+        domain::ChannelId channelId, OperationSubmission submission);
     [[nodiscard]] SweepRuntimeSnapshot snapshot() const;
 private:
     [[nodiscard]] bool prepareCycle(std::stop_token token);
@@ -65,7 +66,8 @@ private:
     void retireAfterSource() noexcept;
     [[nodiscard]] std::exception_ptr cancelDetachedRequests(
         std::optional<OperationId> queued, std::optional<OperationId> active) noexcept;
-    [[nodiscard]] RestartAdmissionResult admitRestart(OperationSubmission submission);
+    [[nodiscard]] RestartAdmissionResult admitRestart(
+        domain::ChannelId channelId, OperationSubmission submission);
     void requireTransition(OperationResult result, const char* transition);
     void settleTerminalFailure(OperationId operationId) noexcept;
     void observePreviewRange(

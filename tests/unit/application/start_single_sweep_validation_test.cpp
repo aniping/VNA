@@ -58,6 +58,11 @@ public:
         return dispatch("start", StartSingleSweepCommand{channelId});
     }
 
+    domain::ChannelId addChannel() {
+        return successValue<domain::ChannelId>(dispatch(
+            "channel-2", CreateChannelCommand{.sweep = validSweep()}));
+    }
+
     [[nodiscard]] domain::ChannelId channel() const { return channel_; }
     [[nodiscard]] const CommandBus& bus() const { return bus_; }
 
@@ -139,6 +144,22 @@ TEST(StartSingleSweepValidationTest, ReportsMissingChannelAsDomainError) {
     ASSERT_NE(domainError, nullptr);
     EXPECT_EQ(domainError->code, domain::DomainErrorCode::ChannelNotFound);
     EXPECT_EQ(result.stateRevision, 0U);
+}
+
+TEST(StartSingleSweepValidationTest, RejectsExistingNonAcquisitionChannel) {
+    ValidationHarness harness;
+    harness.configure(DynamicScenario::S21);
+    const auto otherChannel = harness.addChannel();
+    const auto revision = harness.bus().snapshot().stateRevision;
+
+    const auto result = harness.start(otherChannel);
+
+    const auto* error = std::get_if<CommandError>(&result.outcome);
+    ASSERT_NE(error, nullptr);
+    EXPECT_EQ(commandErrorCode(*error),
+              CommandErrorCode::UnsupportedSweepConfiguration);
+    EXPECT_EQ(result.stateRevision, revision);
+    EXPECT_EQ(harness.bus().snapshot().stateRevision, revision);
 }
 
 }  // namespace

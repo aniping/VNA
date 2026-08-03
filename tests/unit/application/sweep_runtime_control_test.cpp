@@ -105,7 +105,7 @@ TEST_F(SweepRuntimeControlTest, SingleRestartCompletesOnlyPublishedFrame) {
         validSource, previews_, catalog_, operations_};
     EXPECT_EQ(runtime.snapshot().phase, SweepRuntimePhase::Hold);
 
-    const auto submitted = runtime.requestRestart({
+    const auto submitted = runtime.requestRestart(domain::ChannelId{1}, {
         CommandId{"restart-1"}, SessionId{"session-1"}, 7});
     ASSERT_TRUE(std::holds_alternative<OperationId>(submitted));
     const auto operationId = std::get<OperationId>(submitted);
@@ -129,7 +129,7 @@ TEST_F(SweepRuntimeControlTest, SingleCompletesAfterConfiguredSweepCount) {
          {domain::SweepMode::Single, 3}},
         validSource, previews_, catalog_, operations_};
 
-    const auto submitted = runtime.requestRestart({
+    const auto submitted = runtime.requestRestart(domain::ChannelId{1}, {
         CommandId{"restart-3"}, SessionId{"session-1"}, 9});
     ASSERT_TRUE(std::holds_alternative<OperationId>(submitted));
     const auto operationId = std::get<OperationId>(submitted);
@@ -151,12 +151,15 @@ TEST_F(SweepRuntimeControlTest, ReplacementCancelsQueuedBeforeActiveSource) {
         {acquisition::test_support::validPlan(), catalog_.capture(), 2,
          {domain::SweepMode::Single, 1}},
         std::ref(source), previews_, catalog_, operations_};
-    const auto first = std::get<OperationId>(runtime.requestRestart({
+    const auto first = std::get<OperationId>(runtime.requestRestart(
+        domain::ChannelId{1}, {
         CommandId{"restart-a"}, SessionId{"session-1"}, 1}));
     EXPECT_TRUE(source.waitForStart());
-    const auto queued = std::get<OperationId>(runtime.requestRestart({
+    const auto queued = std::get<OperationId>(runtime.requestRestart(
+        domain::ChannelId{1}, {
         CommandId{"restart-b"}, SessionId{"session-1"}, 1}));
-    const auto newest = std::get<OperationId>(runtime.requestRestart({
+    const auto newest = std::get<OperationId>(runtime.requestRestart(
+        domain::ChannelId{1}, {
         CommandId{"restart-c"}, SessionId{"session-1"}, 1}));
 
     EXPECT_TRUE(source.waitForCancellation());
@@ -186,7 +189,8 @@ TEST_F(SweepRuntimeControlTest, SingleFailureFailsOperationAndHolds) {
     SweepRuntime runtime{{plan, catalog_.capture(), 2,
                           {domain::SweepMode::Single, 1}},
                          source, previews_, catalog_, operations_};
-    const auto operationId = std::get<OperationId>(runtime.requestRestart({
+    const auto operationId = std::get<OperationId>(runtime.requestRestart(
+        domain::ChannelId{1}, {
         CommandId{"restart-fail"}, SessionId{"session-1"}, 4}));
     const auto terminal = waitForTerminal(
         operations_, std::get<OperationSnapshot>(
@@ -204,7 +208,8 @@ TEST_F(SweepRuntimeControlTest, ContinuousRestartUsesReplacementSweep) {
                          std::ref(source), previews_, catalog_, operations_};
     EXPECT_TRUE(source.waitForStart());
 
-    const auto operationId = std::get<OperationId>(runtime.requestRestart({
+    const auto operationId = std::get<OperationId>(runtime.requestRestart(
+        domain::ChannelId{1}, {
         CommandId{"restart-continuous"}, SessionId{"session-1"}, 3}));
     const auto cancellationSeen = source.waitForCancellation();
     source.releaseCancellation();

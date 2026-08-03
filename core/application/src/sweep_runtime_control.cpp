@@ -7,8 +7,9 @@
 namespace vna::application::internal {
 
 SweepRuntimeRequestResult SweepRuntimeImpl::requestRestart(
+    domain::ChannelId channelId,
     OperationSubmission submission) {
-    auto admitted = admitRestart(std::move(submission));
+    auto admitted = admitRestart(channelId, std::move(submission));
     if (const auto* error =
             std::get_if<SweepRuntimeRequestError>(&admitted)) {
         return *error;
@@ -40,10 +41,15 @@ SweepRuntimeRequestResult SweepRuntimeImpl::requestRestart(
 }
 
 RestartAdmissionResult SweepRuntimeImpl::admitRestart(
+    domain::ChannelId channelId,
     OperationSubmission submission) {
     std::unique_lock lock{mutex_};
     // A publication that already claimed its boundary may finish first; the
     // replacement remains a bounded admission and begins at the next boundary.
+    if (channelId != plan_.publication->channelId) {
+        return SweepRuntimeRequestError{
+            SweepRuntimeRequestErrorCode::UnsupportedChannel};
+    }
     if (snapshot_.state != SweepRuntimeState::Running || admissionClosed_) {
         const auto code = snapshot_.state == SweepRuntimeState::Stopped
             ? SweepRuntimeRequestErrorCode::Stopped
