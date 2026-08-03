@@ -29,8 +29,7 @@ TEST(AllSParametersCommandValidationTest, ReusesExistingMeasurements) {
         domain::ChannelId{1}, domain::MeasurementType::S22).value();
     vna::test::CommandBusRuntimeOwner runtimeOwner{
         preset.commandBusState, 8};
-    CommandBus bus{InstrumentId{"instrument-1"},
-        vna::test::stoppedSingleSweepHandler(), runtimeOwner.runtime(),
+    CommandBus bus{InstrumentId{"instrument-1"}, runtimeOwner.runtime(),
         std::move(preset.commandBusState)};
 
     const auto result = bus.dispatch(ensureCommand());
@@ -54,8 +53,7 @@ TEST(AllSParametersCommandValidationTest, RejectsPartialDisplayAtomically) {
     vna::test::CommandBusRuntimeOwner runtimeOwner{
         preset.commandBusState, 8};
     const auto initialPlan = runtimeOwner.catalog().capture();
-    CommandBus bus{InstrumentId{"instrument-1"},
-        vna::test::stoppedSingleSweepHandler(), runtimeOwner.runtime(),
+    CommandBus bus{InstrumentId{"instrument-1"}, runtimeOwner.runtime(),
         std::move(preset.commandBusState)};
 
     const auto rejected = bus.dispatch(ensureCommand());

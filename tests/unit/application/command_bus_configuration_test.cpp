@@ -82,7 +82,7 @@ protected:
           runtime_({preset_.acquisitionPlan, catalog_.capture(), 32},
                    std::ref(source_), previews_, catalog_, operations_),
           bus_(InstrumentId{"instrument-1"},
-               vna::test::stoppedSingleSweepHandler(), runtime_,
+               runtime_,
                std::move(preset_.commandBusState)) {}
 
     CommandResult dispatch(CommandPayload payload) {

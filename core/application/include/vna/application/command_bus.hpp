@@ -94,7 +94,6 @@ struct CommandBusStats {
     std::uint64_t idempotencyEvictions{};
 };
 
-class SingleSweepCommandHandler;
 class SweepRuntime;
 struct CommandBusInitialState;
 
@@ -104,12 +103,10 @@ public:
     // opt into a fully assembled state through the overload below.
     explicit CommandBus(
         InstrumentId instrumentId,
-        SingleSweepCommandHandler& singleSweepHandler,
         SweepRuntime& sweepRuntime,
         std::size_t idempotencyCapacity = 1024);
     explicit CommandBus(
         InstrumentId instrumentId,
-        SingleSweepCommandHandler& singleSweepHandler,
         SweepRuntime& sweepRuntime,
         CommandBusInitialState initialState,
         std::size_t idempotencyCapacity = 1024);
@@ -169,8 +166,6 @@ private:
         ApplicationErrorCode code) const;
 
     InstrumentId instrumentId_;
-    // Non-owning; the composition root keeps the handler alive past this bus.
-    SingleSweepCommandHandler& singleSweepHandler_;
     // The sole runtime owns staging and safe-boundary application. It outlives
     // the bus; calls made here are bounded and never wait for the worker.
     SweepRuntime& sweepRuntime_;

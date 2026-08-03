@@ -42,10 +42,8 @@ SweepRuntimeRequestResult SweepRuntimeImpl::requestRestart(
 RestartAdmissionResult SweepRuntimeImpl::admitRestart(
     OperationSubmission submission) {
     std::unique_lock lock{mutex_};
-    changed_.wait(lock, [&] {
-        return !finalizingPublication_ ||
-            snapshot_.state != SweepRuntimeState::Running || admissionClosed_;
-    });
+    // A publication that already claimed its boundary may finish first; the
+    // replacement remains a bounded admission and begins at the next boundary.
     if (snapshot_.state != SweepRuntimeState::Running || admissionClosed_) {
         const auto code = snapshot_.state == SweepRuntimeState::Stopped
             ? SweepRuntimeRequestErrorCode::Stopped

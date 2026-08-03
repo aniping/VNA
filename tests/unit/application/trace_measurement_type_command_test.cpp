@@ -16,7 +16,6 @@ class TraceMeasurementTypeCommandTest : public ::testing::Test {
 protected:
     TraceMeasurementTypeCommandTest()
         : bus_(InstrumentId{"instrument-1"},
-               vna::test::stoppedSingleSweepHandler(),
                runtimeOwner_.runtime(),
                std::move(preset_.commandBusState)) {}
 

@@ -9,7 +9,7 @@
 namespace vna::application {
 namespace {
 
-enum class UnsupportedScenario {
+enum class DynamicScenario {
     S21,
     MissingTrace,
     Phase,
@@ -23,37 +23,32 @@ Value successValue(const CommandResult& result) {
     return std::get<Value>(std::get<CommandSuccess>(result.outcome).value);
 }
 
-const ApplicationError* applicationError(const CommandResult& result) {
-    const auto* error = std::get_if<CommandError>(&result.outcome);
-    return error == nullptr ? nullptr : std::get_if<ApplicationError>(error);
-}
-
 class ValidationHarness {
 public:
     ValidationHarness()
         : bus_(InstrumentId{"instrument-1"}) {}
 
-    void configure(UnsupportedScenario scenario) {
+    void configure(DynamicScenario scenario) {
         channel_ = successValue<domain::ChannelId>(dispatch(
             "channel", CreateChannelCommand{.sweep = validSweep()}));
-        const auto type = scenario == UnsupportedScenario::S21
+        const auto type = scenario == DynamicScenario::S21
             ? domain::MeasurementType::S21
             : domain::MeasurementType::S11;
         const auto measurement = successValue<domain::MeasurementId>(dispatch(
             "measurement", CreateMeasurementCommand{channel_, type}));
-        if (scenario == UnsupportedScenario::MissingTrace) {
+        if (scenario == DynamicScenario::MissingTrace) {
             return;
         }
         const auto window = successValue<display_model::WindowId>(
             dispatch("window", CreateWindowCommand{}));
         createTrace("trace", window, measurement, formatFor(scenario));
-        if (scenario == UnsupportedScenario::MultipleMeasurements) {
+        if (scenario == DynamicScenario::MultipleMeasurements) {
             static_cast<void>(dispatch(
                 "measurement-2",
                 CreateMeasurementCommand{
                     channel_, domain::MeasurementType::S11}));
         }
-        if (scenario == UnsupportedScenario::MultipleTraces) {
+        if (scenario == DynamicScenario::MultipleTraces) {
             createTrace("trace-2", window, measurement,
                         display_model::TraceFormat::LogMagnitude);
         }
@@ -72,11 +67,11 @@ private:
     }
 
     static display_model::TraceFormat formatFor(
-        UnsupportedScenario scenario) {
-        if (scenario == UnsupportedScenario::Phase) {
+        DynamicScenario scenario) {
+        if (scenario == DynamicScenario::Phase) {
             return display_model::TraceFormat::Phase;
         }
-        if (scenario == UnsupportedScenario::Smith) {
+        if (scenario == DynamicScenario::Smith) {
             return display_model::TraceFormat::Smith;
         }
         return display_model::TraceFormat::LogMagnitude;
@@ -106,33 +101,32 @@ private:
     vna::test::StoppedCommandBus bus_;
 };
 
-class UnsupportedSweepConfigurationTest
-    : public ::testing::TestWithParam<UnsupportedScenario> {};
+class DynamicSweepConfigurationTest
+    : public ::testing::TestWithParam<DynamicScenario> {};
 
-TEST_P(UnsupportedSweepConfigurationTest, RejectsBeforeExecutorAdmission) {
+TEST_P(DynamicSweepConfigurationTest, RuntimeAcceptsCurrentPlan) {
     ValidationHarness harness;
     harness.configure(GetParam());
     const auto revision = harness.bus().snapshot().stateRevision;
 
     const auto result = harness.start(harness.channel());
 
-    ASSERT_NE(applicationError(result), nullptr);
-    EXPECT_EQ(applicationError(result)->code,
-              ApplicationErrorCode::UnsupportedSweepConfiguration);
+    ASSERT_TRUE(std::holds_alternative<CommandSuccess>(result.outcome));
+    EXPECT_GT(successValue<OperationId>(result).value(), 0U);
     EXPECT_EQ(result.stateRevision, revision);
     EXPECT_EQ(harness.bus().snapshot().stateRevision, revision);
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    UnsupportedShapes,
-    UnsupportedSweepConfigurationTest,
+    DynamicShapes,
+    DynamicSweepConfigurationTest,
     ::testing::Values(
-        UnsupportedScenario::S21,
-        UnsupportedScenario::MissingTrace,
-        UnsupportedScenario::Phase,
-        UnsupportedScenario::Smith,
-        UnsupportedScenario::MultipleMeasurements,
-        UnsupportedScenario::MultipleTraces));
+        DynamicScenario::S21,
+        DynamicScenario::MissingTrace,
+        DynamicScenario::Phase,
+        DynamicScenario::Smith,
+        DynamicScenario::MultipleMeasurements,
+        DynamicScenario::MultipleTraces));
 
 TEST(StartSingleSweepValidationTest, ReportsMissingChannelAsDomainError) {
     ValidationHarness harness;

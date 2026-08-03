@@ -12,7 +12,6 @@ namespace {
 static_assert(std::is_constructible_v<
     CommandBus,
     InstrumentId,
-    SingleSweepCommandHandler&,
     SweepRuntime&>);
 static_assert(!std::is_constructible_v<
     CommandBus,

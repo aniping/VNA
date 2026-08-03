@@ -5,7 +5,6 @@
 #include <variant>
 
 #include <vna/application/command_bus.hpp>
-#include <vna/application/single_sweep_command_handler.hpp>
 #include <vna/application/trace_display_frame_repository.hpp>
 #include <vna/application/trace_publication_catalog.hpp>
 #include <vna/test/stopped_single_sweep_handler.hpp>
@@ -39,13 +38,10 @@ Value successValue(const CommandResult& result) {
     return std::get<Value>(std::get<CommandSuccess>(result.outcome).value);
 }
 
-class TraceFrameDiscardCommandTest
-    : public ::testing::Test,
-      private SingleSweepExecution {
+class TraceFrameDiscardCommandTest : public ::testing::Test {
 protected:
     TraceFrameDiscardCommandTest()
-        : handler_(*this),
-          bus_(InstrumentId{"instrument-1"}, handler_, runtimeOwner_.runtime(),
+        : bus_(InstrumentId{"instrument-1"}, runtimeOwner_.runtime(),
                std::move(initialState_)) {}
 
     CommandResult dispatch(CommandPayload payload) {
@@ -87,28 +83,10 @@ protected:
         };
     }
 
-private:
-    SingleSweepSubmitResult submit(SingleSweepWorkItem) override {
-        return SingleSweepSubmitError{
-            .code = SingleSweepSubmitErrorCode::Stopped};
-    }
-
-    void invalidateTraceFrame(
-        display_model::TraceId traceId) noexcept override {
-        repository_.discard(traceId);
-    }
-
-    void discardTrace(display_model::TraceId traceId) noexcept override {
-        ++discardCalls_;
-        repository_.discard(traceId);
-    }
-
 protected:
     CommandBusInitialState initialState_{singleChannelState()};
     vna::test::CommandBusRuntimeOwner runtimeOwner_{initialState_, 1};
     TraceDisplayFrameRepository& repository_{runtimeOwner_.repository()};
-    std::size_t discardCalls_{0};
-    SingleSweepCommandHandler handler_;
     CommandBus bus_;
     domain::MeasurementId measurementId_{1};
     display_model::WindowId windowId_{1};
@@ -132,7 +110,6 @@ TEST_F(TraceFrameDiscardCommandTest, CatalogRemovalReleasesTraceCapacity) {
     }
     ASSERT_NE(firstReader, nullptr);
     EXPECT_EQ(firstReader->traceId, display_model::TraceId{1});
-    EXPECT_EQ(discardCalls_, 0U);
 }
 
 TEST_F(TraceFrameDiscardCommandTest, FailedRemovalDoesNotDiscardFrame) {
@@ -148,7 +125,6 @@ TEST_F(TraceFrameDiscardCommandTest, FailedRemovalDoesNotDiscardFrame) {
     ASSERT_NE(error, nullptr);
     EXPECT_EQ(commandErrorCode(*error), CommandErrorCode::TraceNotFound);
     EXPECT_EQ(result.stateRevision, revision);
-    EXPECT_EQ(discardCalls_, 0U);
     EXPECT_EQ(repository_.latest(traceId), published.value());
 }
 

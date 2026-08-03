@@ -113,7 +113,7 @@ TEST_F(WebApiBusinessLogTest, LogsOnlyDecodedBusinessCommandResults) {
     EXPECT_EQ(text.find("invalidCommand"), std::string::npos);
 }
 
-TEST_F(WebApiBusinessLogTest, LogsDisabledSingleSweepAsResourceBusy) {
+TEST_F(WebApiBusinessLogTest, LogsAcceptedRestartOperation) {
     ASSERT_EQ(post(createChannelRequest("channel", 0))->status, 200);
     ASSERT_EQ(post(commandRequest(
         "measurement", 1, "createMeasurement",
@@ -127,17 +127,16 @@ TEST_F(WebApiBusinessLogTest, LogsDisabledSingleSweepAsResourceBusy) {
     log_.clear();
 
     const auto response = post(commandRequest(
-        "disabled-sweep", 4, "startSingleSweep", {{"channelId", 1}}));
+        "restart-sweep", 4, "startSingleSweep", {{"channelId", 1}}));
 
     ASSERT_TRUE(response);
-    ASSERT_EQ(response->status, httplib::StatusCode::Conflict_409);
+    ASSERT_EQ(response->status, httplib::StatusCode::OK_200);
     const auto text = log_.text();
     EXPECT_NE(text.find(
-        "WARN [单次扫频] 启动通道#1单次扫频请求被拒绝 | "
-        "command_id=disabled-sweep | session_id=web-log-session | "
-        "instrument_id=instrument-1 | revision=4 | "
-        "error_code=resource-busy"), std::string::npos);
-    EXPECT_EQ(text.find("operation_id="), std::string::npos);
+        "INFO [单次扫频] 启动通道#1单次扫频请求已成功处理 | "
+        "command_id=restart-sweep | session_id=web-log-session | "
+        "instrument_id=instrument-1 | revision=4 | operation_id="),
+        std::string::npos);
     EXPECT_EQ(text.find("sweep_id="), std::string::npos);
     EXPECT_EQ(text.find("frame_id="), std::string::npos);
 }

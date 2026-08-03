@@ -14,7 +14,6 @@
 
 #include <vna/application/command_bus.hpp>
 #include <vna/application/factory_preset.hpp>
-#include <vna/application/single_sweep_command_handler.hpp>
 #include <vna/application/trace_display_frame_query.hpp>
 #include <vna/application/trace_publication_catalog.hpp>
 #include <vna/test/stopped_single_sweep_handler.hpp>
@@ -29,16 +28,12 @@ bool succeeded(const application::CommandResult& result) {
     return std::holds_alternative<application::CommandSuccess>(result.outcome);
 }
 
-class WebApiWebSocketLifecycleTest
-    : public ::testing::Test,
-      private application::SingleSweepExecution {
+class WebApiWebSocketLifecycleTest : public ::testing::Test {
 protected:
     WebApiWebSocketLifecycleTest()
         : traceId_(preset_.defaultTraceId),
-          sweepHandler_(*this),
           commandBus_(
               application::InstrumentId{"instrument-1"},
-              sweepHandler_,
               runtimeOwner_.runtime(),
               std::move(preset_.commandBusState)),
           query_(commandBus_, repository_),
@@ -154,31 +149,15 @@ protected:
         client->close();
     }
 
-private:
-    application::SingleSweepSubmitResult submit(
-        application::SingleSweepWorkItem) override {
-        return application::SingleSweepSubmitError{
-            .code = application::SingleSweepSubmitErrorCode::Stopped};
-    }
-
-    void invalidateTraceFrame(
-        display_model::TraceId traceId) noexcept override {
-        repository_.discard(traceId);
-    }
-
-    void discardTrace(display_model::TraceId traceId) noexcept override {
-        repository_.discard(traceId);
-    }
-
 protected:
-    application::FactoryPreset preset_{application::makeFactoryPreset()};
+    application::FactoryPreset preset_{
+        vna::test::singleSweepFactoryPreset()};
     const display_model::TraceId traceId_;
     application::OperationManager operations_;
     vna::test::CommandBusRuntimeOwner runtimeOwner_{
         preset_.commandBusState, 1};
     application::TraceDisplayFrameRepository& repository_{
         runtimeOwner_.repository()};
-    application::SingleSweepCommandHandler sweepHandler_;
     application::CommandBus commandBus_;
     application::TraceDisplayFrameQuery query_;
     WebApi webApi_;

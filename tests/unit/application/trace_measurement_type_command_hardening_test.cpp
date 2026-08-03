@@ -37,7 +37,6 @@ class TraceMeasurementTypeCommandHardeningTest : public ::testing::Test {
 protected:
     TraceMeasurementTypeCommandHardeningTest()
         : bus_(InstrumentId{"instrument-1"},
-               vna::test::stoppedSingleSweepHandler(),
                runtimeOwner_.runtime(),
                std::move(preset_.commandBusState)) {}
 

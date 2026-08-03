@@ -7,7 +7,6 @@
 #include <exception>
 #include <type_traits>
 
-#include <vna/application/single_sweep_command_handler.hpp>
 #include <vna/application/sweep_runtime.hpp>
 
 namespace vna::application {
@@ -63,23 +62,19 @@ CommandErrorCode commandErrorCode(const ApplicationError& error) noexcept {
 
 CommandBus::CommandBus(
     InstrumentId instrumentId,
-    SingleSweepCommandHandler& singleSweepHandler,
     SweepRuntime& sweepRuntime,
     std::size_t idempotencyCapacity)
     : CommandBus(std::move(instrumentId),
-          singleSweepHandler,
           sweepRuntime,
           CommandBusInitialState{},
           idempotencyCapacity) {}
 
 CommandBus::CommandBus(
     InstrumentId instrumentId,
-    SingleSweepCommandHandler& singleSweepHandler,
     SweepRuntime& sweepRuntime,
     CommandBusInitialState initialState,
     std::size_t idempotencyCapacity)
     : instrumentId_(std::move(instrumentId)),
-      singleSweepHandler_(singleSweepHandler),
       sweepRuntime_(sweepRuntime),
       instrument_(std::move(initialState.instrument)),
       displayWorkspace_(std::move(initialState.displayWorkspace)),

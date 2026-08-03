@@ -66,8 +66,7 @@ TEST(SweepRuntimeModeTest, CommandStagesSweepCountAndSameValueNoOps) {
     ASSERT_TRUE(preset.commandBusState.instrument.updateChannelSweepControl(
         domain::ChannelId{1}, domain::SweepMode::Single, 1).hasValue());
     vna::test::CommandBusRuntimeOwner owner{preset.commandBusState};
-    CommandBus bus{InstrumentId{"instrument-1"},
-        vna::test::stoppedSingleSweepHandler(), owner.runtime(),
+    CommandBus bus{InstrumentId{"instrument-1"}, owner.runtime(),
         std::move(preset.commandBusState)};
 
     const auto changed = bus.dispatch(controlCommand(
@@ -101,8 +100,7 @@ TEST(SweepRuntimeModeTest, CommandStagesSweepCountAndSameValueNoOps) {
 TEST(SweepRuntimeModeTest, InvalidSweepControlHasNoVisibleSideEffect) {
     auto preset = makeFactoryPreset();
     vna::test::CommandBusRuntimeOwner owner{preset.commandBusState};
-    CommandBus bus{InstrumentId{"instrument-1"},
-        vna::test::stoppedSingleSweepHandler(), owner.runtime(),
+    CommandBus bus{InstrumentId{"instrument-1"}, owner.runtime(),
         std::move(preset.commandBusState)};
 
     for (const auto count : {0U, 100'001U}) {

@@ -8,10 +8,8 @@
 #include <utility>
 
 #include <vna/application/command_bus.hpp>
-#include <vna/application/disabled_single_sweep_execution.hpp>
 #include <vna/application/factory_preset.hpp>
 #include <vna/application/operation_manager.hpp>
-#include <vna/application/single_sweep_command_handler.hpp>
 #include <vna/application/sweep_preview_exchange.hpp>
 #include <vna/application/sweep_runtime.hpp>
 #include <vna/application/trace_display_frame_query.hpp>
@@ -154,14 +152,8 @@ int runServer() {
         makeSimulationSource(), previews, publication.catalog,
         operationManager};
     logInfo("[连续扫频] 仿真持续测量已启动");
-    // Until R4d routes Restart to SweepRuntime, the legacy command remains an
-    // explicit stopped adapter. It owns no source and cannot start a worker.
-    vna::application::DisabledSingleSweepExecution disabledSingleSweep;
-    vna::application::SingleSweepCommandHandler sweepHandler{
-        disabledSingleSweep};
     vna::application::CommandBus commandBus{
         vna::application::InstrumentId{instrumentId},
-        sweepHandler,
         sweepRuntime,
         std::move(preset.commandBusState)};
     vna::application::TraceDisplayFrameQuery displayFrameQuery{

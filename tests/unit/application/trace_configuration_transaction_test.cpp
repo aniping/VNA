@@ -27,7 +27,6 @@ class TraceConfigurationTransactionTest : public ::testing::Test {
 protected:
     TraceConfigurationTransactionTest()
         : bus_(InstrumentId{"instrument-1"},
-               vna::test::stoppedSingleSweepHandler(),
                runtimeOwner_.runtime(),
                std::move(preset_.commandBusState)) {}
 

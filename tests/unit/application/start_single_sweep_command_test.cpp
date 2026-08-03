@@ -1,12 +1,9 @@
 #include <gtest/gtest.h>
 
-#include <deque>
 #include <utility>
 #include <variant>
-#include <vector>
 
 #include <vna/application/command_bus.hpp>
-#include <vna/application/single_sweep_command_handler.hpp>
 #include <vna/test/stopped_single_sweep_handler.hpp>
 
 namespace vna::application {
@@ -32,13 +29,10 @@ Value successValue(const CommandResult& result) {
     return std::get<Value>(std::get<CommandSuccess>(result.outcome).value);
 }
 
-class StartSingleSweepHarness : private SingleSweepExecution {
+class StartSingleSweepHarness {
 public:
     explicit StartSingleSweepHarness(std::size_t idempotencyCapacity = 1024)
-        : handler_(*this),
-          bus_(InstrumentId{"instrument-1"},
-               handler_,
-               runtimeOwner_.runtime(),
+        : bus_(InstrumentId{"instrument-1"}, runtimeOwner_.runtime(),
                idempotencyCapacity) {}
 
     CommandResult createChannel() {
@@ -82,27 +76,9 @@ public:
     }
 
     [[nodiscard]] CommandBus& bus() noexcept { return bus_; }
-    void rejectNext(SingleSweepSubmitErrorCode code) {
-        rejections_.push_back(code);
-    }
-    [[nodiscard]] const std::vector<SingleSweepWorkItem>& submitted() const {
-        return submitted_;
-    }
+    void stopRuntime() { runtimeOwner_.runtime().stop(); }
 
 private:
-    SingleSweepSubmitResult submit(SingleSweepWorkItem work) override {
-        submitted_.push_back(work);
-        if (!rejections_.empty()) {
-            const auto code = rejections_.front();
-            rejections_.pop_front();
-            return SingleSweepSubmitError{.code = code};
-        }
-        return OperationId{71};
-    }
-
-    void invalidateTraceFrame(display_model::TraceId) noexcept override {}
-    void discardTrace(display_model::TraceId) noexcept override {}
-
     CommandEnvelope envelope(const char* commandId, CommandPayload payload) {
         return {
             .commandId = CommandId{commandId},
@@ -114,14 +90,11 @@ private:
         };
     }
 
-    std::vector<SingleSweepWorkItem> submitted_;
-    std::deque<SingleSweepSubmitErrorCode> rejections_;
     vna::test::CommandBusRuntimeOwner runtimeOwner_;
-    SingleSweepCommandHandler handler_;
     CommandBus bus_;
 };
 
-TEST(StartSingleSweepCommandTest, CachesMissingSweepTargetsWithoutSubmitting) {
+TEST(StartSingleSweepCommandTest, AcceptsChannelWithoutLegacyTraceShape) {
     StartSingleSweepHarness harness;
     ASSERT_TRUE(std::holds_alternative<CommandSuccess>(
         harness.createChannel().outcome));
@@ -129,14 +102,12 @@ TEST(StartSingleSweepCommandTest, CachesMissingSweepTargetsWithoutSubmitting) {
     const auto first = harness.start(domain::ChannelId{1});
     const auto replay = harness.start(domain::ChannelId{1});
 
-    ASSERT_NE(applicationError(first), nullptr);
-    EXPECT_EQ(applicationError(first)->code,
-              ApplicationErrorCode::UnsupportedSweepConfiguration);
+    EXPECT_EQ(successValue<OperationId>(first),
+              successValue<OperationId>(replay));
     EXPECT_EQ(first.stateRevision, 1U);
     EXPECT_EQ(replay.stateRevision, 1U);
     EXPECT_EQ(harness.bus().snapshot().stateRevision, 1U);
     EXPECT_EQ(harness.bus().stats().idempotencyEntries, 2U);
-    EXPECT_TRUE(harness.submitted().empty());
 }
 
 TEST(StartSingleSweepCommandTest, AcceptsOneS11LogMagnitudeSweep) {
@@ -146,50 +117,28 @@ TEST(StartSingleSweepCommandTest, AcceptsOneS11LogMagnitudeSweep) {
     const auto result = harness.start(channel);
 
     ASSERT_TRUE(std::holds_alternative<CommandSuccess>(result.outcome));
-    EXPECT_EQ(successValue<OperationId>(result), OperationId{71});
+    EXPECT_GT(successValue<OperationId>(result).value(), 0U);
     EXPECT_EQ(result.stateRevision, 4U);
     EXPECT_EQ(harness.bus().snapshot().stateRevision, 4U);
-    ASSERT_EQ(harness.submitted().size(), 1U);
-    const auto& work = harness.submitted().front();
-    EXPECT_EQ(work.commandId, CommandId{"start-sweep"});
-    EXPECT_EQ(work.sessionId, SessionId{"session-1"});
-    EXPECT_EQ(work.frameContext.channelId, channel);
-    EXPECT_EQ(work.frameContext.stateRevision, 4U);
-    EXPECT_EQ(work.frequencyAxis.startFrequencyHz, 1'000'000U);
-    EXPECT_EQ(work.frequencyAxis.stopFrequencyHz, 2'000'000U);
-    EXPECT_EQ(work.frequencyAxis.points, 5U);
-    EXPECT_EQ(work.measurement.id, domain::MeasurementId{1});
-    EXPECT_EQ(work.measurement.type, domain::MeasurementType::S11);
-    EXPECT_EQ(work.traceId, display_model::TraceId{1});
 }
 
-TEST(StartSingleSweepCommandTest, DoesNotCacheOrConsumeRejectedAdmission) {
+TEST(StartSingleSweepCommandTest, DoesNotCacheUnavailableRuntime) {
     StartSingleSweepHarness harness{4};
     const auto channel = harness.configureSupportedSweep();
-    harness.rejectNext(SingleSweepSubmitErrorCode::QueueFull);
-    harness.rejectNext(SingleSweepSubmitErrorCode::Stopped);
+    harness.stopRuntime();
 
-    const auto full = harness.start(channel);
-    const auto stopped = harness.start(channel);
+    const auto first = harness.start(channel);
+    const auto retried = harness.start(channel);
     EXPECT_EQ(harness.bus().stats().idempotencyEntries, 4U);
     EXPECT_EQ(harness.bus().stats().idempotencyEvictions, 0U);
-    const auto accepted = harness.start(channel);
 
-    ASSERT_NE(applicationError(full), nullptr);
-    EXPECT_EQ(applicationError(full)->code, ApplicationErrorCode::ResourceBusy);
-    ASSERT_NE(applicationError(stopped), nullptr);
-    EXPECT_EQ(applicationError(stopped)->code,
+    ASSERT_NE(applicationError(first), nullptr);
+    EXPECT_EQ(applicationError(first)->code, ApplicationErrorCode::ResourceBusy);
+    ASSERT_NE(applicationError(retried), nullptr);
+    EXPECT_EQ(applicationError(retried)->code,
               ApplicationErrorCode::ResourceBusy);
-    EXPECT_EQ(full.stateRevision, 4U);
-    EXPECT_EQ(stopped.stateRevision, 4U);
-    EXPECT_EQ(successValue<OperationId>(accepted), OperationId{71});
-    EXPECT_EQ(accepted.stateRevision, 4U);
-    EXPECT_EQ(harness.bus().stats().idempotencyEntries, 4U);
-    EXPECT_EQ(harness.bus().stats().idempotencyEvictions, 1U);
-    ASSERT_EQ(harness.submitted().size(), 3U);
-    EXPECT_EQ(harness.submitted()[0].frameContext.frameId, frames::FrameId{1});
-    EXPECT_EQ(harness.submitted()[1].frameContext.frameId, frames::FrameId{1});
-    EXPECT_EQ(harness.submitted()[2].frameContext.frameId, frames::FrameId{1});
+    EXPECT_EQ(first.stateRevision, 4U);
+    EXPECT_EQ(retried.stateRevision, 4U);
 }
 
 TEST(StartSingleSweepCommandTest, ReplaysAcceptedOperationAndRejectsChannelReuse) {
@@ -206,9 +155,10 @@ TEST(StartSingleSweepCommandTest, ReplaysAcceptedOperationAndRejectsChannelReuse
     const auto reuse = harness.bus().dispatch(reused);
     const auto original = harness.bus().dispatch(command);
 
-    EXPECT_EQ(successValue<OperationId>(accepted), OperationId{71});
-    EXPECT_EQ(successValue<OperationId>(replay), OperationId{71});
-    EXPECT_EQ(successValue<OperationId>(original), OperationId{71});
+    EXPECT_EQ(successValue<OperationId>(accepted),
+              successValue<OperationId>(replay));
+    EXPECT_EQ(successValue<OperationId>(accepted),
+              successValue<OperationId>(original));
     EXPECT_EQ(accepted.stateRevision, 4U);
     EXPECT_EQ(replay.stateRevision, 4U);
     EXPECT_EQ(original.stateRevision, 4U);
@@ -216,7 +166,6 @@ TEST(StartSingleSweepCommandTest, ReplaysAcceptedOperationAndRejectsChannelReuse
     EXPECT_EQ(applicationError(reuse)->code,
               ApplicationErrorCode::CommandIdReuse);
     EXPECT_EQ(reuse.stateRevision, 5U);
-    EXPECT_EQ(harness.submitted().size(), 1U);
 }
 
 }  // namespace

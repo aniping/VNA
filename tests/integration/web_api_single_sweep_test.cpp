@@ -3,20 +3,14 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
-#include <chrono>
-#include <future>
-#include <stop_token>
 #include <string>
 #include <thread>
 #include <utility>
 #include <variant>
 
 #include <vna/application/operation_manager.hpp>
-#include <vna/application/single_sweep_command_handler.hpp>
-#include <vna/application/single_sweep_executor.hpp>
 #include <vna/application/trace_display_frame_query.hpp>
 #include <vna/application/trace_publication_catalog.hpp>
-#include <vna/simulation/simulation_sweep.hpp>
 #include <vna/test/stopped_single_sweep_handler.hpp>
 #include <vna/web_api/web_api.hpp>
 
@@ -24,8 +18,6 @@ namespace vna::web_api {
 namespace {
 
 using Json = nlohmann::json;
-using namespace std::chrono_literals;
-
 Json commandRequest(
     std::string commandId,
     std::uint64_t revision,
@@ -54,16 +46,8 @@ Json sweepPayload() {
 class WebApiSingleSweepTest : public ::testing::Test {
 protected:
     WebApiSingleSweepTest()
-        : executor_(
-              2,
-              [](const frames::FrequencyAxis& axis, std::stop_token) {
-                  return simulation::simulateSweep(axis);
-              },
-              operations_,
-              repository_),
-          handler_(executor_),
-          commandBus_(
-              application::InstrumentId{"instrument-1"}, handler_,
+        : commandBus_(
+              application::InstrumentId{"instrument-1"},
               runtimeOwner_.runtime()),
           query_(commandBus_, repository_),
           webApi_(
@@ -124,21 +108,10 @@ protected:
         ASSERT_EQ(trace->status, httplib::StatusCode::OK_200);
     }
 
-    void waitForSessionOperations() {
-        auto completion = std::promise<void>{};
-        auto completed = completion.get_future();
-        auto subscription = operations_.subscribe(
-            operations_.captureFence(application::SessionId{"session-1"}),
-            [&completion] { completion.set_value(); });
-        ASSERT_EQ(completed.wait_for(2s), std::future_status::ready);
-    }
-
-    application::OperationManager operations_;
     vna::test::CommandBusRuntimeOwner runtimeOwner_{{}, 1};
+    application::OperationManager& operations_{runtimeOwner_.operations()};
     application::TraceDisplayFrameRepository& repository_{
         runtimeOwner_.repository()};
-    application::SingleSweepExecutor executor_;
-    application::SingleSweepCommandHandler handler_;
     application::CommandBus commandBus_;
     application::TraceDisplayFrameQuery query_;
     WebApi webApi_;
@@ -146,7 +119,7 @@ protected:
     std::thread serverThread_;
 };
 
-TEST_F(WebApiSingleSweepTest, StartsRealSweepAndPublishesDisplayFrame) {
+TEST_F(WebApiSingleSweepTest, RoutesRestartToRuntimeOperation) {
     configureTrace("S11");
 
     const auto accepted = post(commandRequest(
@@ -163,37 +136,28 @@ TEST_F(WebApiSingleSweepTest, StartsRealSweepAndPublishesDisplayFrame) {
     EXPECT_GT(operationId, 0U);
     EXPECT_EQ(commandBus_.snapshot().stateRevision, 4U);
 
-    waitForSessionOperations();
     const auto operation = get(
         "/api/v1/operations/" + std::to_string(operationId));
-    const auto frame = get("/api/v1/traces/1/display-frame");
     ASSERT_TRUE(operation);
-    ASSERT_TRUE(frame);
     ASSERT_EQ(operation->status, httplib::StatusCode::OK_200);
-    ASSERT_EQ(frame->status, httplib::StatusCode::OK_200);
     const auto operationBody = Json::parse(operation->body);
-    const auto frameBody = Json::parse(frame->body);
-    EXPECT_EQ(operationBody.at("status"), "Succeeded");
-    EXPECT_EQ(operationBody.at("frameId"), frameBody.at("frameId"));
-    EXPECT_EQ(frameBody.at("traceId"), 1);
-    EXPECT_EQ(frameBody.at("stateRevision"), 4);
-    EXPECT_EQ(frameBody.at("frequenciesHz").size(), 5U);
-    EXPECT_EQ(frameBody.at("values").size(), 5U);
+    EXPECT_TRUE(operationBody.at("status") == "Queued" ||
+                operationBody.at("status") == "Running");
+    EXPECT_EQ(operationBody.at("submittedAtStateRevision"), 4);
 }
 
-TEST_F(WebApiSingleSweepTest, MapsUnsupportedSweepConfiguration) {
+TEST_F(WebApiSingleSweepTest, AcceptsDynamicS21Configuration) {
     configureTrace("S21");
 
     const auto response = post(commandRequest(
         "start-sweep", 4, "startSingleSweep", {{"channelId", 1}}));
 
     ASSERT_TRUE(response);
-    ASSERT_EQ(response->status, httplib::StatusCode::UnprocessableContent_422);
+    ASSERT_EQ(response->status, httplib::StatusCode::OK_200);
     const auto body = Json::parse(response->body);
-    EXPECT_EQ(body.at("status"), "validationError");
+    EXPECT_EQ(body.at("status"), "succeeded");
     EXPECT_EQ(body.at("stateRevision"), 4);
-    EXPECT_EQ(body.at("errorCode"), "unsupported-sweep-configuration");
-    EXPECT_FALSE(repository_.latest(display_model::TraceId{1}));
+    EXPECT_GT(body.at("value").at("operationId").get<std::uint64_t>(), 0U);
 }
 
 }  // namespace

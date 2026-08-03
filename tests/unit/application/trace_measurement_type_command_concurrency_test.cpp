@@ -55,7 +55,6 @@ TEST(TraceMeasurementTypeCommandConcurrencyTest, DispatchesLinearizeAtRevision) 
         preset.commandBusState, 4};
     CommandBus bus{
         InstrumentId{"instrument-1"},
-        vna::test::stoppedSingleSweepHandler(),
         runtimeOwner.runtime(),
         std::move(preset.commandBusState)};
     StartGate gate;
