@@ -38,6 +38,19 @@ bool sameAcquisitionPlan(
         left.minimumSweepPeriod == right.minimumSweepPeriod;
 }
 
+void applySweep(
+    acquisition::ContinuousAcquisitionPlan& acquisition,
+    const domain::ChannelSnapshot& channel) {
+    acquisition.frequencyAxis.startFrequencyHz =
+        channel.sweep.startFrequencyHz;
+    acquisition.frequencyAxis.stopFrequencyHz =
+        channel.sweep.stopFrequencyHz;
+    acquisition.frequencyAxis.points = channel.sweep.points;
+    acquisition.ifBandwidthHz =
+        static_cast<std::uint32_t>(channel.sweep.ifBandwidthHz);
+    acquisition.powerDbm = channel.sweep.powerDbm;
+}
+
 }  // namespace
 
 SweepRuntimeConfigurationPrepareResult
@@ -58,14 +71,7 @@ SweepRuntimeImpl::prepareConfiguration(const StateSnapshot& candidate) {
     }
     auto acquisition = plan_.acquisition;
     if (channel != candidate.instrument.channels.cend()) {
-        acquisition.frequencyAxis.startFrequencyHz =
-            channel->sweep.startFrequencyHz;
-        acquisition.frequencyAxis.stopFrequencyHz =
-            channel->sweep.stopFrequencyHz;
-        acquisition.frequencyAxis.points = channel->sweep.points;
-        acquisition.ifBandwidthHz =
-            static_cast<std::uint32_t>(channel->sweep.ifBandwidthHz);
-        acquisition.powerDbm = channel->sweep.powerDbm;
+        applySweep(acquisition, *channel);
     }
     const auto acquisitionChanged = !sameAcquisitionPlan(
         acquisition, plan_.acquisition);

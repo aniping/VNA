@@ -167,6 +167,7 @@ TEST_F(CommandBusConfigurationTest,
 
 TEST_F(CommandBusConfigurationTest,
        RuntimeRejectionLeavesStateRevisionAndCacheUntouched) {
+    const auto catalogBefore = catalog_.capture();
     runtime_.stop();
     const auto before = bus_.snapshot();
     auto sweep = before.instrument.channels[0].sweep;
@@ -181,6 +182,9 @@ TEST_F(CommandBusConfigurationTest,
     EXPECT_EQ(rejected.stateRevision, 0U);
     EXPECT_EQ(bus_.snapshot().instrument.channels[0].sweep.startFrequencyHz,
               before.instrument.channels[0].sweep.startFrequencyHz);
+    EXPECT_EQ(runtime_.snapshot().configuredStateRevision, 0U);
+    EXPECT_EQ(catalog_.capture(), catalogBefore);
+    EXPECT_EQ(repository_.latestFrameSet(), nullptr);
     EXPECT_EQ(bus_.stats().idempotencyEntries, 0U);
 }
 

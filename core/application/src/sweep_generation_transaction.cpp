@@ -4,7 +4,6 @@
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
-#include <vector>
 
 namespace vna::application::internal {
 namespace {
@@ -67,12 +66,6 @@ SweepGenerationCommitResult SweepGenerationTransaction::advance(
                     candidate->generation)) {
         return SweepGenerationCommitError::GenerationMismatch;
     }
-    std::vector<std::shared_ptr<TraceDisplayFrameRepository::WaitState>> notify;
-    notify.reserve(repository.waitStates_.size());
-    for (const auto& [traceId, state] : repository.waitStates_) {
-        static_cast<void>(traceId);
-        notify.push_back(state);
-    }
     TraceMap emptyFrames;
     PreviewEvent nextEvent{SweepPreviewGenerationAdvanced{
         SweepPreviewCursor{previews.nextCursor_}, candidate->generation}};
@@ -80,8 +73,10 @@ SweepGenerationCommitResult SweepGenerationTransaction::advance(
         repository.generation_ = candidate->generation;
         repository.latestFrameSet_.reset();
         repository.latestByTrace_.swap(emptyFrames);
-        for (const auto& state : notify) {
+        for (const auto& [traceId, state] : repository.waitStates_) {
+            static_cast<void>(traceId);
             ++state->discardGeneration;
+            state->changed.notify_all();
         }
         previews.generation_ = candidate->generation;
         previews.activeIdentity_.reset();
@@ -89,18 +84,16 @@ SweepGenerationCommitResult SweepGenerationTransaction::advance(
         ++previews.nextCursor_;
         previews.latestEvent_.swap(nextEvent);
         catalog.current_.swap(candidate);
+        repository.frameSetChanged_.notify_all();
+        previews.changed_.notify_all();
     };
+    static_assert(noexcept(std::declval<std::condition_variable&>().notify_all()));
     static_assert(noexcept(commitPrepared()));
     commitPrepared();
     const auto committed = catalog.current_;
     previewLock.unlock();
     repositoryLock.unlock();
     catalogLock.unlock();
-    for (const auto& state : notify) {
-        state->changed.notify_all();
-    }
-    repository.frameSetChanged_.notify_all();
-    previews.changed_.notify_all();
     return committed;
 }
 
