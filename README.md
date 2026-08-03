@@ -12,6 +12,7 @@
 - [第一阶段实施范围](docs/phase-1.md)
 - [平台支持矩阵](docs/support-matrix.md)
 - [ZNB 单屏界面复刻基线](docs/ui-znb-v74-reference.md)
+- [参考资料索引](docs/ref/README.md)
 - [架构决策记录](docs/adr/)
 
 ## 当前基线
@@ -52,6 +53,7 @@ VectorNetworkAnalyzer/
 ├── frontend/                 # ZNB 风格本地 Web 前端
 ├── tests/                    # 单元、集成、契约和仿真测试
 ├── docs/                     # 产品、架构、规范和 ADR
+│   └── ref/                  # 固定版本的本地参考资料及索引
 ├── cmake/                    # 构建辅助模块
 ├── packaging/                # 发布组装脚本
 └── third-part/               # 固定版本的离线三方源码

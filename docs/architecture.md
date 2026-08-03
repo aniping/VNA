@@ -86,7 +86,7 @@ vna/infrastructure/platform/
 ├── windows/
 └── linux/
 
-drivers/platform/
+vna/hardware/drivers/
 ├── windows/
 └── linux/
 ```

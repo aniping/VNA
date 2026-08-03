@@ -11,9 +11,9 @@ VectorNetworkAnalyzer 的产品功能和页面 UI 以 R&S ZNB User Manual Versio
 发生冲突或歧义时，按以下顺序处理：
 
 1. 用户当前明确指令和用户提供的参考截图。
-2. 本地 `ZNB_UserManual_en_74.pdf`。
+2. 本地 [ZNB User Manual v74](ref/znb-user-manual-v74.pdf)。
 3. ZNB 实机行为或用户确认的实机证据。
-4. 本地 `ZNA_UserManual_en_41.pdf`，仅用于 ZNB 未覆盖的共同测量语义。
+4. 本地 [ZNA User Manual v41](ref/zna-user-manual-v41.pdf)，仅用于 ZNB 未覆盖的共同测量语义。
 5. 现有项目文档、测试和代码。
 
 不得用 ZNA 的双屏布局、控件结构或默认行为覆盖 ZNB。现有实现与手册不一致时，现有实现不是正确性依据。

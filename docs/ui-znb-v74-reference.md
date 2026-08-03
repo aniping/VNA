@@ -26,10 +26,10 @@ ZNB v74、ZNA v41；不得沿用与 ZNB 单屏操作方式冲突的 ZNA 双屏�
 ## 2. 参考资料
 
 - 用户提供的当前页面截图：控制区职责、按钮语义和单屏密度的最高优先级证据。
-- 本地 `ZNB_UserManual_en_74.pdf`：第 30–34 页为单触摸屏与前面板按键布局，
+- 本地 [ZNB User Manual v74](ref/znb-user-manual-v74.pdf)：第 30–34 页为单触摸屏与前面板按键布局，
   第 41–49 页为 Toolbar、Diagram、Softtool、虚拟 Hardkey、菜单和状态栏，
   第 285–290 页为 Meas Softtool 的职责、层级与 S 参数控件顺序。
-- 本地 `ZNA_UserManual_en_41.pdf`：仅在 ZNB v74 未覆盖的 Scale 等细节中作
+- 本地 [ZNA User Manual v41](ref/zna-user-manual-v41.pdf)：仅在 ZNB v74 未覆盖的 Scale 等细节中作
   补充；不能据其 Control Window 或双屏布局覆盖 ZNB 主基线。
 
 ## 3. 基准画布

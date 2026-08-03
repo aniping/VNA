@@ -4,7 +4,7 @@
 >
 > 基线：`main@a589bf7`
 >
-> 主依据：`ZNB_UserManual_en_74.pdf` 印刷页 89、91、290、794、1063
+> 主依据：[ZNB User Manual v74](ref/znb-user-manual-v74.pdf) 印刷页 89、91、290、794、1063
 
 ## 1. 用户可见目标
 

@@ -44,12 +44,6 @@ Thumbs.db
 /third-part/nlohmann-json/
 /third-part/spdlog/
 
-# Local vendor manuals used only as design/protocol references
-/ZNA_UserManual_en_41.pdf
-/ZNB_UserManual_en_74.pdf
-/Remote_Control_SCPI_GettingStarted_en_04.pdf
-/基于矢量网络分析仪的混频器测量技术研究及实现_林明维.pdf
-
 # Frontend dependencies and build output
 /frontend/node_modules/
 /frontend/dist/

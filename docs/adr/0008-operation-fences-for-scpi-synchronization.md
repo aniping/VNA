@@ -62,8 +62,10 @@ sleep、轮询业务状态或在等待期间持有控制事务锁。
 ## 依据与结果
 
 该语义依据 IEEE 488.2/SCPI Operation Complete 模型，以及项目本地手册
-`Remote_Control_SCPI_GettingStarted_en_04.pdf` 第 5.3.3、7、8.4 节和
-`ZNA_UserManual_en_41.pdf` 的命令同步说明。
+[Remote Control SCPI Getting Started v04](../ref/remote-control-scpi-getting-started-v04.pdf)
+第 5.3.3 节（印刷页 29）、第 7 节（印刷页 34–36）和第 8.4 节（印刷页 38–39），以及
+[ZNA User Manual v41](../ref/zna-user-manual-v41.pdf) 第 6.4.6 节（印刷页 1058–1060）和
+第 8.1.1.3 节（印刷页 1951–1953）的命令同步说明。
 
 代价是需要 OperationManager、SCPI 顺序器和状态寄存器三个明确模块；收益是
 Web、SCPI、仿真和真实硬件共享同一个完成事实，且 `*OPC` 能正确覆盖成功、
