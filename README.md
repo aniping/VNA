@@ -217,3 +217,25 @@ cd frontend
 pnpm test
 pnpm run build
 ```
+
+## Linux 编译
+
+```shell
+export LD_LIBRARY_PATH=/opt/vna-gcc73/usr/lib/x86_64-linux-gnu
+
+cmake -S . -B out/gcc73-release -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_C_COMPILER=/opt/vna-gcc73/usr/bin/gcc-7 -DCMAKE_CXX_COMPILER=/opt/vna-gcc73/usr/bin/g++-7
+  
+cmake --build out/gcc73-release --target vna-server -- -j"$(nproc)"
+```
+
+### 全量测试
+
+```shell
+export LD_LIBRARY_PATH=/opt/vna-gcc73/usr/lib/x86_64-linux-gnu
+
+cmake -S . -B /opt/vna-gcc73-main-full -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=/opt/vna-gcc73/usr/bin/gcc-7 -DCMAKE_CXX_COMPILER=/opt/vna-gcc73/usr/bin/g++-7
+
+cmake --build /opt/vna-gcc73-main-full --parallel "$(nproc)"
+
+ctest --test-dir /opt/vna-gcc73-main-full --parallel "$(nproc)" --output-on-failure
+```

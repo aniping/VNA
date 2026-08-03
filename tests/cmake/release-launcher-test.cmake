@@ -13,6 +13,7 @@ file(MAKE_DIRECTORY
 
 if(WIN32)
     set(launcher "${TEST_TEMP_DIR}/release/start.cmd")
+    set(log_suffix "logs\\vna.log")
     set(server "${TEST_TEMP_DIR}/release/bin/vna-server.exe")
     # A stable wrapper quotes the environment-expanded path inside cmd itself;
     # CMake's automatic .cmd invocation otherwise reparses '&' as an operator.
@@ -22,6 +23,7 @@ if(WIN32)
     file(COPY_FILE "${SOURCE_DIR}/packaging/start.cmd" "${launcher}")
 else()
     set(launcher "${TEST_TEMP_DIR}/release/start.sh")
+    set(log_suffix "logs/vna.log")
     set(server "${TEST_TEMP_DIR}/release/bin/vna-server")
     set(command /bin/sh "${launcher}")
     file(COPY_FILE "${SOURCE_DIR}/packaging/start.sh" "${launcher}")
@@ -60,7 +62,7 @@ endif()
 require_contains("${success_output}" "Starting Vector Network Analyzer")
 require_contains("${success_output}" "Web URL: http://127.0.0.1:8080/")
 require_contains("${success_output}" "Log file:")
-require_contains("${success_output}" "logs\\vna.log")
+require_contains("${success_output}" "${log_suffix}")
 
 run_launcher(7 failure_output failure_result)
 if(NOT failure_result EQUAL 7)

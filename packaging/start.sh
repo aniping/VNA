@@ -1,4 +1,5 @@
 #!/bin/sh
+# Keep the offline Linux launcher POSIX-sh compatible and LF-terminated.
 set -u
 
 script_dir=$(CDPATH= cd "$(dirname "$0")" && pwd)
