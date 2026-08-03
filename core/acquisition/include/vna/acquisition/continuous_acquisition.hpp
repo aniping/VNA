@@ -6,7 +6,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <variant>
 #include <vector>
 
@@ -45,7 +45,7 @@ using RawFrameHandle = std::shared_ptr<const RawFrame>;
 using RawSweepSource = std::function<frames::Result<frames::RawReceiverPayload>(
     const ContinuousAcquisitionPlan&,
     std::uint64_t,
-    std::stop_token)>;
+    vna::compat::StopToken)>;
 enum class ContinuousAcquisitionState {
     Running,
     Stopped,
@@ -91,7 +91,7 @@ public:
     [[nodiscard]] RawFrameHandle latest() const;
     [[nodiscard]] RawFrameHandle waitForNext(
         std::uint64_t afterSequence,
-        std::stop_token token = {}) const;
+        vna::compat::StopToken token = {}) const;
     [[nodiscard]] ContinuousAcquisitionSnapshot snapshot() const;
 
 private:

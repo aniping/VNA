@@ -36,7 +36,7 @@ application::SweepRuntimePlan runtimePlan(
 acquisition::RawSweepCaptureResult completeSweep(
     const acquisition::RawSweepCaptureRequest& request,
     const acquisition::RawSweepChunkObserver&,
-    std::stop_token) {
+    vna::compat::StopToken) {
     return acquisition::test_support::validPayload(request.sequenceNumber);
 }
 

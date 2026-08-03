@@ -2,7 +2,7 @@ add_executable(
     vna_runtime_log_probe
     runtime_log_probe.cpp
 )
-target_compile_features(vna_runtime_log_probe PRIVATE cxx_std_20)
+target_compile_features(vna_runtime_log_probe PRIVATE cxx_std_17)
 target_include_directories(
     vna_runtime_log_probe
     PRIVATE ${PROJECT_SOURCE_DIR}/apps/vna-server
@@ -10,6 +10,7 @@ target_include_directories(
 target_link_libraries(
     vna_runtime_log_probe
     PRIVATE
+        vna::cpp_compat
         vna_server_runtime_log
         spdlog::spdlog
 )

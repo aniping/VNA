@@ -5,7 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <variant>
 #include <vector>
 
@@ -24,8 +24,16 @@ struct SweepPreviewIdentity {
     std::uint64_t generation;
     acquisition::SweepId sweepId;
     friend bool operator==(
-        const SweepPreviewIdentity&,
-        const SweepPreviewIdentity&) = default;
+        const SweepPreviewIdentity& left,
+        const SweepPreviewIdentity& right) {
+        return left.generation == right.generation &&
+            left.sweepId == right.sweepId;
+    }
+    friend bool operator!=(
+        const SweepPreviewIdentity& left,
+        const SweepPreviewIdentity& right) {
+        return !(left == right);
+    }
 };
 
 // Each Trace carries a complete prefix from point zero. This lets a slow
@@ -133,7 +141,7 @@ public:
     [[nodiscard]] bool invalidate(SweepPreviewIdentity identity) noexcept;
     [[nodiscard]] std::optional<SweepPreviewEvent> waitForNext(
         SweepPreviewCursor after,
-        std::stop_token token = {}) const;
+        vna::compat::StopToken token = {}) const;
 
 private:
     friend class internal::SweepGenerationTransaction;

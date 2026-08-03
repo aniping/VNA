@@ -5,8 +5,8 @@
 
 namespace vna::application::internal {
 
-bool SweepRuntimeImpl::prepareCycle(std::stop_token token) {
-    auto cycleStop = std::make_shared<std::stop_source>();
+bool SweepRuntimeImpl::prepareCycle(vna::compat::StopToken token) {
+    auto cycleStop = std::make_shared<vna::compat::StopSource>();
     std::unique_lock lock{mutex_};
     applyPendingConfiguration();
     if (!activeRequest_.has_value() &&
@@ -19,11 +19,11 @@ bool SweepRuntimeImpl::prepareCycle(std::stop_token token) {
             previews_.updateForRuntime(displayStatusLocked());
         }
         changed_.wait(lock, [&] {
-            return token.stop_requested() || pendingOperation_.has_value() ||
+            return token.stopRequested() || pendingOperation_.has_value() ||
                 plan_.execution.mode == domain::SweepMode::Continuous;
         });
     }
-    if (token.stop_requested()) {
+    if (token.stopRequested()) {
         return false;
     }
     if (pendingOperation_.has_value()) {

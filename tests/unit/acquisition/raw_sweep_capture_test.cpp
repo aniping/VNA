@@ -3,7 +3,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -29,7 +29,7 @@ RawSweepCaptureRequest request(std::uint32_t maximumPointsPerChunk = 2) {
 RawSweepChunkProducer payloadProducer(std::vector<RawSweepChunkRequest>& seen) {
     return [&seen](const ContinuousAcquisitionPlan&,
                    RawSweepChunkRequest chunk,
-                   std::stop_token) -> RawSweepChunkResult {
+                   vna::compat::StopToken) -> RawSweepChunkResult {
         seen.push_back(chunk);
         const auto payload = validPayload(chunk.sequenceNumber);
         const auto& source = payload.sourceStates.at(chunk.sourcePort - 1);
@@ -75,7 +75,7 @@ TEST(RawSweepCaptureTest, RejectsMismatchedRangeWithoutPublishingPartial) {
     RawSweepChunkProducer producer = [](
         const ContinuousAcquisitionPlan&,
         RawSweepChunkRequest chunk,
-        std::stop_token) -> RawSweepChunkResult {
+        vna::compat::StopToken) -> RawSweepChunkResult {
         auto payload = validPayload(chunk.sequenceNumber);
         return RawSweepPointRange{
             .sourcePort = chunk.sourcePort + 1,
@@ -95,16 +95,16 @@ TEST(RawSweepCaptureTest, RejectsMismatchedRangeWithoutPublishingPartial) {
 
 TEST(RawSweepCaptureTest, CancellationAfterAChunkNeverReturnsCompletePayload) {
     std::vector<RawSweepChunkRequest> requests;
-    std::stop_source stop;
+    vna::compat::StopSource stop;
     int observed = 0;
 
     const auto result = captureRawSweep(
         request(), payloadProducer(requests),
         [&](const auto&) {
             ++observed;
-            stop.request_stop();
+            stop.requestStop();
         },
-        stop.get_token());
+        stop.getToken());
 
     EXPECT_TRUE(std::holds_alternative<RawSweepCaptureCanceled>(result));
     EXPECT_EQ(observed, 1);
@@ -113,17 +113,17 @@ TEST(RawSweepCaptureTest, CancellationAfterAChunkNeverReturnsCompletePayload) {
 
 TEST(RawSweepCaptureTest, CancellationAtFinalRangeStillRejectsCompletePayload) {
     std::vector<RawSweepChunkRequest> requests;
-    std::stop_source stop;
+    vna::compat::StopSource stop;
     int observed = 0;
 
     const auto result = captureRawSweep(
         request(), payloadProducer(requests),
         [&](const auto&) {
             if (++observed == 4) {
-                stop.request_stop();
+                stop.requestStop();
             }
         },
-        stop.get_token());
+        stop.getToken());
 
     EXPECT_TRUE(std::holds_alternative<RawSweepCaptureCanceled>(result));
     EXPECT_EQ(observed, 4);
@@ -135,7 +135,7 @@ TEST(RawSweepCaptureTest, SourceFailureDoesNotNotifyOrReturnPayload) {
     RawSweepChunkProducer producer = [](
         const ContinuousAcquisitionPlan&,
         RawSweepChunkRequest,
-        std::stop_token) -> RawSweepChunkResult {
+        vna::compat::StopToken) -> RawSweepChunkResult {
         return frames::FrameError{frames::FrameErrorCode::NonFiniteSample};
     };
 
@@ -155,7 +155,7 @@ TEST(RawSweepCaptureTest, RejectsNegativePlanPeriodBeforeCallingSource) {
     RawSweepChunkProducer producer = [&calls](
         const ContinuousAcquisitionPlan&,
         RawSweepChunkRequest,
-        std::stop_token) -> RawSweepChunkResult {
+        vna::compat::StopToken) -> RawSweepChunkResult {
         ++calls;
         return frames::FrameError{frames::FrameErrorCode::InvalidFrequencyAxis};
     };

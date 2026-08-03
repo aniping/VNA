@@ -45,7 +45,7 @@ add_library(
 )
 add_library(vna::application ALIAS vna_application)
 
-target_compile_features(vna_application PUBLIC cxx_std_20)
+target_compile_features(vna_application PUBLIC cxx_std_17)
 target_include_directories(
     vna_application
     PUBLIC
@@ -53,7 +53,12 @@ target_include_directories(
 )
 target_link_libraries(
     vna_application
-    PUBLIC vna::acquisition vna::display_model vna::domain vna::frame_contracts
+    PUBLIC
+        vna::acquisition
+        vna::cpp_compat
+        vna::display_model
+        vna::domain
+        vna::frame_contracts
     PRIVATE Threads::Threads spdlog::spdlog vna::data_plane vna::measurement
 )
 target_compile_options(vna_application PRIVATE -Wall -Wextra -Wpedantic)

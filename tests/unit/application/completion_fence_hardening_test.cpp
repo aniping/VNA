@@ -65,7 +65,7 @@ TEST(CompletionFenceHardeningTest, CancelingClaimedSubscriptionPreventsStart) {
     auto second = manager.subscribe(
         std::move(secondFence), [&] { callback(2); });
     bool completed = false;
-    std::jthread completer([&] {
+    std::thread completer([&] {
         completed = std::holds_alternative<OperationSnapshot>(
             manager.complete(
                 operation.id, OperationSucceeded{frames::FrameId{1}}));
@@ -99,7 +99,7 @@ TEST(CompletionFenceHardeningTest, ExternalCancelWaitsForRunningCallback) {
         releaseCallback.wait();
         callbackFinished.store(true);
     });
-    std::jthread completer([&] {
+    std::thread completer([&] {
         static_cast<void>(
             manager.complete(
                 operation.id, OperationSucceeded{frames::FrameId{1}}));
@@ -107,7 +107,7 @@ TEST(CompletionFenceHardeningTest, ExternalCancelWaitsForRunningCallback) {
     callbackStarted.wait();
     std::promise<void> cancelReturned;
     auto cancelResult = cancelReturned.get_future();
-    std::jthread canceler([&] {
+    std::thread canceler([&] {
         cancelStarted.notify();
         subscription.cancel();
         cancelReturned.set_value();

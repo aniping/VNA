@@ -3,7 +3,7 @@
 #include <chrono>
 #include <future>
 #include <stdexcept>
-#include <stop_token>
+#include <vna/compat/joining_thread.hpp>
 #include <thread>
 #include <variant>
 #include <vector>
@@ -18,45 +18,33 @@ namespace {
 using namespace std::chrono_literals;
 
 StateSnapshot singleTraceState() {
-    return {
-        .stateRevision = 7,
-        .control = {},
-        .instrument = {
-            .channels = {{
-                .id = domain::ChannelId{1},
-                .sweep = {
-                    .startFrequencyHz = 1'000'000,
-                    .stopFrequencyHz = 2'000'000,
-                    .points = 3,
-                    .ifBandwidthHz = 10'000,
-                    .powerDbm = -10.5,
-                }}},
-            .measurements = {{
-                domain::MeasurementId{1}, domain::ChannelId{1},
-                domain::MeasurementType::S21}},
-        },
-        .display = {
-            .traces = {{
-                display_model::TraceId{1}, display_model::WindowId{1},
-                domain::MeasurementId{1},
-                display_model::TraceFormat::LogMagnitude, std::nullopt}},
-        },
-    };
+    StateSnapshot state{};
+    state.stateRevision = 7;
+    state.instrument.channels = {{
+        domain::ChannelId{1}, {1'000'000, 2'000'000, 3, 10'000, -10.5}}};
+    state.instrument.measurements = {{
+        domain::MeasurementId{1}, domain::ChannelId{1},
+        domain::MeasurementType::S21}};
+    state.display.traces = {{
+        display_model::TraceId{1}, display_model::WindowId{1},
+        domain::MeasurementId{1}, display_model::TraceFormat::LogMagnitude,
+        std::nullopt}};
+    return state;
 }
 
 class SetWait {
 public:
     explicit SetWait(const TraceDisplayFrameRepository& repository)
         : returned_(promise_.get_future()),
-          worker_([this, &repository](std::stop_token token) {
+          worker_([this, &repository](vna::compat::StopToken token) {
               result_ = repository.waitForNextSet({1, 0}, token);
               promise_.set_value();
           }) {}
-    ~SetWait() { worker_.request_stop(); }
+    ~SetWait() { worker_.requestStop(); }
 
     TraceDisplayFrameSetHandle finish() {
         if (returned_.wait_for(2s) != std::future_status::ready) {
-            worker_.request_stop();
+            worker_.requestStop();
             throw std::runtime_error{"frame set was not published"};
         }
         worker_.join();
@@ -71,7 +59,7 @@ private:
     std::promise<void> promise_;
     std::future<void> returned_;
     std::optional<TraceDisplayFrameSetEvent> result_;
-    std::jthread worker_;
+    vna::compat::JoiningThread worker_;
 };
 
 class FailingSecondSource {
@@ -79,7 +67,7 @@ public:
     frames::Result<frames::RawReceiverPayload> operator()(
         const acquisition::ContinuousAcquisitionPlan& plan,
         std::uint64_t sequence,
-        std::stop_token token) const {
+        vna::compat::StopToken token) const {
         auto result = source_(plan, sequence, token);
         if (sequence == 2) {
             return frames::Result<frames::RawReceiverPayload>{

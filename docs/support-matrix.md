@@ -9,10 +9,10 @@
 | 平台 | CPU | 编译器 | 构建工具 | 验证方式 |
 | --- | --- | --- | --- | --- |
 | Windows 11 | x86-64 | MinGW-W64 GCC 10.3 或更新版本 | CMake 3.25+、Ninja | 本地 GCC 10.3 验证；Windows CI 使用 MSYS2 MINGW64 当前稳定 GCC |
-| Ubuntu 22.04 LTS | x86-64 | GCC 11 或更新版本 | CMake 3.25+、Ninja | Linux CI configure、build、test |
+| Linux | x86-64 | GCC 7.3 或更新版本 | CMake 3.25+、Ninja | GCC 7.3 Release 构建与聚焦测试；Linux CI configure、build、test |
 
-项目不配置或支持 MSVC、Clang、WSL、Wine、32 位平台和交叉编译。其他 Linux
-发行版可自行构建，但在加入 CI 前不属于承诺的支持范围。
+项目不配置或支持 MSVC、Clang、WSL、Wine、32 位平台和交叉编译。Linux 发行版
+必须提供满足上表版本下限的 GCC、CMake 与 Ninja。
 
 ## CI 必须执行
 

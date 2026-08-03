@@ -22,8 +22,16 @@ struct SweepAcquisitionProgress {
     std::uint64_t completedPoints{};
     std::uint64_t totalPoints{};
     friend bool operator==(
-        const SweepAcquisitionProgress&,
-        const SweepAcquisitionProgress&) = default;
+        const SweepAcquisitionProgress& left,
+        const SweepAcquisitionProgress& right) {
+        return left.completedPoints == right.completedPoints &&
+            left.totalPoints == right.totalPoints;
+    }
+    friend bool operator!=(
+        const SweepAcquisitionProgress& left,
+        const SweepAcquisitionProgress& right) {
+        return !(left == right);
+    }
 };
 
 // Runtime owns this truth; the Exchange retains a copy so reconnecting and slow
@@ -37,8 +45,22 @@ struct SweepRuntimeDisplayStatus {
     SweepAcquisitionProgress progress;
     bool firstSweepAfterConfiguration;
     friend bool operator==(
-        const SweepRuntimeDisplayStatus&,
-        const SweepRuntimeDisplayStatus&) = default;
+        const SweepRuntimeDisplayStatus& left,
+        const SweepRuntimeDisplayStatus& right) {
+        return left.generation == right.generation &&
+            left.channelId == right.channelId &&
+            left.stateRevision == right.stateRevision &&
+            left.sweepId == right.sweepId &&
+            left.userPhase == right.userPhase &&
+            left.progress == right.progress &&
+            left.firstSweepAfterConfiguration ==
+                right.firstSweepAfterConfiguration;
+    }
+    friend bool operator!=(
+        const SweepRuntimeDisplayStatus& left,
+        const SweepRuntimeDisplayStatus& right) {
+        return !(left == right);
+    }
 };
 
 }  // namespace vna::application

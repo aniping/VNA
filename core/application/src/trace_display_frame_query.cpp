@@ -36,7 +36,11 @@ struct TraceBinding {
     domain::MeasurementId measurementId;
     domain::MeasurementType measurementType;
     display_model::TraceFormat format;
-    friend bool operator==(const TraceBinding&, const TraceBinding&) = default;
+    friend bool operator==(const TraceBinding& left, const TraceBinding& right) {
+        return left.measurementId == right.measurementId &&
+            left.measurementType == right.measurementType &&
+            left.format == right.format;
+    }
 };
 
 std::optional<TraceBinding> findBinding(
@@ -89,7 +93,7 @@ TraceDisplayFrameQueryOutcome TraceDisplayFrameQuery::latest(
 TraceDisplayFrameQueryOutcome TraceDisplayFrameQuery::waitForNext(
     display_model::TraceId traceId,
     std::uint64_t afterSequence,
-    std::stop_token token) const {
+    vna::compat::StopToken token) const {
     const auto before = commandBus_.snapshot();
     const auto* trace = findTrace(before, traceId);
     if (trace == nullptr) {

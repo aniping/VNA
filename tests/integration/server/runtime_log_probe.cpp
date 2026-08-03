@@ -1,7 +1,7 @@
 #include "runtime_log.hpp"
 
 #include <cstdlib>
-#include <filesystem>
+#include <vna/compat/filesystem.hpp>
 
 #include <spdlog/spdlog.h>
 
@@ -10,7 +10,8 @@ int run(int argc, Character** argv) {
     if (argc != 2) {
         return EXIT_FAILURE;
     }
-    vna::server::initializeRuntimeLog(std::filesystem::path{argv[1]});
+    vna::server::initializeRuntimeLog(
+        vna::compat::filesystem::path{argv[1]});
     const auto logger = spdlog::get("vna");
     if (!logger) {
         return EXIT_FAILURE;

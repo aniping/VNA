@@ -4,7 +4,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <variant>
 #include <vector>
 
@@ -30,8 +30,8 @@ public:
     acquisition::RawSweepCaptureResult operator()(
         const acquisition::RawSweepCaptureRequest& request,
         const acquisition::RawSweepChunkObserver& observer,
-        std::stop_token token) {
-        std::stop_callback notify{token, [this] { notifyWaiters(); }};
+        vna::compat::StopToken token) {
+        vna::compat::StopCallback notify{token, [this] { notifyWaiters(); }};
         const auto sequence = request.sequenceNumber;
         if (!await(sequence, releasedPreview_, token, true)) {
             return acquisition::RawSweepCaptureCanceled{};
@@ -89,7 +89,7 @@ private:
     bool await(
         std::uint64_t sequence,
         const std::uint64_t& released,
-        std::stop_token token,
+        vna::compat::StopToken token,
         bool announce) {
         std::unique_lock lock{mutex_};
         if (announce) {
@@ -97,9 +97,9 @@ private:
             changed_.notify_all();
         }
         changed_.wait(lock, [&] {
-            return token.stop_requested() || released >= sequence;
+            return token.stopRequested() || released >= sequence;
         });
-        return !token.stop_requested();
+        return !token.stopRequested();
     }
 
     void notifyWaiters() {

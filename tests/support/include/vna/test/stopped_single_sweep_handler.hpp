@@ -5,7 +5,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <stdexcept>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <utility>
 
 #include <vna/application/command_bus.hpp>
@@ -57,15 +57,15 @@ inline application::SweepRuntimeExecutionPolicy commandBusTestExecution(
 inline acquisition::RawSweepCaptureResult waitUntilRuntimeStops(
     const acquisition::RawSweepCaptureRequest&,
     const acquisition::RawSweepChunkObserver&,
-    std::stop_token token) {
+    vna::compat::StopToken token) {
     std::mutex mutex;
     std::condition_variable changed;
-    std::stop_callback notify{token, [&] {
+    vna::compat::StopCallback notify{token, [&] {
         std::lock_guard lock{mutex};
         changed.notify_all();
     }};
     std::unique_lock lock{mutex};
-    changed.wait(lock, [&] { return token.stop_requested(); });
+    changed.wait(lock, [&] { return token.stopRequested(); });
     return acquisition::RawSweepCaptureCanceled{};
 }
 

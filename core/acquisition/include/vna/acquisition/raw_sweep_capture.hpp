@@ -2,7 +2,7 @@
 
 #include <cstdint>
 #include <functional>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <variant>
 #include <vector>
 
@@ -24,8 +24,16 @@ struct RawSweepPointRange {
     std::uint32_t firstPoint;
     std::vector<frames::RawReceiverSample> samples;
     friend bool operator==(
-        const RawSweepPointRange&,
-        const RawSweepPointRange&) = default;
+        const RawSweepPointRange& left,
+        const RawSweepPointRange& right) {
+        return left.sourcePort == right.sourcePort &&
+            left.firstPoint == right.firstPoint && left.samples == right.samples;
+    }
+    friend bool operator!=(
+        const RawSweepPointRange& left,
+        const RawSweepPointRange& right) {
+        return !(left == right);
+    }
 };
 
 struct RawSweepChunkRequest {
@@ -35,8 +43,19 @@ struct RawSweepChunkRequest {
     std::uint32_t firstPoint;
     std::uint32_t pointCount;
     friend bool operator==(
-        const RawSweepChunkRequest&,
-        const RawSweepChunkRequest&) = default;
+        const RawSweepChunkRequest& left,
+        const RawSweepChunkRequest& right) {
+        return left.sweepId == right.sweepId &&
+            left.sequenceNumber == right.sequenceNumber &&
+            left.sourcePort == right.sourcePort &&
+            left.firstPoint == right.firstPoint &&
+            left.pointCount == right.pointCount;
+    }
+    friend bool operator!=(
+        const RawSweepChunkRequest& left,
+        const RawSweepChunkRequest& right) {
+        return !(left == right);
+    }
 };
 
 struct RawSweepCaptureCanceled {};
@@ -55,13 +74,13 @@ using RawSweepCaptureResult = std::variant<
 using RawSweepChunkProducer = std::function<RawSweepChunkResult(
     const ContinuousAcquisitionPlan&,
     RawSweepChunkRequest,
-    std::stop_token)>;
+    vna::compat::StopToken)>;
 using RawSweepChunkObserver =
     std::function<void(const RawSweepPointRange&)>;
 using RawSweepCaptureSource = std::function<RawSweepCaptureResult(
     const RawSweepCaptureRequest&,
     const RawSweepChunkObserver&,
-    std::stop_token)>;
+    vna::compat::StopToken)>;
 
 // Drives source states and point ranges in plan order. The observer is a
 // synchronous progress seam and must return promptly; only the final return
@@ -70,6 +89,6 @@ using RawSweepCaptureSource = std::function<RawSweepCaptureResult(
     const RawSweepCaptureRequest& request,
     const RawSweepChunkProducer& producer,
     const RawSweepChunkObserver& observer = {},
-    std::stop_token token = {});
+    vna::compat::StopToken token = {});
 
 }  // namespace vna::acquisition

@@ -10,7 +10,7 @@
 namespace vna::web_api::detail {
 
 WebAssetPathKind classifyWebAssetPathNoFollow(
-    const std::filesystem::path& path) {
+    const vna::compat::filesystem::path& path) {
     const auto attributes = GetFileAttributesW(path.c_str());
     if (attributes == INVALID_FILE_ATTRIBUTES) {
         const auto error = GetLastError();

@@ -4,7 +4,7 @@
 #include <condition_variable>
 #include <future>
 #include <mutex>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <variant>
 
 #include <vna/application/command_bus.hpp>
@@ -33,7 +33,7 @@ OperationSnapshot waitForTerminal(
 acquisition::RawSweepCaptureResult validSource(
     const acquisition::RawSweepCaptureRequest& request,
     const acquisition::RawSweepChunkObserver&,
-    std::stop_token) {
+    vna::compat::StopToken) {
     return acquisition::test_support::validPayload(request.sequenceNumber);
 }
 
@@ -42,17 +42,18 @@ public:
     acquisition::RawSweepCaptureResult operator()(
         const acquisition::RawSweepCaptureRequest& request,
         const acquisition::RawSweepChunkObserver&,
-        std::stop_token token) {
+        vna::compat::StopToken token) {
         if (request.sequenceNumber == 2) {
             return acquisition::test_support::validPayload(
                 request.sequenceNumber);
         }
-        std::stop_callback notify{token, [this] { announceCancellation(); }};
+        vna::compat::StopCallback notify{
+            token, [this] { announceCancellation(); }};
         std::unique_lock lock{mutex_};
         started_ = true;
         changed_.notify_all();
         changed_.wait(lock, [&] {
-            return token.stop_requested() && releaseCancellation_;
+            return token.stopRequested() && releaseCancellation_;
         });
         return acquisition::RawSweepCaptureCanceled{};
     }
@@ -184,7 +185,7 @@ TEST_F(SweepRuntimeControlTest, SingleFailureKeepsFailedUntilRestart) {
     const auto source = [](
                             const acquisition::RawSweepCaptureRequest&,
                             const acquisition::RawSweepChunkObserver&,
-                            std::stop_token) ->
+                            vna::compat::StopToken) ->
         acquisition::RawSweepCaptureResult {
         return frames::FrameError{frames::FrameErrorCode::NonFiniteSample};
     };

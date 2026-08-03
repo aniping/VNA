@@ -10,7 +10,7 @@
 
 namespace vna::platform {
 
-std::filesystem::path currentExecutablePath() {
+vna::compat::filesystem::path currentExecutablePath() {
     constexpr std::size_t maximumPathCharacters = 1U << 20U;
     std::vector<char> buffer(256);
 
@@ -22,7 +22,7 @@ std::filesystem::path currentExecutablePath() {
                 errno, std::generic_category(), "read /proc/self/exe");
         }
         if (static_cast<std::size_t>(length) < buffer.size()) {
-            auto result = std::filesystem::path{
+            auto result = vna::compat::filesystem::path{
                 std::string_view{buffer.data(), static_cast<std::size_t>(length)}};
             if (!result.is_absolute()) {
                 throw std::runtime_error("executable path is not absolute");

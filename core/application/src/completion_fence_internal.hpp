@@ -20,6 +20,11 @@ struct FenceCoordinator {
 };
 
 struct CompletionFenceState {
+    CompletionFenceState(
+        std::shared_ptr<FenceCoordinator> owner,
+        std::vector<std::uint64_t> ids)
+        : coordinator{std::move(owner)}, capturedIds{std::move(ids)} {}
+
     std::shared_ptr<FenceCoordinator> coordinator;
     std::vector<std::uint64_t> capturedIds;
 };

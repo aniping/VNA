@@ -9,10 +9,11 @@ endif()
 add_library(vna_platform ${vna_platform_sources})
 add_library(vna::platform ALIAS vna_platform)
 
-target_compile_features(vna_platform PUBLIC cxx_std_20)
+target_compile_features(vna_platform PUBLIC cxx_std_17)
 target_include_directories(
     vna_platform
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
+target_link_libraries(vna_platform PUBLIC vna::cpp_compat)
 target_compile_options(vna_platform PRIVATE -Wall -Wextra -Wpedantic)

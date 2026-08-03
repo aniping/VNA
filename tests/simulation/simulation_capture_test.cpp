@@ -3,7 +3,7 @@
 #include <chrono>
 #include <cstdint>
 #include <future>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <variant>
 #include <vector>
 
@@ -54,9 +54,9 @@ TEST(SimulationCaptureTest, PacesOrderedChunksAndMatchesCompleteSweep) {
     std::vector<acquisition::RawSweepPointRange> observed;
     auto source = makeOpenPortSweepSource(
         {.seed = seed, .sweepDuration = 60ms},
-        [&delays](auto delay, std::stop_token token) {
+        [&delays](auto delay, vna::compat::StopToken token) {
             delays.push_back(delay);
-            return !token.stop_requested();
+            return !token.stopRequested();
         });
     const auto request = captureRequest();
 
@@ -86,9 +86,9 @@ TEST(SimulationCaptureTest, DefaultsToOneSecondSweepPacing) {
     std::vector<std::chrono::steady_clock::duration> delays;
     auto source = makeOpenPortSweepSource(
         {.seed = 7},
-        [&delays](auto delay, std::stop_token token) {
+        [&delays](auto delay, vna::compat::StopToken token) {
             delays.push_back(delay);
-            return !token.stop_requested();
+            return !token.stopRequested();
         });
 
     const auto result = source(captureRequest(), {}, {});
@@ -103,22 +103,22 @@ TEST(SimulationCaptureTest, DefaultsToOneSecondSweepPacing) {
 }
 
 TEST(SimulationCaptureTest, ControlledPacerCancelsWithoutCompletePayload) {
-    std::stop_source stop;
+    vna::compat::StopSource stop;
     int paceCalls = 0;
     int observed = 0;
     auto source = makeOpenPortSweepSource(
         {.seed = 7, .sweepDuration = 60ms},
-        [&](auto, std::stop_token token) {
+        [&](auto, vna::compat::StopToken token) {
             if (++paceCalls == 2) {
-                stop.request_stop();
+                stop.requestStop();
             }
-            return !token.stop_requested();
+            return !token.stopRequested();
         });
 
     const auto result = source(
         captureRequest(),
         [&observed](const auto&) { ++observed; },
-        stop.get_token());
+        stop.getToken());
 
     EXPECT_TRUE(std::holds_alternative<
                 acquisition::RawSweepCaptureCanceled>(result));
@@ -133,20 +133,20 @@ TEST(SimulationCaptureTest, DefaultPacerStopsAfterCaptureCallStarts) {
     auto source = makeOpenPortSweepSource(
         {.seed = 7, .sweepDuration = 18s},
         [steadyPacer = std::move(steadyPacer), &pacing](
-            auto delay, std::stop_token token) {
+            auto delay, vna::compat::StopToken token) {
             pacing.set_value();
             return steadyPacer(delay, token);
         });
-    std::stop_source stop;
+    vna::compat::StopSource stop;
 
     auto result = std::async(std::launch::async, [&] {
-        return source(captureRequest(), {}, stop.get_token());
+        return source(captureRequest(), {}, stop.getToken());
     });
     if (pacingStarted.wait_for(1s) != std::future_status::ready) {
-        stop.request_stop();
+        stop.requestStop();
         FAIL() << "capture did not enter the production pacer";
     }
-    stop.request_stop();
+    stop.requestStop();
 
     ASSERT_EQ(result.wait_for(1s), std::future_status::ready);
     EXPECT_TRUE(std::holds_alternative<

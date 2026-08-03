@@ -1,8 +1,9 @@
 #pragma once
 
-#include <filesystem>
 #include <optional>
 #include <string>
+
+#include <vna/compat/filesystem.hpp>
 
 namespace vna::web_api::detail {
 
@@ -15,12 +16,12 @@ enum class WebAssetPathKind {
 
 // Classifies the entry itself without following a link or reparse point.
 [[nodiscard]] WebAssetPathKind classifyWebAssetPathNoFollow(
-    const std::filesystem::path& path);
+    const vna::compat::filesystem::path& path);
 
-[[nodiscard]] std::optional<std::filesystem::path> validateWebRoot(
-    const std::optional<std::filesystem::path>& webRoot);
+[[nodiscard]] std::optional<vna::compat::filesystem::path> validateWebRoot(
+    const std::optional<vna::compat::filesystem::path>& webRoot);
 [[nodiscard]] std::optional<std::string> resolveWebAsset(
-    const std::filesystem::path& assetsRoot,
+    const vna::compat::filesystem::path& assetsRoot,
     const std::string& requestedPath);
 
 }  // namespace vna::web_api::detail

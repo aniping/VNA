@@ -4,7 +4,7 @@
 
 #include <array>
 #include <limits>
-#include <span>
+#include <vna/compat/span.hpp>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -116,7 +116,7 @@ TEST(TraceSampleRangeProjectorTest, ProjectsLogMagnitudeWithoutACompleteFrame) {
     };
 
     const auto result = projectTraceSamples(
-        std::span<const frames::ComplexSample>{samples},
+        vna::compat::Span<const frames::ComplexSample>{samples},
         display_model::TraceFormat::LogMagnitude);
 
     ASSERT_TRUE(result.hasValue());
@@ -135,7 +135,7 @@ TEST(TraceSampleRangeProjectorTest, RejectsNonFiniteComplexInput) {
     };
 
     const auto result = projectTraceSamples(
-        std::span<const frames::ComplexSample>{samples},
+        vna::compat::Span<const frames::ComplexSample>{samples},
         display_model::TraceFormat::Phase);
 
     ASSERT_FALSE(result.hasValue());

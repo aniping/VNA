@@ -32,18 +32,18 @@ CommandBus::ControlAuthority::Transition
 CommandBus::ControlAuthority::activate(const SessionId& sessionId) {
     if (auto* local = std::get_if<LocalAttached>(&state_)) {
         if (local->owner != sessionId) {
-            return {.error = ApplicationErrorCode::ControlDenied};
+            return Transition{ApplicationErrorCode::ControlDenied};
         }
         auto attached = std::move(*local);
         state_.emplace<RemoteAttached>(
             std::move(attached.owner), std::move(attached.revoker));
-        return {.revisionChanged = true};
+        return Transition{true, false};
     }
     const auto* remote = std::get_if<RemoteAttached>(&state_);
     if (remote != nullptr && remote->owner == sessionId) {
         return {};
     }
-    return {.error = ApplicationErrorCode::ControlDenied};
+    return Transition{ApplicationErrorCode::ControlDenied};
 }
 
 CommandBus::ControlAuthority::Transition
@@ -53,7 +53,7 @@ CommandBus::ControlAuthority::detach(const SessionId& sessionId) {
     }
     if (const auto* revoking = std::get_if<LocalRevoking>(&state_)) {
         if (revoking->owner != sessionId) {
-            return {.error = ApplicationErrorCode::ControlDenied};
+            return Transition{ApplicationErrorCode::ControlDenied};
         }
         state_.emplace<LocalNoLease>();
         return {};
@@ -62,17 +62,14 @@ CommandBus::ControlAuthority::detach(const SessionId& sessionId) {
     auto* local = std::get_if<LocalAttached>(&state_);
     const SessionId& owner = remote != nullptr ? remote->owner : local->owner;
     if (sessionId != owner) {
-        return {.error = ApplicationErrorCode::ControlDenied};
+        return Transition{ApplicationErrorCode::ControlDenied};
     }
     const bool wasRemote = remote != nullptr;
     auto revoker = wasRemote
         ? std::move(remote->revoker)
         : std::move(local->revoker);
     state_.emplace<LocalNoLease>();
-    return {
-        .revisionChanged = wasRemote,
-        .deferredRevoker = std::move(revoker),
-    };
+    return Transition{wasRemote, false, std::move(revoker)};
 }
 
 CommandBus::ControlAuthority::Transition
@@ -84,18 +81,11 @@ CommandBus::ControlAuthority::takeLocal() {
     if (auto* local = std::get_if<LocalAttached>(&state_)) {
         auto attached = std::move(*local);
         state_.emplace<LocalRevoking>(std::move(attached.owner));
-        return {
-            .invokeRevoker = true,
-            .deferredRevoker = std::move(attached.revoker),
-        };
+        return Transition{false, true, std::move(attached.revoker)};
     }
     auto attached = std::move(std::get<RemoteAttached>(state_));
     state_.emplace<LocalRevoking>(std::move(attached.owner));
-    return {
-        .revisionChanged = true,
-        .invokeRevoker = true,
-        .deferredRevoker = std::move(attached.revoker),
-    };
+    return Transition{true, true, std::move(attached.revoker)};
 }
 
 bool CommandBus::ControlAuthority::authorizes(

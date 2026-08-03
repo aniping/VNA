@@ -6,7 +6,7 @@
 #include <future>
 #include <optional>
 #include <stdexcept>
-#include <stop_token>
+#include <vna/compat/joining_thread.hpp>
 #include <thread>
 #include <utility>
 #include <variant>
@@ -50,7 +50,7 @@ StateSnapshot publicationState(
 auto finiteSource() {
     return [](const acquisition::ContinuousAcquisitionPlan&,
               std::uint64_t sequence,
-              std::stop_token) {
+              vna::compat::StopToken) {
         if (sequence != 1) {
             return frames::Result<frames::RawReceiverPayload>{
                 frames::FrameError{frames::FrameErrorCode::InvalidPortCount}};
@@ -64,15 +64,15 @@ class SetWait {
 public:
     explicit SetWait(const TraceDisplayFrameRepository& repository)
         : returned_(promise_.get_future()),
-          worker_([this, &repository](std::stop_token token) {
+          worker_([this, &repository](vna::compat::StopToken token) {
               result_ = repository.waitForNextSet({1, 0}, token);
               promise_.set_value();
           }) {}
-    ~SetWait() { worker_.request_stop(); }
+    ~SetWait() { worker_.requestStop(); }
 
     TraceDisplayFrameSetHandle finish() {
         if (returned_.wait_for(2s) != std::future_status::ready) {
-            worker_.request_stop();
+            worker_.requestStop();
             throw std::runtime_error{"frame set was not published"};
         }
         worker_.join();
@@ -87,7 +87,7 @@ private:
     std::promise<void> promise_;
     std::future<void> returned_;
     std::optional<TraceDisplayFrameSetEvent> result_;
-    std::jthread worker_;
+    vna::compat::JoiningThread worker_;
 };
 
 class ProjectionFailureSource {
@@ -95,7 +95,7 @@ public:
     frames::Result<frames::RawReceiverPayload> operator()(
         const acquisition::ContinuousAcquisitionPlan& plan,
         std::uint64_t sequence,
-        std::stop_token token) const {
+        vna::compat::StopToken token) const {
         auto result = source_(plan, sequence, token);
         if (sequence == 3) {
             return frames::Result<frames::RawReceiverPayload>{

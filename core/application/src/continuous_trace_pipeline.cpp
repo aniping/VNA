@@ -43,7 +43,7 @@ MeasurementBatch collectMeasurements(
     batch.indexById.reserve(targets.size());
     for (const auto& target : targets) {
         const auto id = target.measurement.id.value();
-        if (batch.indexById.contains(id)) {
+        if (batch.indexById.find(id) != batch.indexById.end()) {
             continue;
         }
         batch.indexById.emplace(id, batch.requests.size());

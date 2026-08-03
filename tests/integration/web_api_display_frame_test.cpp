@@ -86,17 +86,11 @@ protected:
 
     application::TraceDisplayFrame frame(std::uint32_t points) const {
         application::TraceDisplayFrame result{
-            .frameId = frames::FrameId{1},
-            .traceId = display_model::TraceId{1},
-            .measurementId = domain::MeasurementId{1},
-            .measurementType = domain::MeasurementType::S11,
-            .stateRevision = 4,
-            .generation = 1,
-            .sequenceNumber = 1,
-            .format = display_model::TraceFormat::LogMagnitude,
-            .samples = application::CartesianTraceDisplaySamples{
-                .unit = application::TraceDisplayUnit::Decibel},
-        };
+            frames::FrameId{1}, display_model::TraceId{1},
+            domain::MeasurementId{1}, domain::MeasurementType::S11, 4, 1, 1,
+            display_model::TraceFormat::LogMagnitude, {},
+            application::CartesianTraceDisplaySamples{
+                application::TraceDisplayUnit::Decibel, {}}};
         result.frequenciesHz.reserve(points);
         auto& values = std::get<application::CartesianTraceDisplaySamples>(
             result.samples).values;

@@ -7,10 +7,10 @@ namespace vna::application {
 TraceDisplayFrameHandle TraceDisplayFrameRepository::waitForNext(
     display_model::TraceId traceId,
     std::uint64_t afterSequence,
-    std::stop_token token,
+    vna::compat::StopToken token,
     TraceDisplayFrameWaitValidation validate) const {
     std::unique_lock lock{mutex_};
-    if (token.stop_requested()) {
+    if (token.stopRequested()) {
         return nullptr;
     }
     auto& entry = waitStates_[traceId.value()];
@@ -46,19 +46,19 @@ void TraceDisplayFrameRepository::releaseWaitRegistration(
 
 TraceDisplayFrameHandle TraceDisplayFrameRepository::awaitRegistered(
     WaitRegistration registration,
-    std::stop_token token) const {
+    vna::compat::StopToken token) const {
     TraceDisplayFrameHandle result;
     {
         // Cancellation changes stop state outside this repository. Taking the
         // same mutex before notification closes the predicate-to-sleep gap.
-        std::stop_callback notify{token, [this, state = registration.state] {
+        vna::compat::StopCallback notify{token, [this, state = registration.state] {
             std::lock_guard guard{mutex_};
             state->changed.notify_all();
         }};
         std::unique_lock lock{mutex_};
         registration.state->changed.wait(lock, [&] {
             const auto latest = latestByTrace_.find(registration.traceId);
-            return token.stop_requested() ||
+            return token.stopRequested() ||
                    registration.state->discardGeneration !=
                        registration.discardGeneration ||
                    (latest != latestByTrace_.end() &&
@@ -69,7 +69,7 @@ TraceDisplayFrameHandle TraceDisplayFrameRepository::awaitRegistered(
         const auto discarded = registration.state->discardGeneration !=
                                registration.discardGeneration;
         const auto latest = latestByTrace_.find(registration.traceId);
-        if (!token.stop_requested() && !discarded &&
+        if (!token.stopRequested() && !discarded &&
             latest != latestByTrace_.end()) {
             result = latest->second;
         }

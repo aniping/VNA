@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <unordered_map>
 namespace vna::web_api::detail {
 struct DisplayStreamClose {
@@ -30,7 +30,7 @@ struct DisplayFrameStreamSession {
         : id(value), socket(&valueSocket) {}
 
     void requestStopAndClose(DisplayStreamClose action) noexcept {
-        static_cast<void>(stop.request_stop());
+        static_cast<void>(stop.requestStop());
         std::lock_guard lock{socketMutex};
         if (socket == nullptr) {
             return;
@@ -43,7 +43,7 @@ struct DisplayFrameStreamSession {
     }
 
     const std::uint64_t id;
-    std::stop_source stop;
+    vna::compat::StopSource stop;
     std::mutex socketMutex;
     httplib::ws::WebSocket* socket;
 };
@@ -75,14 +75,14 @@ private:
         DisplayStreamKind kind) noexcept;
     void stream(
         httplib::ws::WebSocket& socket,
-        std::stop_token token,
+        vna::compat::StopToken token,
         DisplayStreamKind kind) noexcept;
     void streamFrames(
         httplib::ws::WebSocket& socket,
-        std::stop_token token) noexcept;
+        vna::compat::StopToken token) noexcept;
     void streamPreviews(
         httplib::ws::WebSocket& socket,
-        std::stop_token token) noexcept;
+        vna::compat::StopToken token) noexcept;
     static void closeSocket(
         httplib::ws::WebSocket& socket,
         DisplayStreamClose action) noexcept;

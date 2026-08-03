@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <utility>
 #include <variant>
 
@@ -18,7 +18,7 @@ namespace vna::application {
 // and replay adapters outside the application module's dependency graph.
 using RawSweepSource = std::function<frames::Result<frames::RawReceiverPayload>(
     const frames::FrequencyAxis&,
-    std::stop_token)>;
+    vna::compat::StopToken)>;
 
 struct SingleSweepWorkItem {
     CommandId commandId;

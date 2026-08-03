@@ -145,20 +145,20 @@ bool SweepPreviewExchange::invalidate(
 
 std::optional<SweepPreviewEvent> SweepPreviewExchange::waitForNext(
     SweepPreviewCursor after,
-    std::stop_token token) const {
+    vna::compat::StopToken token) const {
     std::optional<SweepPreviewEvent> result;
     {
-        std::stop_callback notify{token, [this] {
+        vna::compat::StopCallback notify{token, [this] {
             std::lock_guard lock{mutex_};
             changed_.notify_all();
         }};
         std::unique_lock lock{mutex_};
         changed_.wait(lock, [&] {
-            return token.stop_requested() ||
+            return token.stopRequested() ||
                 (latestEvent_.has_value() &&
                  cursorOf(*latestEvent_).value > after.value);
         });
-        if (!token.stop_requested()) {
+        if (!token.stopRequested()) {
             result = latestEvent_;
         }
         lock.unlock();

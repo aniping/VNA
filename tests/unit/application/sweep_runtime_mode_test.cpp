@@ -3,7 +3,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <utility>
 
 #include <vna/application/command_bus.hpp>
@@ -22,15 +22,15 @@ public:
     acquisition::RawSweepCaptureResult operator()(
         const acquisition::RawSweepCaptureRequest&,
         const acquisition::RawSweepChunkObserver&,
-        std::stop_token token) {
-        std::stop_callback notify{token, [this] {
+        vna::compat::StopToken token) {
+        vna::compat::StopCallback notify{token, [this] {
             std::lock_guard lock{mutex_};
             changed_.notify_all();
         }};
         std::unique_lock lock{mutex_};
         started_ = true;
         changed_.notify_all();
-        changed_.wait(lock, [&] { return token.stop_requested(); });
+        changed_.wait(lock, [&] { return token.stopRequested(); });
         return acquisition::RawSweepCaptureCanceled{};
     }
 

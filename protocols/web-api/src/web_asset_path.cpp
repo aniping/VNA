@@ -7,7 +7,7 @@
 namespace vna::web_api::detail {
 namespace {
 
-bool isSafeDirectoryChain(const std::filesystem::path& path) {
+bool isSafeDirectoryChain(const vna::compat::filesystem::path& path) {
     auto current = path.root_path();
     if (classifyWebAssetPathNoFollow(current) != WebAssetPathKind::Directory) {
         return false;
@@ -23,8 +23,8 @@ bool isSafeDirectoryChain(const std::filesystem::path& path) {
 }
 
 bool hasExpectedKinds(
-    const std::filesystem::path& root,
-    const std::filesystem::path& relative) {
+    const vna::compat::filesystem::path& root,
+    const vna::compat::filesystem::path& relative) {
     auto current = root;
     for (auto part = relative.begin(); part != relative.end(); ++part) {
         if (*part == "." || *part == "..") {
@@ -43,12 +43,13 @@ bool hasExpectedKinds(
 
 }  // namespace
 
-std::optional<std::filesystem::path> validateWebRoot(
-    const std::optional<std::filesystem::path>& webRoot) {
+std::optional<vna::compat::filesystem::path> validateWebRoot(
+    const std::optional<vna::compat::filesystem::path>& webRoot) {
     if (!webRoot) {
         return std::nullopt;
     }
-    const auto root = std::filesystem::absolute(*webRoot).lexically_normal();
+    const auto root = vna::compat::lexicallyNormal(
+        vna::compat::filesystem::absolute(*webRoot));
     if (!isSafeDirectoryChain(root)) {
         throw std::invalid_argument{"web root must be a directory"};
     }
@@ -64,18 +65,17 @@ std::optional<std::filesystem::path> validateWebRoot(
 }
 
 std::optional<std::string> resolveWebAsset(
-    const std::filesystem::path& assetsRoot,
+    const vna::compat::filesystem::path& assetsRoot,
     const std::string& requestedPath) {
     if (requestedPath.empty() || requestedPath.find('\\') != std::string::npos) {
         return std::nullopt;
     }
-    const auto relative = std::filesystem::path{std::u8string{
-        reinterpret_cast<const char8_t*>(requestedPath.data()),
-        requestedPath.size()}};
+    const auto relative = vna::compat::filesystem::path{requestedPath};
     if (relative.has_root_path() || !hasExpectedKinds(assetsRoot, relative)) {
         return std::nullopt;
     }
-    const auto candidate = std::filesystem::canonical(assetsRoot / relative);
+    const auto candidate =
+        vna::compat::filesystem::canonical(assetsRoot / relative);
     const auto mismatch = std::mismatch(
         assetsRoot.begin(), assetsRoot.end(),
         candidate.begin(), candidate.end());
@@ -86,8 +86,7 @@ std::optional<std::string> resolveWebAsset(
         return std::nullopt;
     }
     const auto encoded = candidate.u8string();
-    return std::string{
-        reinterpret_cast<const char*>(encoded.data()), encoded.size()};
+    return std::string{encoded.data(), encoded.size()};
 }
 
 }  // namespace vna::web_api::detail

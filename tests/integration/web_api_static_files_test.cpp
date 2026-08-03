@@ -4,7 +4,7 @@
 
 #include <atomic>
 #include <chrono>
-#include <filesystem>
+#include <vna/compat/filesystem.hpp>
 #include <fstream>
 #include <string>
 #include <thread>
@@ -22,27 +22,29 @@
 namespace vna::web_api {
 namespace {
 
-std::filesystem::path createTemporaryDirectory() {
+vna::compat::filesystem::path createTemporaryDirectory() {
     static std::atomic<unsigned long long> sequence{0};
     const auto tick = std::chrono::steady_clock::now()
                           .time_since_epoch()
                           .count();
-    const auto path = std::filesystem::temp_directory_path() /
+    const auto path = vna::compat::filesystem::temp_directory_path() /
         ("vna-web-api-" + std::to_string(tick) + "-" +
          std::to_string(sequence.fetch_add(1)));
-    std::filesystem::create_directory(path);
+    vna::compat::filesystem::create_directory(path);
     return path;
 }
 
-void writeFile(const std::filesystem::path& path, const std::string& contents) {
+void writeFile(
+    const vna::compat::filesystem::path& path,
+    const std::string& contents) {
     std::ofstream stream{path, std::ios::binary};
     stream.exceptions(std::ios::failbit | std::ios::badbit);
     stream << contents;
 }
 
 std::error_code createDirectoryLink(
-    const std::filesystem::path& target,
-    const std::filesystem::path& link) {
+    const vna::compat::filesystem::path& target,
+    const vna::compat::filesystem::path& link) {
 #ifdef _WIN32
     if (CreateSymbolicLinkW(
             link.c_str(), target.c_str(), SYMBOLIC_LINK_FLAG_DIRECTORY)) {
@@ -51,7 +53,7 @@ std::error_code createDirectoryLink(
     return {static_cast<int>(GetLastError()), std::system_category()};
 #else
     std::error_code error;
-    std::filesystem::create_directory_symlink(target, link, error);
+    vna::compat::filesystem::create_directory_symlink(target, link, error);
     return error;
 #endif
 }
@@ -61,17 +63,17 @@ protected:
     WebApiStaticFilesTest()
         : directory_(createTemporaryDirectory()),
           webRoot_(directory_ / "web") {
-        std::filesystem::create_directories(webRoot_ / "assets");
+        vna::compat::filesystem::create_directories(webRoot_ / "assets");
         writeFile(webRoot_ / "index.html", "<h1>Vector Network Analyzer</h1>");
         writeFile(webRoot_ / "assets" / "app.js", "console.log('vna');");
     }
 
     ~WebApiStaticFilesTest() override {
         std::error_code error;
-        std::filesystem::remove_all(directory_, error);
+        vna::compat::filesystem::remove_all(directory_, error);
     }
 
-    void startServer(const std::filesystem::path& root) {
+    void startServer(const vna::compat::filesystem::path& root) {
         webApi_ = std::make_unique<WebApi>(
             commandBus_,
             operations_,
@@ -90,7 +92,7 @@ protected:
         return httplib::Client{"127.0.0.1", port_}.Get(path);
     }
 
-    void expectInvalidRoot(const std::filesystem::path& root) {
+    void expectInvalidRoot(const vna::compat::filesystem::path& root) {
         EXPECT_THROW(
             WebApi(
                 commandBus_,
@@ -121,8 +123,8 @@ protected:
         application::InstrumentId{"instrument-1"}};
     application::TraceDisplayFrameRepository repository_{1};
     application::TraceDisplayFrameQuery query_{commandBus_, repository_};
-    std::filesystem::path directory_;
-    std::filesystem::path webRoot_;
+    vna::compat::filesystem::path directory_;
+    vna::compat::filesystem::path webRoot_;
     std::unique_ptr<WebApi> webApi_;
     int port_{-1};
     std::thread serverThread_;
@@ -157,7 +159,7 @@ TEST_F(WebApiStaticFilesTest, ServesAssetsWithImmutableCaching) {
 }
 
 TEST_F(WebApiStaticFilesTest, ApiRoutesCannotBeShadowedByWebFiles) {
-    std::filesystem::create_directories(webRoot_ / "api" / "v1");
+    vna::compat::filesystem::create_directories(webRoot_ / "api" / "v1");
     writeFile(webRoot_ / "api" / "v1" / "health", "not-the-api");
     startServer(webRoot_);
     const auto response = get("/api/v1/health");
@@ -173,16 +175,16 @@ TEST_F(WebApiStaticFilesTest, RejectsInvalidWebRootsBeforeServerStart) {
     expectInvalidRoot(missing);
 
     const auto missingIndex = directory_ / "missing-index";
-    std::filesystem::create_directories(missingIndex / "assets");
+    vna::compat::filesystem::create_directories(missingIndex / "assets");
     expectInvalidRoot(missingIndex);
 
     const auto indexDirectory = directory_ / "index-directory";
-    std::filesystem::create_directories(indexDirectory / "index.html");
-    std::filesystem::create_directories(indexDirectory / "assets");
+    vna::compat::filesystem::create_directories(indexDirectory / "index.html");
+    vna::compat::filesystem::create_directories(indexDirectory / "assets");
     expectInvalidRoot(indexDirectory);
 
     const auto assetsFile = directory_ / "assets-file";
-    std::filesystem::create_directories(assetsFile);
+    vna::compat::filesystem::create_directories(assetsFile);
     writeFile(assetsFile / "index.html", "valid index");
     writeFile(assetsFile / "assets", "not a directory");
     expectInvalidRoot(assetsFile);
@@ -197,8 +199,8 @@ TEST_F(WebApiStaticFilesTest, RejectsAssetPathTraversal) {
 
 TEST_F(WebApiStaticFilesTest, ServesAssetFromUnicodeWebRoot) {
     const auto unicodeRoot =
-        directory_ / std::filesystem::path{u8"链接"};
-    std::filesystem::rename(webRoot_, unicodeRoot);
+        directory_ / vna::compat::filesystem::path{u8"链接"};
+    vna::compat::filesystem::rename(webRoot_, unicodeRoot);
     startServer(unicodeRoot);
     const auto response = get("/assets/app.js");
 
@@ -209,7 +211,7 @@ TEST_F(WebApiStaticFilesTest, ServesAssetFromUnicodeWebRoot) {
 
 TEST_F(WebApiStaticFilesTest, RejectsAssetLinkOutsideWebRoot) {
     const auto outside = directory_ / "outside";
-    std::filesystem::create_directories(outside);
+    vna::compat::filesystem::create_directories(outside);
     writeFile(outside / "secret.txt", "outside-web-root");
     const auto error = createDirectoryLink(
         outside, webRoot_ / "assets" / "escape");

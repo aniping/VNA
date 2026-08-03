@@ -2,7 +2,7 @@
 
 #include <array>
 #include <limits>
-#include <span>
+#include <vna/compat/span.hpp>
 #include <vector>
 
 #include <vna/measurement/s_parameter_synthesizer.hpp>
@@ -28,8 +28,8 @@ std::vector<frames::RawReceiverSample> sourceTwoSamples() {
 }
 
 SParameterRangeSynthesisRequest rangeRequest(
-    std::span<const frames::RawReceiverSample> samples,
-    std::span<const domain::MeasurementSnapshot> measurements) {
+    vna::compat::Span<const frames::RawReceiverSample> samples,
+    vna::compat::Span<const domain::MeasurementSnapshot> measurements) {
     return {
         .sourcePort = 2,
         .firstPoint = 4,

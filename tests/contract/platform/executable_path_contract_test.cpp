@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include <filesystem>
+#include <vna/compat/filesystem.hpp>
 #include <system_error>
 
 #include <vna/platform/executable_path.hpp>
@@ -10,33 +10,34 @@ namespace {
 
 class ScopedCurrentPath {
 public:
-    explicit ScopedCurrentPath(const std::filesystem::path& replacement)
-        : original_(std::filesystem::current_path()) {
-        std::filesystem::current_path(replacement);
+    explicit ScopedCurrentPath(
+        const vna::compat::filesystem::path& replacement)
+        : original_(vna::compat::filesystem::current_path()) {
+        vna::compat::filesystem::current_path(replacement);
     }
 
     ~ScopedCurrentPath() {
         std::error_code ignored;
-        std::filesystem::current_path(original_, ignored);
+        vna::compat::filesystem::current_path(original_, ignored);
     }
 
 private:
-    std::filesystem::path original_;
+    vna::compat::filesystem::path original_;
 };
 
 TEST(ExecutablePathContractTest, ReturnsExistingAbsoluteExecutablePath) {
     const auto executable = currentExecutablePath();
 
     EXPECT_TRUE(executable.is_absolute());
-    EXPECT_TRUE(std::filesystem::exists(executable));
-    EXPECT_TRUE(std::filesystem::is_regular_file(executable));
+    EXPECT_TRUE(vna::compat::filesystem::exists(executable));
+    EXPECT_TRUE(vna::compat::filesystem::is_regular_file(executable));
     EXPECT_EQ(executable.stem(), "vna_platform_contract_tests");
 }
 
 TEST(ExecutablePathContractTest, DoesNotDependOnWorkingDirectory) {
     const auto before = currentExecutablePath();
-    const auto originalDirectory = std::filesystem::current_path();
-    const auto temporary = std::filesystem::temp_directory_path();
+    const auto originalDirectory = vna::compat::filesystem::current_path();
+    const auto temporary = vna::compat::filesystem::temp_directory_path();
     const auto changedDirectory = temporary != originalDirectory
         ? temporary
         : before.parent_path();
@@ -49,7 +50,7 @@ TEST(ExecutablePathContractTest, DoesNotDependOnWorkingDirectory) {
         EXPECT_EQ(currentExecutablePath(), before);
     }
 
-    EXPECT_EQ(std::filesystem::current_path(), originalDirectory);
+    EXPECT_EQ(vna::compat::filesystem::current_path(), originalDirectory);
 }
 
 }  // namespace

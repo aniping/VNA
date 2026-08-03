@@ -1,7 +1,7 @@
 add_library(vna_domain src/instrument.cpp)
 add_library(vna::domain ALIAS vna_domain)
 
-target_compile_features(vna_domain PUBLIC cxx_std_20)
+target_compile_features(vna_domain PUBLIC cxx_std_17)
 target_include_directories(
     vna_domain
     PUBLIC

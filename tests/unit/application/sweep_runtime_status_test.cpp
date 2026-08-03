@@ -3,7 +3,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <variant>
 
 #include <vna/application/command_bus.hpp>
@@ -23,8 +23,8 @@ public:
     acquisition::RawSweepCaptureResult operator()(
         const acquisition::RawSweepCaptureRequest& request,
         const acquisition::RawSweepChunkObserver& observer,
-        std::stop_token token) {
-        std::stop_callback notify{token, [this] { notifyWaiters(); }};
+        vna::compat::StopToken token) {
+        vna::compat::StopCallback notify{token, [this] { notifyWaiters(); }};
         auto payload = acquisition::test_support::validPayload(
             request.sequenceNumber);
         if (!await(request.sequenceNumber, releaseFirst_, token, true)) {
@@ -65,15 +65,15 @@ private:
     bool await(
         std::uint64_t sequence,
         const std::uint64_t& gate,
-        std::stop_token token,
+        vna::compat::StopToken token,
         bool announce) {
         std::unique_lock lock{mutex_};
         requested_ = announce ? sequence : requested_;
         changed_.notify_all();
         changed_.wait(lock, [&] {
-            return gate >= sequence || token.stop_requested();
+            return gate >= sequence || token.stopRequested();
         });
-        return !token.stop_requested();
+        return !token.stopRequested();
     }
 
     bool waitFor(const std::uint64_t& value, std::uint64_t sequence) {

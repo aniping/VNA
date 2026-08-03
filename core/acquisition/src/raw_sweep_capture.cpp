@@ -89,17 +89,17 @@ SourceCaptureResult captureSourceState(
     std::uint32_t sourcePort,
     const RawSweepChunkProducer& producer,
     const RawSweepChunkObserver& observer,
-    std::stop_token token) {
+    vna::compat::StopToken token) {
     frames::RawSourceState source{.sourcePort = sourcePort, .samples = {}};
     source.samples.reserve(request.plan.frequencyAxis.points);
     for (std::uint32_t firstPoint = 0;
          firstPoint < request.plan.frequencyAxis.points;) {
-        if (token.stop_requested()) {
+        if (token.stopRequested()) {
             return RawSweepCaptureCanceled{};
         }
         const auto expected = makeChunkRequest(request, sourcePort, firstPoint);
         auto produced = producer(request.plan, expected, token);
-        if (token.stop_requested() ||
+        if (token.stopRequested() ||
             std::holds_alternative<RawSweepCaptureCanceled>(produced)) {
             return RawSweepCaptureCanceled{};
         }
@@ -127,7 +127,7 @@ RawSweepCaptureResult captureRawSweep(
     const RawSweepCaptureRequest& request,
     const RawSweepChunkProducer& producer,
     const RawSweepChunkObserver& observer,
-    std::stop_token token) {
+    vna::compat::StopToken token) {
     if (const auto invalid = validateRequest(request)) {
         return *invalid;
     }
@@ -151,7 +151,7 @@ RawSweepCaptureResult captureRawSweep(
         payload.sourceStates.push_back(
             std::move(std::get<frames::RawSourceState>(captured)));
     }
-    if (token.stop_requested()) {
+    if (token.stopRequested()) {
         return RawSweepCaptureCanceled{};
     }
     return payload;

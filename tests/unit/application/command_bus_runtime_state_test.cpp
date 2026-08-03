@@ -6,7 +6,7 @@
 #include <functional>
 #include <mutex>
 #include <optional>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <stdexcept>
 #include <utility>
 #include <variant>
@@ -26,8 +26,8 @@ public:
     acquisition::RawSweepCaptureResult operator()(
         const acquisition::RawSweepCaptureRequest& request,
         const acquisition::RawSweepChunkObserver&,
-        std::stop_token token) {
-        std::stop_callback notify{token, [this] {
+        vna::compat::StopToken token) {
+        vna::compat::StopCallback notify{token, [this] {
             std::lock_guard lock{mutex_};
             changed_.notify_all();
         }};
@@ -35,9 +35,9 @@ public:
         requested_ = request.sequenceNumber;
         changed_.notify_all();
         changed_.wait(lock, [&] {
-            return token.stop_requested() || released_ >= requested_;
+            return token.stopRequested() || released_ >= requested_;
         });
-        return token.stop_requested()
+        return token.stopRequested()
             ? acquisition::RawSweepCaptureResult{
                   acquisition::RawSweepCaptureCanceled{}}
             : acquisition::RawSweepCaptureResult{

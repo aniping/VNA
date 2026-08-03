@@ -39,7 +39,8 @@ SweepRuntimeImpl::SweepRuntimeImpl(
     snapshot_.appliedStateRevision = plan_.publication->stateRevision;
     snapshot_.appliedGeneration = plan_.publication->generation;
     snapshot_.appliedExecution = plan_.execution;
-    worker_ = std::jthread{[this](std::stop_token token) { run(token); }};
+    worker_ = vna::compat::JoiningThread{
+        [this](vna::compat::StopToken token) { run(token); }};
 }
 
 SweepRuntimeImpl::~SweepRuntimeImpl() { stop(); }
@@ -48,7 +49,7 @@ void SweepRuntimeImpl::stop() noexcept {
     std::optional<OperationId> queued;
     std::optional<OperationId> activeWithoutSource;
     std::optional<OperationId> activeWithSource;
-    std::shared_ptr<std::stop_source> activeStop;
+    std::shared_ptr<vna::compat::StopSource> activeStop;
     {
         std::unique_lock lock{mutex_};
         changed_.wait(lock, [&] { return !finalizingPublication_; });
@@ -75,9 +76,9 @@ void SweepRuntimeImpl::stop() noexcept {
         invariant = invariant == nullptr ? std::current_exception() : invariant;
     }
     if (activeStop) {
-        activeStop->request_stop();
+        activeStop->requestStop();
     }
-    worker_.request_stop();
+    worker_.requestStop();
     notifyWorker();
     if (worker_.joinable()) {
         worker_.join();

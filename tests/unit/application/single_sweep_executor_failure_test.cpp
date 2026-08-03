@@ -4,7 +4,7 @@
 #include <exception>
 #include <functional>
 #include <limits>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <stdexcept>
 #include <utility>
 #include <variant>
@@ -22,7 +22,7 @@ using test_support::acceptedOperation;
 using test_support::validWorkItem;
 
 RawSweepSource simulationSource() {
-    return [](const frames::FrequencyAxis& axis, std::stop_token) {
+    return [](const frames::FrequencyAxis& axis, vna::compat::StopToken) {
         return simulation::simulateSweep(axis);
     };
 }
@@ -51,7 +51,7 @@ void expectFailure(
 
 TEST(SingleSweepExecutorFailureTest, RawSourceFailureIsAtomic) {
     RawSweepSource source = [](const frames::FrequencyAxis&,
-                               std::stop_token) {
+                               vna::compat::StopToken) {
         return frames::Result<frames::RawReceiverPayload>{frames::FrameError{
             .code = frames::FrameErrorCode::InvalidFrequencyAxis}};
     };
@@ -68,7 +68,7 @@ TEST(SingleSweepExecutorFailureTest, RawSourceFailureIsAtomic) {
 
 TEST(SingleSweepExecutorFailureTest, RawSourceExceptionIsPreserved) {
     RawSweepSource source = [](const frames::FrequencyAxis&,
-                               std::stop_token)
+                               vna::compat::StopToken)
         -> frames::Result<frames::RawReceiverPayload> {
         throw std::runtime_error{"source failed"};
     };
@@ -85,7 +85,7 @@ TEST(SingleSweepExecutorFailureTest, RawSourceExceptionIsPreserved) {
 
 TEST(SingleSweepExecutorFailureTest, RawFrameRejectionIsAtomic) {
     RawSweepSource source = [](const frames::FrequencyAxis& axis,
-                               std::stop_token) {
+                               vna::compat::StopToken) {
         auto payload = simulation::simulateSweep(axis).value();
         payload.sourceStates.front().samples.pop_back();
         return frames::Result<frames::RawReceiverPayload>{std::move(payload)};
@@ -107,7 +107,7 @@ TEST(SingleSweepExecutorFailureTest, SynthesisFailureIsAtomic) {
 
 TEST(SingleSweepExecutorFailureTest, ProjectionFailureIsAtomic) {
     RawSweepSource source = [](const frames::FrequencyAxis& axis,
-                               std::stop_token) {
+                               vna::compat::StopToken) {
         auto payload = simulation::simulateSweep(axis).value();
         payload.sourceStates.front().samples.front().responses.front() =
             {.real = 0.0, .imaginary = 0.0};

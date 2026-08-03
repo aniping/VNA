@@ -16,7 +16,12 @@ public:
         return value_;
     }
 
-    friend constexpr bool operator==(EntityId, EntityId) = default;
+    friend constexpr bool operator==(EntityId left, EntityId right) {
+        return left.value_ == right.value_;
+    }
+    friend constexpr bool operator!=(EntityId left, EntityId right) {
+        return !(left == right);
+    }
 
 private:
     std::uint64_t value_;

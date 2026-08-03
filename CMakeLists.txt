@@ -15,6 +15,7 @@ endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_subdirectory(third-part)
+add_subdirectory(contracts/compat)
 add_subdirectory(core/domain)
 add_subdirectory(contracts/frames)
 add_subdirectory(hal/backends/simulation)

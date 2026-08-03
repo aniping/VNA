@@ -50,17 +50,11 @@ protected:
 
     application::TraceDisplayFrame largeFrame(std::uint64_t sequence) const {
         application::TraceDisplayFrame result{
-            .frameId = frames::FrameId{sequence},
-            .traceId = traceId_,
-            .measurementId = domain::MeasurementId{1},
-            .measurementType = domain::MeasurementType::S21,
-            .stateRevision = 0,
-            .generation = 1,
-            .sequenceNumber = sequence,
-            .format = display_model::TraceFormat::LogMagnitude,
-            .samples = application::CartesianTraceDisplaySamples{
-                .unit = application::TraceDisplayUnit::Decibel},
-        };
+            frames::FrameId{sequence}, traceId_, domain::MeasurementId{1},
+            domain::MeasurementType::S21, 0, 1, sequence,
+            display_model::TraceFormat::LogMagnitude, {},
+            application::CartesianTraceDisplaySamples{
+                application::TraceDisplayUnit::Decibel, {}}};
         result.frequenciesHz.resize(frames::kMaxSweepPoints);
         auto& values = std::get<application::CartesianTraceDisplaySamples>(
             result.samples).values;

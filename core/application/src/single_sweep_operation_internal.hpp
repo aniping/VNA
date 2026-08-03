@@ -1,6 +1,6 @@
 #pragma once
 
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 
 #include <vna/application/operation_manager.hpp>
 
@@ -18,10 +18,10 @@ void failSingleSweepOperation(
 [[nodiscard]] bool singleSweepCancellationRequested(
     OperationManager& operations,
     OperationId operationId,
-    std::stop_token token);
+    vna::compat::StopToken token);
 [[nodiscard]] bool finishSingleSweepCancellation(
     OperationManager& operations,
     OperationId operationId,
-    std::stop_token token);
+    vna::compat::StopToken token);
 
 }  // namespace vna::application::internal

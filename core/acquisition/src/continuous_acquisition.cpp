@@ -5,7 +5,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <stdexcept>
-#include <thread>
+#include <vna/compat/joining_thread.hpp>
 #include <utility>
 
 namespace vna::acquisition {
@@ -75,12 +75,13 @@ public:
         if (!source_) {
             throw std::invalid_argument{"continuous acquisition source is empty"};
         }
-        worker_ = std::jthread{[this](std::stop_token token) { run(token); }};
+        worker_ = vna::compat::JoiningThread{
+            [this](vna::compat::StopToken token) { run(token); }};
     }
 
     ~Impl() { stop(); }
     void stop() noexcept {
-        worker_.request_stop();
+        worker_.requestStop();
         notifyWaiters();
         if (worker_.joinable()) {
             worker_.join();
@@ -99,15 +100,15 @@ public:
 
     RawFrameHandle waitForNext(
         std::uint64_t afterSequence,
-        std::stop_token token) const {
-        std::stop_callback notify{token, [this] { notifyWaiters(); }};
+        vna::compat::StopToken token) const {
+        vna::compat::StopCallback notify{token, [this] { notifyWaiters(); }};
         std::unique_lock lock{mutex_};
         changed_.wait(lock, [&] {
-            return token.stop_requested() ||
+            return token.stopRequested() ||
                    snapshot_.state != ContinuousAcquisitionState::Running ||
                    snapshot_.lastPublishedSequence > afterSequence;
         });
-        if (token.stop_requested() ||
+        if (token.stopRequested() ||
             snapshot_.lastPublishedSequence <= afterSequence) {
             return nullptr;
         }
@@ -124,9 +125,9 @@ private:
         std::lock_guard lock{mutex_};
         changed_.notify_all();
     }
-    void run(std::stop_token token) noexcept {
+    void run(vna::compat::StopToken token) noexcept {
         std::uint64_t nextSequence = 1;
-        while (!token.stop_requested()) {
+        while (!token.stopRequested()) {
             const auto startedAt = std::chrono::steady_clock::now();
             if (!acquireAndPublish(nextSequence, token)) {
                 return;
@@ -141,10 +142,10 @@ private:
     }
     bool acquireAndPublish(
         std::uint64_t sequence,
-        std::stop_token token) noexcept {
+        vna::compat::StopToken token) noexcept {
         try {
             auto result = source_(plan_, sequence, token);
-            if (token.stop_requested()) {
+            if (token.stopRequested()) {
                 finishStopped();
                 return false;
             }
@@ -166,7 +167,7 @@ private:
             publish(std::move(frame), sequence);
             return true;
         } catch (...) {
-            if (token.stop_requested()) {
+            if (token.stopRequested()) {
                 finishStopped();
             } else {
                 fail(ContinuousAcquisitionFailureCode::UnexpectedFailure,
@@ -185,12 +186,12 @@ private:
     }
     bool paceUntil(
         std::chrono::steady_clock::time_point deadline,
-        std::stop_token token) const {
+        vna::compat::StopToken token) const {
         std::unique_lock lock{mutex_};
         changed_.wait_until(lock, deadline, [&] {
-            return token.stop_requested();
+            return token.stopRequested();
         });
-        return !token.stop_requested();
+        return !token.stopRequested();
     }
     void finishStopped() noexcept {
         {
@@ -220,7 +221,7 @@ private:
     mutable std::condition_variable changed_;
     RawFrameHandle latest_;
     ContinuousAcquisitionSnapshot snapshot_;
-    std::jthread worker_;
+    vna::compat::JoiningThread worker_;
 };
 
 ContinuousAcquisition::ContinuousAcquisition(
@@ -240,7 +241,7 @@ RawFrameHandle ContinuousAcquisition::latest() const {
 }
 RawFrameHandle ContinuousAcquisition::waitForNext(
     std::uint64_t afterSequence,
-    std::stop_token token) const {
+    vna::compat::StopToken token) const {
     return impl_->waitForNext(afterSequence, token);
 }
 ContinuousAcquisitionSnapshot ContinuousAcquisition::snapshot() const {

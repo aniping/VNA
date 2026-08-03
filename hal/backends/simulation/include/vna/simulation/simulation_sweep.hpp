@@ -3,7 +3,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 
 #include <vna/acquisition/raw_sweep_capture.hpp>
 #include <vna/frames/raw_receiver.hpp>
@@ -29,7 +29,7 @@ struct OpenPortSweepSourceOptions {
 // a stop-aware steady-clock wait; tests can inject a deterministic gate.
 using SimulationSweepPacer = std::function<bool(
     std::chrono::steady_clock::duration,
-    std::stop_token)>;
+    vna::compat::StopToken)>;
 
 [[nodiscard]] SimulationSweepPacer makeSteadySweepPacer();
 

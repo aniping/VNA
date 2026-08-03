@@ -23,8 +23,8 @@ void failSingleSweepOperation(
 bool singleSweepCancellationRequested(
     OperationManager& operations,
     OperationId operationId,
-    std::stop_token token) {
-    if (token.stop_requested()) {
+    vna::compat::StopToken token) {
+    if (token.stopRequested()) {
         (void)operations.requestCancel(operationId);
     }
     const auto current = operations.snapshot(operationId);
@@ -37,7 +37,7 @@ bool singleSweepCancellationRequested(
 bool finishSingleSweepCancellation(
     OperationManager& operations,
     OperationId operationId,
-    std::stop_token token) {
+    vna::compat::StopToken token) {
     if (!singleSweepCancellationRequested(operations, operationId, token)) {
         return false;
     }

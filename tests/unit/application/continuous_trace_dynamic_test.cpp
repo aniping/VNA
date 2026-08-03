@@ -5,7 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <variant>
 #include <vector>
 
@@ -18,39 +18,36 @@ namespace vna::application {
 namespace {
 
 StateSnapshot multiTraceState() {
-    return {
-        .stateRevision = 9,
-        .control = {},
-        .instrument = {
-            .channels = {{
-                .id = domain::ChannelId{1},
-                .sweep = {1'000'000, 2'000'000, 3, 10'000, -10.5}}},
-            .measurements = {
-                {domain::MeasurementId{1}, domain::ChannelId{1},
-                 domain::MeasurementType::S11},
-                {domain::MeasurementId{2}, domain::ChannelId{1},
-                 domain::MeasurementType::S21},
-                {domain::MeasurementId{3}, domain::ChannelId{1},
-                 domain::MeasurementType::S12},
-                {domain::MeasurementId{4}, domain::ChannelId{1},
-                 domain::MeasurementType::S22}}},
-        .display = {.traces = {
-            {display_model::TraceId{1}, display_model::WindowId{1},
-             domain::MeasurementId{1},
-             display_model::TraceFormat::LogMagnitude, std::nullopt},
-            {display_model::TraceId{2}, display_model::WindowId{1},
-             domain::MeasurementId{2}, display_model::TraceFormat::Phase,
-             std::nullopt},
-            {display_model::TraceId{3}, display_model::WindowId{1},
-             domain::MeasurementId{3}, display_model::TraceFormat::Smith,
-             std::nullopt},
-            {display_model::TraceId{4}, display_model::WindowId{1},
-             domain::MeasurementId{4},
-             display_model::TraceFormat::LogMagnitude, std::nullopt},
-            {display_model::TraceId{5}, display_model::WindowId{1},
-             domain::MeasurementId{2}, display_model::TraceFormat::Smith,
-             std::nullopt}}},
-    };
+    StateSnapshot state{};
+    state.stateRevision = 9;
+    state.instrument.channels = {{
+        domain::ChannelId{1}, {1'000'000, 2'000'000, 3, 10'000, -10.5}}};
+    state.instrument.measurements = {
+        {domain::MeasurementId{1}, domain::ChannelId{1},
+         domain::MeasurementType::S11},
+        {domain::MeasurementId{2}, domain::ChannelId{1},
+         domain::MeasurementType::S21},
+        {domain::MeasurementId{3}, domain::ChannelId{1},
+         domain::MeasurementType::S12},
+        {domain::MeasurementId{4}, domain::ChannelId{1},
+         domain::MeasurementType::S22}};
+    state.display.traces = {
+        {display_model::TraceId{1}, display_model::WindowId{1},
+         domain::MeasurementId{1}, display_model::TraceFormat::LogMagnitude,
+         std::nullopt},
+        {display_model::TraceId{2}, display_model::WindowId{1},
+         domain::MeasurementId{2}, display_model::TraceFormat::Phase,
+         std::nullopt},
+        {display_model::TraceId{3}, display_model::WindowId{1},
+         domain::MeasurementId{3}, display_model::TraceFormat::Smith,
+         std::nullopt},
+        {display_model::TraceId{4}, display_model::WindowId{1},
+         domain::MeasurementId{4}, display_model::TraceFormat::LogMagnitude,
+         std::nullopt},
+        {display_model::TraceId{5}, display_model::WindowId{1},
+         domain::MeasurementId{2}, display_model::TraceFormat::Smith,
+         std::nullopt}};
+    return state;
 }
 
 void expectCommonIdentity(const TraceDisplayFrameSet& set) {
@@ -93,7 +90,7 @@ TEST(ContinuousTraceDynamicTest, PublishesAllConfiguredTracesFromOneRawSweep) {
     const auto source = [&sourceCalls](
                             const acquisition::ContinuousAcquisitionPlan&,
                             std::uint64_t sequence,
-                            std::stop_token) {
+                            vna::compat::StopToken) {
         ++sourceCalls;
         if (sequence == 1) {
             return frames::Result<frames::RawReceiverPayload>{

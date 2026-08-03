@@ -5,8 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <stop_token>
-#include <thread>
+#include <vna/compat/joining_thread.hpp>
 
 #include <vna/application/sweep_runtime.hpp>
 #include <vna/application/sweep_preview_assembler.hpp>
@@ -24,7 +23,7 @@ struct RestartAdmissionData {
     OperationId createdId;
     std::optional<OperationId> queued{};
     std::optional<OperationId> activeWithoutSource{};
-    std::shared_ptr<std::stop_source> activeStop{};
+    std::shared_ptr<vna::compat::StopSource> activeStop{};
     std::optional<SweepPreviewIdentity> activeIdentity{};
     std::exception_ptr invariant{};
 };
@@ -59,7 +58,7 @@ public:
         domain::ChannelId channelId, OperationSubmission submission);
     [[nodiscard]] SweepRuntimeSnapshot snapshot() const;
 private:
-    [[nodiscard]] bool prepareCycle(std::stop_token token);
+    [[nodiscard]] bool prepareCycle(vna::compat::StopToken token);
     void applyPendingConfiguration();
     void completeRequestedSweep(
         SweepPreviewIdentity identity,
@@ -79,16 +78,16 @@ private:
         bool& previewRejected,
         SweepPreviewIdentity identity,
         const acquisition::RawSweepPointRange& range);
-    void run(std::stop_token token) noexcept;
+    void run(vna::compat::StopToken token) noexcept;
     [[nodiscard]] SweepDisposition capture(
-        std::uint64_t sequence, std::stop_token token);
+        std::uint64_t sequence, vna::compat::StopToken token);
     [[nodiscard]] SweepDisposition complete(
         std::uint64_t sequence,
         SweepPreviewIdentity identity,
         acquisition::RawSweepCaptureResult captured);
     [[nodiscard]] bool paceUntil(
         std::chrono::steady_clock::time_point deadline,
-        std::stop_token token) const;
+        vna::compat::StopToken token) const;
     void notifyWorker() const;
     void recordAttempt();
     void reject(
@@ -117,13 +116,13 @@ private:
     SweepRuntimeSnapshot snapshot_;
     std::optional<OperationId> pendingOperation_;
     std::optional<ActiveSweepRequest> activeRequest_;
-    std::shared_ptr<std::stop_source> activeStop_;
+    std::shared_ptr<vna::compat::StopSource> activeStop_;
     std::optional<SweepPreviewIdentity> activeIdentity_;
     std::unique_ptr<PendingSweepRuntimeConfiguration> pendingConfiguration_;
     bool finalizingPublication_{};
     bool cycleCancellationRequested_{};
     bool admissionClosed_{};
-    std::jthread worker_;
+    vna::compat::JoiningThread worker_;
 
     friend class vna::application::RestartAdmission;
 };

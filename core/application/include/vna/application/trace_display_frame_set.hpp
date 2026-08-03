@@ -16,8 +16,17 @@ struct TraceDisplayFrameSet {
     std::uint64_t sequenceNumber;
     std::vector<TraceDisplayFrame> frames;
     friend bool operator==(
-        const TraceDisplayFrameSet&,
-        const TraceDisplayFrameSet&) = default;
+        const TraceDisplayFrameSet& left,
+        const TraceDisplayFrameSet& right) {
+        return left.generation == right.generation &&
+            left.sequenceNumber == right.sequenceNumber &&
+            left.frames == right.frames;
+    }
+    friend bool operator!=(
+        const TraceDisplayFrameSet& left,
+        const TraceDisplayFrameSet& right) {
+        return !(left == right);
+    }
 };
 
 using TraceDisplayFrameSetHandle =

@@ -1,9 +1,9 @@
 #pragma once
 
 #include <cstdint>
-#include <span>
 #include <vector>
 
+#include <vna/compat/span.hpp>
 #include <vna/frames/frames.hpp>
 
 namespace vna::measurement {
@@ -13,8 +13,8 @@ struct SParameterRangeSynthesisRequest {
     std::uint32_t firstPoint;
     std::uint32_t totalPointCount;
     std::uint32_t portCount;
-    std::span<const frames::RawReceiverSample> samples;
-    std::span<const domain::MeasurementSnapshot> measurements;
+    vna::compat::Span<const frames::RawReceiverSample> samples;
+    vna::compat::Span<const domain::MeasurementSnapshot> measurements;
 };
 
 struct MeasurementSampleRange {
@@ -41,6 +41,6 @@ synthesizeSParameterRanges(const SParameterRangeSynthesisRequest& request);
 [[nodiscard]] frames::Result<std::vector<frames::MeasurementFrame>>
 synthesizeSParameters(
     const frames::RawReceiverFrame& rawFrame,
-    std::span<const domain::MeasurementSnapshot> measurements);
+    vna::compat::Span<const domain::MeasurementSnapshot> measurements);
 
 }  // namespace vna::measurement

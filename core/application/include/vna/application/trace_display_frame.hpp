@@ -21,16 +21,30 @@ struct CartesianTraceDisplaySamples {
     TraceDisplayUnit unit;
     std::vector<double> values;
     friend bool operator==(
-        const CartesianTraceDisplaySamples&,
-        const CartesianTraceDisplaySamples&) = default;
+        const CartesianTraceDisplaySamples& left,
+        const CartesianTraceDisplaySamples& right) {
+        return left.unit == right.unit && left.values == right.values;
+    }
+    friend bool operator!=(
+        const CartesianTraceDisplaySamples& left,
+        const CartesianTraceDisplaySamples& right) {
+        return !(left == right);
+    }
 };
 
 struct ComplexTraceDisplaySamples {
     TraceDisplayUnit unit;
     std::vector<frames::ComplexSample> values;
     friend bool operator==(
-        const ComplexTraceDisplaySamples&,
-        const ComplexTraceDisplaySamples&) = default;
+        const ComplexTraceDisplaySamples& left,
+        const ComplexTraceDisplaySamples& right) {
+        return left.unit == right.unit && left.values == right.values;
+    }
+    friend bool operator!=(
+        const ComplexTraceDisplaySamples& left,
+        const ComplexTraceDisplaySamples& right) {
+        return !(left == right);
+    }
 };
 
 using TraceDisplaySamples = std::variant<
@@ -52,8 +66,23 @@ struct TraceDisplayFrame {
     std::vector<double> frequenciesHz;
     TraceDisplaySamples samples;
     friend bool operator==(
-        const TraceDisplayFrame&,
-        const TraceDisplayFrame&) = default;
+        const TraceDisplayFrame& left,
+        const TraceDisplayFrame& right) {
+        return left.frameId == right.frameId && left.traceId == right.traceId &&
+            left.measurementId == right.measurementId &&
+            left.measurementType == right.measurementType &&
+            left.stateRevision == right.stateRevision &&
+            left.generation == right.generation &&
+            left.sequenceNumber == right.sequenceNumber &&
+            left.format == right.format &&
+            left.frequenciesHz == right.frequenciesHz &&
+            left.samples == right.samples;
+    }
+    friend bool operator!=(
+        const TraceDisplayFrame& left,
+        const TraceDisplayFrame& right) {
+        return !(left == right);
+    }
 };
 
 }  // namespace vna::application

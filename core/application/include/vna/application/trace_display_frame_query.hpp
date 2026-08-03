@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <variant>
 
 #include <vna/application/command_bus.hpp>
@@ -40,7 +40,7 @@ public:
     [[nodiscard]] TraceDisplayFrameQueryOutcome waitForNext(
         display_model::TraceId traceId,
         std::uint64_t afterSequence,
-        std::stop_token token = {}) const;
+        vna::compat::StopToken token = {}) const;
 
 private:
     const CommandBus& commandBus_;

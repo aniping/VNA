@@ -3,7 +3,7 @@
 #include "display_frame_json_codec.hpp"
 
 #include <string>
-#include <thread>
+#include <vna/compat/joining_thread.hpp>
 #include <variant>
 
 namespace vna::web_api::detail {
@@ -87,7 +87,7 @@ void DisplayFrameStream::Impl::finishSession(
 }
 
 void DisplayFrameStream::Impl::streamFrames(
-    httplib::ws::WebSocket& socket, std::stop_token token) noexcept {
+    httplib::ws::WebSocket& socket, vna::compat::StopToken token) noexcept {
     DisplayStreamClose action{
         httplib::ws::CloseStatus::GoingAway, "display stream ended"};
     try {
@@ -95,9 +95,9 @@ void DisplayFrameStream::Impl::streamFrames(
         // Starting before generation 1 makes retained current data visible on
         // every fresh connection without consulting a separate snapshot API.
         application::TraceDisplayFrameSetCursor cursor{0, 0};
-        while (!token.stop_requested()) {
+        while (!token.stopRequested()) {
             const auto event = repository_.waitForNextSet(cursor, token);
-            if (token.stop_requested()) {
+            if (token.stopRequested()) {
                 action.reason = "server stopping";
                 break;
             }
@@ -133,7 +133,7 @@ void DisplayFrameStream::Impl::streamFrames(
 
 void DisplayFrameStream::Impl::stream(
     httplib::ws::WebSocket& socket,
-    std::stop_token token,
+    vna::compat::StopToken token,
     DisplayStreamKind kind) noexcept {
     if (kind == DisplayStreamKind::Complete) {
         streamFrames(socket, token);
@@ -158,16 +158,17 @@ void DisplayFrameStream::Impl::serve(
         // The handler is the only reader; the worker only waits and writes. A
         // client Close wakes this thread, which joins the worker before
         // httplib destroys the socket and any TLS stream.
-        std::jthread worker{[this, &socket, kind](std::stop_token token) {
+        vna::compat::JoiningThread worker{
+            [this, &socket, kind](vna::compat::StopToken token) {
             stream(socket, token, kind);
         }};
-        std::stop_callback cancelWorker{
-            session->stop.get_token(), [&worker] { worker.request_stop(); }};
+        vna::compat::StopCallback cancelWorker{
+            session->stop.getToken(), [&worker] { worker.requestStop(); }};
         std::string ignored;
         while (socket.read(ignored) != httplib::ws::ReadResult::Fail) {
             ignored.clear();
         }
-        static_cast<void>(session->stop.request_stop());
+        static_cast<void>(session->stop.requestStop());
         worker.join();
     } catch (...) {
         closeSocket(

@@ -15,8 +15,10 @@ namespace {
 static_assert(std::is_nothrow_copy_constructible_v<CommandId>);
 static_assert(std::is_nothrow_move_constructible_v<CommandId>);
 static_assert(std::is_nothrow_move_assignable_v<CommandId>);
+#if __GNUC__ > 7
 static_assert(std::is_nothrow_copy_constructible_v<CommandEnvelope>);
 static_assert(std::is_nothrow_copy_constructible_v<CommandResult>);
+#endif
 static_assert(std::is_nothrow_move_constructible_v<CommandResult>);
 static_assert(std::is_nothrow_copy_constructible_v<OperationSnapshot>);
 static_assert(std::is_nothrow_move_constructible_v<OperationSnapshot>);

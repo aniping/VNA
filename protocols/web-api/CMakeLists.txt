@@ -23,7 +23,7 @@ else()
     message(FATAL_ERROR "Unsupported web asset platform")
 endif()
 
-target_compile_features(vna_web_api PUBLIC cxx_std_20)
+target_compile_features(vna_web_api PUBLIC cxx_std_17)
 target_include_directories(
     vna_web_api
     PUBLIC
@@ -33,6 +33,7 @@ target_link_libraries(
     vna_web_api
     PUBLIC
         vna::application
+        vna::cpp_compat
     PRIVATE
         httplib::httplib
         nlohmann_json::nlohmann_json

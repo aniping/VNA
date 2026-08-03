@@ -1,7 +1,7 @@
 add_library(vna_display_model src/display_workspace.cpp)
 add_library(vna::display_model ALIAS vna_display_model)
 
-target_compile_features(vna_display_model PUBLIC cxx_std_20)
+target_compile_features(vna_display_model PUBLIC cxx_std_17)
 target_include_directories(
     vna_display_model
     PUBLIC

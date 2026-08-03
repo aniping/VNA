@@ -4,7 +4,7 @@
 #include <deque>
 #include <optional>
 #include <stdexcept>
-#include <thread>
+#include <vna/compat/joining_thread.hpp>
 #include <utility>
 
 #include "single_sweep_pipeline_internal.hpp"
@@ -26,7 +26,7 @@ public:
           operations_(operations),
           publish_(std::move(publish)),
           traceRegistry_(capacity, operations, frames),
-          worker_([this](std::stop_token token) { workerLoop(token); }) {}
+          worker_([this](vna::compat::StopToken token) { workerLoop(token); }) {}
 
     SingleSweepSubmitResult submit(SingleSweepWorkItem work) {
         std::unique_lock lock{mutex_};
@@ -65,7 +65,7 @@ public:
         {
             std::lock_guard lock{mutex_};
             accepting_ = false;
-            worker_.request_stop();
+            worker_.requestStop();
             abandoned.swap(queue_);
             running = running_;
         }
@@ -97,13 +97,13 @@ private:
         OperationId operationId{0};
     };
 
-    void workerLoop(std::stop_token token) {
+    void workerLoop(vna::compat::StopToken token) {
         while (true) {
             std::optional<Pending> pending;
             {
                 std::unique_lock lock{mutex_};
                 condition_.wait(lock, [&] {
-                    return token.stop_requested() || !queue_.empty();
+                    return token.stopRequested() || !queue_.empty();
                 });
                 if (queue_.empty()) {
                     return;
@@ -119,7 +119,7 @@ private:
         }
     }
 
-    void runGuarded(Pending pending, std::stop_token token) {
+    void runGuarded(Pending pending, vna::compat::StopToken token) {
         const auto operationId = pending.operationId;
         try {
             run(std::move(pending), token);
@@ -136,7 +136,7 @@ private:
         }
     }
 
-    void run(Pending pending, std::stop_token token) {
+    void run(Pending pending, vna::compat::StopToken token) {
         if (internal::finishSingleSweepCancellation(
                 operations_, pending.operationId, token)) {
             return;
@@ -193,7 +193,7 @@ private:
     std::deque<Pending> queue_;
     bool accepting_{true};
     std::optional<OperationId> running_;
-    std::jthread worker_;
+    vna::compat::JoiningThread worker_;
 };
 
 SingleSweepExecutor::SingleSweepExecutor(

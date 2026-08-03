@@ -1,10 +1,10 @@
 #include "display_frame_http_handler.hpp"
 
 #include "display_frame_json_codec.hpp"
+#include "positive_integer.hpp"
 
 #include <httplib.h>
 
-#include <charconv>
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -16,14 +16,11 @@ namespace vna::web_api::detail {
 namespace {
 
 std::optional<display_model::TraceId> parseTraceId(std::string_view text) {
-    std::uint64_t value{};
-    const auto [end, error] = std::from_chars(
-        text.data(), text.data() + text.size(), value);
-    if (error != std::errc{} || end != text.data() + text.size() ||
-        value == 0) {
+    const auto value = parsePositiveInteger(text);
+    if (!value) {
         return std::nullopt;
     }
-    return display_model::TraceId{value};
+    return display_model::TraceId{*value};
 }
 
 }  // namespace

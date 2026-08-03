@@ -5,7 +5,7 @@ add_library(
 )
 add_library(vna::data_plane ALIAS vna_data_plane)
 
-target_compile_features(vna_data_plane PUBLIC cxx_std_20)
+target_compile_features(vna_data_plane PUBLIC cxx_std_17)
 target_include_directories(
     vna_data_plane
     PUBLIC
@@ -14,6 +14,7 @@ target_include_directories(
 target_link_libraries(
     vna_data_plane
     PUBLIC
+        vna::cpp_compat
         vna::display_model
         vna::frame_contracts
 )

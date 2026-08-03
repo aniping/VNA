@@ -1,6 +1,5 @@
 #pragma once
 
-#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -10,11 +9,12 @@
 #include <vna/application/sweep_preview_exchange.hpp>
 #include <vna/application/trace_display_frame_query.hpp>
 #include <vna/application/trace_display_frame_repository.hpp>
+#include <vna/compat/filesystem.hpp>
 
 namespace vna::web_api {
 
 struct WebApiOptions {
-    std::optional<std::filesystem::path> webRoot;
+    std::optional<vna::compat::filesystem::path> webRoot;
 };
 
 // Both retained display truths are mandatory and borrowed. Grouping them

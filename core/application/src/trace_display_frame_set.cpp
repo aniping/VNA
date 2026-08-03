@@ -118,8 +118,8 @@ TraceDisplayFrameSetResult TraceDisplayFrameRepository::publishFrameSet(
                       setError(TraceDisplayFrameSetErrorCode::SequenceConflict)};
         }
         for (const auto& [traceId, state] : waitStates_) {
-            if (latestByTrace_.contains(traceId) &&
-                !newFrames.contains(traceId)) {
+            if (latestByTrace_.find(traceId) != latestByTrace_.end() &&
+                newFrames.find(traceId) == newFrames.end()) {
                 ++state->discardGeneration;
             }
             notify.push_back(state);

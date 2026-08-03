@@ -34,9 +34,9 @@ void SweepRuntimeImpl::settleRestart(
     }
     if (failure != nullptr) {
         if (admission.activeStop) {
-            admission.activeStop->request_stop();
+            admission.activeStop->requestStop();
         }
-        worker_.request_stop();
+        worker_.requestStop();
         notifyWorker();
         failTerminal(
             failure, admission.queued, admission.activeWithoutSource);
@@ -52,7 +52,7 @@ void SweepRuntimeImpl::settleRestart(
         activeIdentity_.reset();
     }
     if (admission.activeStop) {
-        admission.activeStop->request_stop();
+        admission.activeStop->requestStop();
     }
     changed_.notify_all();
 }

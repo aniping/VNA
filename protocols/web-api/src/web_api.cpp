@@ -9,7 +9,6 @@
 
 #include <httplib.h>
 
-#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -53,7 +52,7 @@ void handleCommand(
 }
 
 void serveIndex(
-    const std::filesystem::path& webRoot,
+    const vna::compat::filesystem::path& webRoot,
     httplib::Response& response) {
     const auto index = detail::resolveWebAsset(webRoot, "index.html");
     if (!index) {
@@ -65,7 +64,7 @@ void serveIndex(
 }
 
 void serveAsset(
-    const std::filesystem::path& assetsRoot,
+    const vna::compat::filesystem::path& assetsRoot,
     const httplib::Request& request,
     httplib::Response& response) {
     const auto asset = detail::resolveWebAsset(
@@ -101,8 +100,8 @@ public:
         }
     }
     void installRoutes();
-    void installIndexRoutes(std::filesystem::path indexPath);
-    void installAssets(const std::filesystem::path& assetsPath);
+    void installIndexRoutes(vna::compat::filesystem::path indexPath);
+    void installAssets(const vna::compat::filesystem::path& assetsPath);
 
     application::CommandBus& commandBus_;
     const application::OperationManager& operations_;
@@ -163,7 +162,8 @@ void WebApi::Impl::installRoutes() {
         });
 }
 
-void WebApi::Impl::installIndexRoutes(std::filesystem::path indexPath) {
+void WebApi::Impl::installIndexRoutes(
+    vna::compat::filesystem::path indexPath) {
     const auto handler = [indexPath = std::move(indexPath)](
                              const httplib::Request&,
                              httplib::Response& response) {
@@ -175,8 +175,9 @@ void WebApi::Impl::installIndexRoutes(std::filesystem::path indexPath) {
     server_.Get("/index.html", handler);
 }
 
-void WebApi::Impl::installAssets(const std::filesystem::path& assetsPath) {
-    auto canonicalRoot = std::filesystem::canonical(assetsPath);
+void WebApi::Impl::installAssets(
+    const vna::compat::filesystem::path& assetsPath) {
+    auto canonicalRoot = vna::compat::filesystem::canonical(assetsPath);
     // Only this namespace reaches the filesystem. Avoiding a root mount keeps
     // /api outside static lookup and prevents an accidental SPA fallback.
     server_.Get(

@@ -6,7 +6,7 @@ add_library(
 )
 add_library(vna::simulation ALIAS vna_simulation)
 
-target_compile_features(vna_simulation PUBLIC cxx_std_20)
+target_compile_features(vna_simulation PUBLIC cxx_std_17)
 target_include_directories(
     vna_simulation
     PUBLIC
@@ -16,6 +16,7 @@ target_link_libraries(
     vna_simulation
     PUBLIC
         vna::acquisition
+        vna::cpp_compat
         vna::raw_receiver_contracts
 )
 target_compile_options(vna_simulation PRIVATE -Wall -Wextra -Wpedantic)

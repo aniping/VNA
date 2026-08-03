@@ -6,7 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <unordered_map>
 #include <variant>
 
@@ -105,7 +105,7 @@ public:
     // latest-only, while a generation change is reported even without frames.
     [[nodiscard]] std::optional<TraceDisplayFrameSetEvent> waitForNextSet(
         TraceDisplayFrameSetCursor cursor,
-        std::stop_token token = {}) const;
+        vna::compat::StopToken token = {}) const;
     [[nodiscard]] TraceDisplayFrameHandle latest(
         display_model::TraceId traceId) const;
     // A waiter observes only its Trace. It receives the newest retained frame,
@@ -118,7 +118,7 @@ public:
     [[nodiscard]] TraceDisplayFrameHandle waitForNext(
         display_model::TraceId traceId,
         std::uint64_t afterSequence,
-        std::stop_token token = {},
+        vna::compat::StopToken token = {},
         TraceDisplayFrameWaitValidation validate = {}) const;
     // Erasing the repository's ownership releases one capacity slot. Readers
     // already holding the immutable shared frame remain valid independently.
@@ -140,7 +140,7 @@ private:
 
     [[nodiscard]] TraceDisplayFrameHandle awaitRegistered(
         WaitRegistration registration,
-        std::stop_token token) const;
+        vna::compat::StopToken token) const;
     void releaseWaitRegistration(WaitRegistration registration) const;
     void cleanWaitState(
         std::uint64_t traceId,

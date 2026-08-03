@@ -3,7 +3,7 @@
 #include <chrono>
 #include <future>
 #include <stdexcept>
-#include <stop_token>
+#include <vna/compat/joining_thread.hpp>
 #include <string>
 #include <thread>
 #include <utility>
@@ -44,14 +44,14 @@ public:
         : entered_(enteredPromise_.get_future()),
           returned_(returnedPromise_.get_future()),
           worker_([this, &query, traceId, afterSequence](
-                      std::stop_token token) {
+                      vna::compat::StopToken token) {
               enteredPromise_.set_value();
               outcome_ = query.waitForNext(traceId, afterSequence, token);
               returnedPromise_.set_value();
           }) {}
 
     ~QueryWaitCall() {
-        worker_.request_stop();
+        worker_.requestStop();
     }
 
     [[nodiscard]] bool hasEntered() {
@@ -63,12 +63,12 @@ public:
     }
 
     void requestStop() {
-        worker_.request_stop();
+        worker_.requestStop();
     }
 
     TraceDisplayFrameQueryOutcome finish() {
         if (returned_.wait_for(2s) != std::future_status::ready) {
-            worker_.request_stop();
+            worker_.requestStop();
             throw std::runtime_error{"display frame query did not finish"};
         }
         worker_.join();
@@ -81,7 +81,7 @@ private:
     std::promise<void> returnedPromise_;
     std::future<void> returned_;
     TraceDisplayFrameQueryOutcome outcome_;
-    std::jthread worker_;
+    vna::compat::JoiningThread worker_;
 };
 
 class TraceDisplayFrameQueryWaitTest : public ::testing::Test {
@@ -164,11 +164,11 @@ TEST_F(TraceDisplayFrameQueryWaitTest, ReturnsImmediateAndLaterFrames) {
 }
 
 TEST_F(TraceDisplayFrameQueryWaitTest, MapsCancellationAndDiscard) {
-    std::stop_source cancelled;
-    cancelled.request_stop();
+    vna::compat::StopSource cancelled;
+    cancelled.requestStop();
     expectError(
         query_.waitForNext(
-            display_model::TraceId{1}, 0, cancelled.get_token()),
+            display_model::TraceId{1}, 0, cancelled.getToken()),
         TraceDisplayFrameQueryErrorCode::FrameNotAvailable);
 
     QueryWaitCall wait{query_, display_model::TraceId{1}, 0};

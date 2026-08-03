@@ -2,7 +2,7 @@
 
 #include <chrono>
 #include <future>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <utility>
 #include <variant>
 
@@ -37,7 +37,7 @@ TraceDisplayFrame replacementFrame() {
 }
 
 RawSweepSource simulationSource() {
-    return [](const frames::FrequencyAxis& axis, std::stop_token) {
+    return [](const frames::FrequencyAxis& axis, vna::compat::StopToken) {
         return simulation::simulateSweep(axis);
     };
 }
@@ -50,7 +50,7 @@ TEST(SingleSweepTraceRetirementTest, RunningSweepCannotPublishAfterRetirement) {
     std::promise<void> release;
     auto releaseFuture = release.get_future().share();
     RawSweepSource source = [&](const frames::FrequencyAxis& axis,
-                                std::stop_token) {
+                                vna::compat::StopToken) {
         entered.set_value();
         releaseFuture.wait();
         return simulation::simulateSweep(axis);

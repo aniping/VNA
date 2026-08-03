@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <utility>
 
 #include <vna/acquisition/continuous_acquisition.hpp>
@@ -51,8 +51,8 @@ public:
     frames::Result<frames::RawReceiverPayload> operator()(
         const ContinuousAcquisitionPlan&,
         std::uint64_t sequence,
-        std::stop_token token) const {
-        std::stop_callback notify{token, [&] {
+        vna::compat::StopToken token) const {
+        vna::compat::StopCallback notify{token, [&] {
             std::lock_guard lock{state_->mutex};
             state_->changed.notify_all();
         }};
@@ -60,7 +60,7 @@ public:
         state_->requestedSequence = sequence;
         state_->changed.notify_all();
         state_->changed.wait(lock, [&] {
-            return token.stop_requested() || state_->releasedSequence >= sequence;
+            return token.stopRequested() || state_->releasedSequence >= sequence;
         });
         return frames::Result<frames::RawReceiverPayload>{validPayload(sequence)};
     }

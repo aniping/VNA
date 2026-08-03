@@ -11,7 +11,7 @@ namespace {
 
 std::optional<frames::FrameError> validateMeasurementChannels(
     domain::ChannelId channelId,
-    std::span<const domain::MeasurementSnapshot> measurements) {
+    vna::compat::Span<const domain::MeasurementSnapshot> measurements) {
     const auto wrongChannel = std::find_if(
         measurements.begin(), measurements.end(),
         [channelId](const auto& measurement) {
@@ -26,7 +26,7 @@ std::optional<frames::FrameError> validateMeasurementChannels(
 
 frames::Result<std::vector<MeasurementSampleRange>> synthesizeAllRanges(
     const frames::RawReceiverFrame& rawFrame,
-    std::span<const domain::MeasurementSnapshot> measurements) {
+    vna::compat::Span<const domain::MeasurementSnapshot> measurements) {
     std::vector<MeasurementSampleRange> ranges;
     ranges.reserve(measurements.size());
     for (const auto& source : rawFrame.payload.sourceStates) {
@@ -64,7 +64,7 @@ const MeasurementSampleRange* findRange(
 
 frames::Result<std::vector<frames::MeasurementFrame>> synthesizeSParameters(
     const frames::RawReceiverFrame& rawFrame,
-    std::span<const domain::MeasurementSnapshot> measurements) {
+    vna::compat::Span<const domain::MeasurementSnapshot> measurements) {
     const auto validated = frames::makeRawReceiverFrame(
         rawFrame.context, rawFrame.frequencyAxis, rawFrame.payload);
     if (!validated.hasValue()) {

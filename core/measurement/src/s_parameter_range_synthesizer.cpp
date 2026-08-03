@@ -80,7 +80,7 @@ frames::ComplexSample divide(
 }
 
 frames::Result<std::vector<frames::ComplexSample>> calculate(
-    std::span<const frames::RawReceiverSample> samples,
+    vna::compat::Span<const frames::RawReceiverSample> samples,
     std::uint32_t responsePort) {
     std::vector<frames::ComplexSample> ratios;
     ratios.reserve(samples.size());

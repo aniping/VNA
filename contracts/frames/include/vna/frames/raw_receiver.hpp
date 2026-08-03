@@ -18,7 +18,12 @@ public:
         return value_;
     }
 
-    friend constexpr bool operator==(EntityId, EntityId) = default;
+    friend constexpr bool operator==(EntityId left, EntityId right) {
+        return left.value_ == right.value_;
+    }
+    friend constexpr bool operator!=(EntityId left, EntityId right) {
+        return !(left == right);
+    }
 
 private:
     std::uint64_t value_;
@@ -36,7 +41,12 @@ struct FrequencyAxis {
 struct ComplexSample {
     double real;
     double imaginary;
-    friend bool operator==(const ComplexSample&, const ComplexSample&) = default;
+    friend bool operator==(const ComplexSample& left, const ComplexSample& right) {
+        return left.real == right.real && left.imaginary == right.imaginary;
+    }
+    friend bool operator!=(const ComplexSample& left, const ComplexSample& right) {
+        return !(left == right);
+    }
 };
 
 // A point keeps the active reference next to every response receiver, allowing
@@ -44,7 +54,12 @@ struct ComplexSample {
 struct RawReceiverSample {
     ComplexSample reference;
     std::vector<ComplexSample> responses;
-    bool operator==(const RawReceiverSample&) const = default;
+    bool operator==(const RawReceiverSample& other) const {
+        return reference == other.reference && responses == other.responses;
+    }
+    bool operator!=(const RawReceiverSample& other) const {
+        return !(*this == other);
+    }
 };
 
 // Port indices are one-based, matching conventional S-parameter notation.
@@ -53,7 +68,12 @@ struct RawReceiverSample {
 struct RawSourceState {
     std::uint32_t sourcePort;
     std::vector<RawReceiverSample> samples;
-    bool operator==(const RawSourceState&) const = default;
+    bool operator==(const RawSourceState& other) const {
+        return sourcePort == other.sourcePort && samples == other.samples;
+    }
+    bool operator!=(const RawSourceState& other) const {
+        return !(*this == other);
+    }
 };
 
 // Payload deliberately carries no Channel, Trace, or state revision. A
@@ -62,7 +82,12 @@ struct RawSourceState {
 struct RawReceiverPayload {
     std::uint32_t portCount;
     std::vector<RawSourceState> sourceStates;
-    bool operator==(const RawReceiverPayload&) const = default;
+    bool operator==(const RawReceiverPayload& other) const {
+        return portCount == other.portCount && sourceStates == other.sourceStates;
+    }
+    bool operator!=(const RawReceiverPayload& other) const {
+        return !(*this == other);
+    }
 };
 
 enum class FrameErrorCode {

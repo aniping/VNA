@@ -18,16 +18,16 @@ application::SweepPreviewCursor eventCursor(
 
 void DisplayFrameStream::Impl::streamPreviews(
     httplib::ws::WebSocket& socket,
-    std::stop_token token) noexcept {
+    vna::compat::StopToken token) noexcept {
     DisplayStreamClose action{
         httplib::ws::CloseStatus::GoingAway, "preview stream ended"};
     try {
         // Cursor zero deliberately asks the Exchange for its retained latest
         // event, so reconnect does not need a second snapshot interface.
         application::SweepPreviewCursor cursor{0};
-        while (!token.stop_requested()) {
+        while (!token.stopRequested()) {
             const auto event = previews_.waitForNext(cursor, token);
-            if (token.stop_requested()) {
+            if (token.stopRequested()) {
                 action.reason = "server stopping";
                 break;
             }

@@ -20,7 +20,7 @@ acquisition::RawSweepCaptureSource gatedSource(
     return [released](
                const acquisition::RawSweepCaptureRequest& request,
                const acquisition::RawSweepChunkObserver& observer,
-               std::stop_token) ->
+               vna::compat::StopToken) ->
         acquisition::RawSweepCaptureResult {
         auto payload = acquisition::test_support::validPayload(request.sequenceNumber);
         const auto& sourceState = payload.sourceStates.front();
@@ -33,12 +33,12 @@ acquisition::RawSweepCaptureSource gatedSource(
 
 std::optional<SweepPreviewEvent> waitBounded(
     SweepPreviewExchange& previews, SweepPreviewCursor cursor) {
-    std::stop_source stop;
+    vna::compat::StopSource stop;
     auto waiting = std::async(std::launch::async, [&] {
-        return previews.waitForNext(cursor, stop.get_token());
+        return previews.waitForNext(cursor, stop.getToken());
     });
     if (waiting.wait_for(2s) != std::future_status::ready) {
-        stop.request_stop();
+        stop.requestStop();
     }
     return waiting.get();
 }

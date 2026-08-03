@@ -4,7 +4,7 @@
 #include <future>
 #include <optional>
 #include <stdexcept>
-#include <stop_token>
+#include <vna/compat/joining_thread.hpp>
 #include <thread>
 #include <utility>
 #include <variant>
@@ -43,14 +43,14 @@ public:
         TraceDisplayFrameSetCursor cursor)
         : entered_(enteredPromise_.get_future()),
           returned_(returnedPromise_.get_future()),
-          worker_([this, &repository, cursor](std::stop_token token) {
+          worker_([this, &repository, cursor](vna::compat::StopToken token) {
               enteredPromise_.set_value();
               result_ = repository.waitForNextSet(cursor, token);
               returnedPromise_.set_value();
           }) {}
 
     ~SetWaitCall() {
-        worker_.request_stop();
+        worker_.requestStop();
     }
 
     [[nodiscard]] bool hasEntered() {
@@ -62,12 +62,12 @@ public:
     }
 
     void requestStop() {
-        worker_.request_stop();
+        worker_.requestStop();
     }
 
     std::optional<TraceDisplayFrameSetEvent> finish() {
         if (returned_.wait_for(2s) != std::future_status::ready) {
-            worker_.request_stop();
+            worker_.requestStop();
             throw std::runtime_error{"frame-set wait did not finish"};
         }
         worker_.join();
@@ -80,7 +80,7 @@ private:
     std::promise<void> returnedPromise_;
     std::future<void> returned_;
     std::optional<TraceDisplayFrameSetEvent> result_;
-    std::jthread worker_;
+    vna::compat::JoiningThread worker_;
 };
 
 const FrameSetAvailable& expectAvailable(
@@ -137,9 +137,10 @@ TEST(TraceDisplayFrameSetWaitTest, GenerationAdvanceIsAnEventBeforeNewFrame) {
 
 TEST(TraceDisplayFrameSetWaitTest, CancellationReturnsEmpty) {
     TraceDisplayFrameRepository repository{1};
-    std::stop_source stopped;
-    stopped.request_stop();
-    EXPECT_EQ(repository.waitForNextSet({1, 0}, stopped.get_token()), std::nullopt);
+    vna::compat::StopSource stopped;
+    stopped.requestStop();
+    EXPECT_EQ(
+        repository.waitForNextSet({1, 0}, stopped.getToken()), std::nullopt);
 
     SetWaitCall wait{repository, {1, 0}};
     ASSERT_TRUE(wait.hasEntered());

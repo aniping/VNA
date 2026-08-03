@@ -5,23 +5,23 @@ namespace vna::application {
 std::optional<TraceDisplayFrameSetEvent>
 TraceDisplayFrameRepository::waitForNextSet(
     TraceDisplayFrameSetCursor cursor,
-    std::stop_token token) const {
+    vna::compat::StopToken token) const {
     std::optional<TraceDisplayFrameSetEvent> result;
     {
         // Cancellation is external state. Synchronizing notification through
         // the predicate mutex closes the check-to-sleep lost-wakeup window.
-        std::stop_callback notify{token, [this] {
+        vna::compat::StopCallback notify{token, [this] {
             std::lock_guard lock{mutex_};
             frameSetChanged_.notify_all();
         }};
         std::unique_lock lock{mutex_};
         frameSetChanged_.wait(lock, [&] {
-            return token.stop_requested() ||
+            return token.stopRequested() ||
                    generation_ != cursor.generation ||
                    (latestFrameSet_ != nullptr &&
                     latestFrameSet_->sequenceNumber > cursor.sequenceNumber);
         });
-        if (!token.stop_requested()) {
+        if (!token.stopRequested()) {
             if (generation_ != cursor.generation) {
                 result = GenerationAdvanced{generation_};
             } else {

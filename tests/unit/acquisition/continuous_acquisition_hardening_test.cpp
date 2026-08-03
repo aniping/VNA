@@ -8,7 +8,7 @@
 #include <future>
 #include <mutex>
 #include <stdexcept>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <utility>
 #include <variant>
 
@@ -38,7 +38,10 @@ const ContinuousAcquisitionFailure* requireFailure(
 
 TEST(ContinuousAcquisitionHardeningTest, SourceErrorFailsOnceAndSurvivesStop) {
     std::atomic<int> calls{0};
-    RawSweepSource source = [&](const auto&, std::uint64_t, std::stop_token) {
+    RawSweepSource source = [&](
+                                const auto&,
+                                std::uint64_t,
+                                vna::compat::StopToken) {
         ++calls;
         return frames::Result<frames::RawReceiverPayload>{frames::FrameError{
             frames::FrameErrorCode::InvalidFrequencyAxis}};
@@ -64,7 +67,7 @@ TEST(ContinuousAcquisitionHardeningTest, SourceErrorFailsOnceAndSurvivesStop) {
 TEST(ContinuousAcquisitionHardeningTest, InvalidSecondFrameIsNotPublished) {
     std::atomic<int> calls{0};
     RawSweepSource source = [&](const auto&, std::uint64_t sequence,
-                                std::stop_token) {
+                                vna::compat::StopToken) {
         auto payload = validPayload(sequence);
         if (++calls == 2) {
             payload.sourceStates.front().samples.pop_back();
@@ -90,7 +93,10 @@ TEST(ContinuousAcquisitionHardeningTest, InvalidSecondFrameIsNotPublished) {
 }
 
 TEST(ContinuousAcquisitionHardeningTest, SourceExceptionIsContained) {
-    RawSweepSource source = [](const auto&, std::uint64_t, std::stop_token)
+    RawSweepSource source = [](
+                                const auto&,
+                                std::uint64_t,
+                                vna::compat::StopToken)
         -> frames::Result<frames::RawReceiverPayload> {
         throw std::runtime_error{"receiver disconnected"};
     };
@@ -115,8 +121,11 @@ TEST(ContinuousAcquisitionHardeningTest, StopWinsBeforeBlockedSourceError) {
     std::mutex mutex;
     std::condition_variable changed;
     bool stopObserved = false;
-    RawSweepSource source = [&](const auto&, std::uint64_t, std::stop_token token) {
-        std::stop_callback notify{token, [&] {
+    RawSweepSource source = [&](
+                                const auto&,
+                                std::uint64_t,
+                                vna::compat::StopToken token) {
+        vna::compat::StopCallback notify{token, [&] {
             std::lock_guard lock{mutex};
             stopObserved = true;
             changed.notify_all();

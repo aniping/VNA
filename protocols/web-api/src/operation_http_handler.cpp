@@ -1,9 +1,9 @@
 #include "operation_http_handler.hpp"
+#include "positive_integer.hpp"
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
-#include <charconv>
 #include <cstdint>
 #include <exception>
 #include <optional>
@@ -18,14 +18,11 @@ using Json = nlohmann::json;
 
 std::optional<application::OperationId> parseOperationId(
     std::string_view text) {
-    std::uint64_t value{};
-    const auto [end, error] = std::from_chars(
-        text.data(), text.data() + text.size(), value);
-    if (error != std::errc{} || end != text.data() + text.size() ||
-        value == 0) {
+    const auto value = parsePositiveInteger(text);
+    if (!value) {
         return std::nullopt;
     }
-    return application::OperationId{value};
+    return application::OperationId{*value};
 }
 
 const char* statusName(const application::OperationState& state) {

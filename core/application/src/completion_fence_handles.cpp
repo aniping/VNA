@@ -9,10 +9,16 @@ void removeSubscription(
     const std::shared_ptr<detail::FenceSubscriptionState>& subscription) {
     const auto coordinator = subscription->coordinator;
     const std::scoped_lock lock{coordinator->mutex};
-    std::erase_if(coordinator->subscriptions, [&](const auto& candidate) {
-        const auto current = candidate.lock();
-        return !current || current == subscription;
-    });
+    auto& subscriptions = coordinator->subscriptions;
+    subscriptions.erase(
+        std::remove_if(
+            subscriptions.begin(),
+            subscriptions.end(),
+            [&](const auto& candidate) {
+                const auto current = candidate.lock();
+                return !current || current == subscription;
+            }),
+        subscriptions.end());
 }
 
 void cancelSubscription(

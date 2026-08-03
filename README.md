@@ -17,7 +17,7 @@
 ## 当前基线
 
 - 前端：Vue 3 + TypeScript
-- 后端核心：C++20 模块化单体
+- 后端核心：C++17 模块化单体
 - 目标平台：Windows 与 Linux 原生构建和运行
 - 编译器：Windows/MinGW GCC 与 Linux/GCC
 - HTTP/WebSocket：`yhirose/cpp-httplib`

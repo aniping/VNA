@@ -12,21 +12,21 @@ namespace {
 
 bool waitFor(
     std::chrono::steady_clock::duration delay,
-    std::stop_token token) {
+    vna::compat::StopToken token) {
     if (delay <= decltype(delay)::zero()) {
-        return !token.stop_requested();
+        return !token.stopRequested();
     }
     std::mutex mutex;
     std::condition_variable changed;
-    std::stop_callback notify{token, [&] {
+    vna::compat::StopCallback notify{token, [&] {
         // The predicate and notification share this mutex, closing the
         // check-to-sleep window without a polling interval.
         std::lock_guard lock{mutex};
         changed.notify_all();
     }};
     std::unique_lock lock{mutex};
-    changed.wait_for(lock, delay, [&] { return token.stop_requested(); });
-    return !token.stop_requested();
+    changed.wait_for(lock, delay, [&] { return token.stopRequested(); });
+    return !token.stopRequested();
 }
 
 std::uint64_t chunkCount(
@@ -72,7 +72,7 @@ acquisition::RawSweepCaptureSource makeOpenPortSweepSource(
     return [options, pacer = std::move(pacer)](
                const acquisition::RawSweepCaptureRequest& request,
                const acquisition::RawSweepChunkObserver& observer,
-               std::stop_token token) {
+               vna::compat::StopToken token) {
         const auto count = chunkCount(request);
         auto delay = decltype(options.sweepDuration)::zero();
         if (count != 0) {
@@ -84,7 +84,7 @@ acquisition::RawSweepCaptureSource makeOpenPortSweepSource(
             [plan, delay, &pacer](
                 const acquisition::ContinuousAcquisitionPlan&,
                 acquisition::RawSweepChunkRequest chunk,
-                std::stop_token chunkToken)
+                vna::compat::StopToken chunkToken)
                 -> acquisition::RawSweepChunkResult {
                 if (!pacer(delay, chunkToken)) {
                     return acquisition::RawSweepCaptureCanceled{};

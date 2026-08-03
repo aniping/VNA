@@ -6,7 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <stdexcept>
-#include <stop_token>
+#include <vna/compat/joining_thread.hpp>
 #include <thread>
 #include <variant>
 
@@ -68,18 +68,17 @@ private:
 StateSnapshot traceState(
     std::uint64_t revision,
     display_model::TraceFormat format) {
-    return {
-        .stateRevision = revision,
-        .control = {},
-        .instrument = {
-            .channels = {{domain::ChannelId{1}, {1'000'000, 2'000'000, 3,
-                                                  10'000, -10.5}}},
-            .measurements = {{domain::MeasurementId{1}, domain::ChannelId{1},
-                              domain::MeasurementType::S21}}},
-        .display = {.traces = {{
-            display_model::TraceId{1}, display_model::WindowId{1},
-            domain::MeasurementId{1}, format, std::nullopt}}},
-    };
+    StateSnapshot state{};
+    state.stateRevision = revision;
+    state.instrument.channels = {{
+        domain::ChannelId{1}, {1'000'000, 2'000'000, 3, 10'000, -10.5}}};
+    state.instrument.measurements = {{
+        domain::MeasurementId{1}, domain::ChannelId{1},
+        domain::MeasurementType::S21}};
+    state.display.traces = {{
+        display_model::TraceId{1}, display_model::WindowId{1},
+        domain::MeasurementId{1}, format, std::nullopt}};
+    return state;
 }
 
 class SetWait {
@@ -88,15 +87,15 @@ public:
         const TraceDisplayFrameRepository& repository,
         TraceDisplayFrameSetCursor cursor)
         : returned_(promise_.get_future()),
-          worker_([this, &repository, cursor](std::stop_token token) {
+          worker_([this, &repository, cursor](vna::compat::StopToken token) {
               result_ = repository.waitForNextSet(cursor, token);
               promise_.set_value();
           }) {}
-    ~SetWait() { worker_.request_stop(); }
+    ~SetWait() { worker_.requestStop(); }
 
     TraceDisplayFrameSetHandle finish() {
         if (returned_.wait_for(2s) != std::future_status::ready) {
-            worker_.request_stop();
+            worker_.requestStop();
             throw std::runtime_error{"frame set was not published"};
         }
         worker_.join();
@@ -111,7 +110,7 @@ private:
     std::promise<void> promise_;
     std::future<void> returned_;
     std::optional<TraceDisplayFrameSetEvent> result_;
-    std::jthread worker_;
+    vna::compat::JoiningThread worker_;
 };
 
 TracePublicationPlanHandle advancePlan(
@@ -174,7 +173,7 @@ TEST(ContinuousTraceLogTest, RecordsAcquisitionFailureOnce) {
     const auto source = [](
                             const acquisition::ContinuousAcquisitionPlan&,
                             std::uint64_t,
-                            std::stop_token) {
+                            vna::compat::StopToken) {
         return frames::Result<frames::RawReceiverPayload>{
             frames::FrameError{frames::FrameErrorCode::InvalidPortCount}};
     };

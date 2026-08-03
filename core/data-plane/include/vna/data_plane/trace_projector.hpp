@@ -1,9 +1,9 @@
 #pragma once
 
-#include <span>
 #include <variant>
 #include <vector>
 
+#include <vna/compat/span.hpp>
 #include <vna/display_model/display_workspace.hpp>
 #include <vna/frames/frames.hpp>
 
@@ -36,7 +36,7 @@ using ProjectedTraceSamples =
 // Projects a completed contiguous measurement range without inventing Frame
 // identity or frequency-axis completeness at the preview boundary.
 [[nodiscard]] frames::Result<ProjectedTraceSamples> projectTraceSamples(
-    std::span<const frames::ComplexSample> source,
+    vna::compat::Span<const frames::ComplexSample> source,
     display_model::TraceFormat format);
 
 [[nodiscard]] frames::Result<ProjectedTraceSamples> projectTraceSamples(

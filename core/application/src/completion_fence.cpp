@@ -55,7 +55,10 @@ std::shared_ptr<FenceSubscriptionState> claimNextTerminal(
         bool remove = !subscription;
         if (subscription) {
             const std::scoped_lock stateLock{subscription->mutex};
-            std::erase(subscription->outstandingIds, operationId);
+            auto& outstanding = subscription->outstandingIds;
+            outstanding.erase(
+                std::remove(outstanding.begin(), outstanding.end(), operationId),
+                outstanding.end());
             remove = subscription->phase != DeliveryPhase::Pending ||
                      subscription->outstandingIds.empty();
             if (subscription->phase == DeliveryPhase::Pending &&

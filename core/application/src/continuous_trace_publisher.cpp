@@ -4,8 +4,7 @@
 
 #include <mutex>
 #include <optional>
-#include <stop_token>
-#include <thread>
+#include <vna/compat/joining_thread.hpp>
 #include <utility>
 #include <variant>
 
@@ -65,13 +64,14 @@ public:
         acquisition::ContinuousAcquisition& acquisition,
         TracePublicationCatalog& catalog)
         : acquisition_(acquisition), catalog_(catalog) {
-        worker_ = std::jthread{[this](std::stop_token token) { run(token); }};
+        worker_ = vna::compat::JoiningThread{
+            [this](vna::compat::StopToken token) { run(token); }};
     }
 
     ~Impl() { stop(); }
 
     void stop() noexcept {
-        worker_.request_stop();
+        worker_.requestStop();
         if (worker_.joinable()) {
             worker_.join();
         }
@@ -89,11 +89,11 @@ public:
     }
 
 private:
-    void run(std::stop_token token) noexcept {
+    void run(vna::compat::StopToken token) noexcept {
         std::uint64_t afterSequence = 0;
-        while (!token.stop_requested()) {
+        while (!token.stopRequested()) {
             const auto raw = acquisition_.waitForNext(afterSequence, token);
-            if (token.stop_requested()) {
+            if (token.stopRequested()) {
                 break;
             }
             if (raw != nullptr) {
@@ -184,7 +184,7 @@ private:
     mutable std::mutex mutex_;
     ContinuousTracePublisherSnapshot snapshot_;
     std::optional<std::uint64_t> logAttemptedGeneration_;
-    std::jthread worker_;
+    vna::compat::JoiningThread worker_;
 };
 
 ContinuousTracePublisher::ContinuousTracePublisher(

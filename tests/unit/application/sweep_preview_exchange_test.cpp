@@ -4,7 +4,7 @@
 #include <future>
 #include <optional>
 #include <stdexcept>
-#include <stop_token>
+#include <vna/compat/joining_thread.hpp>
 #include <thread>
 #include <variant>
 #include <vector>
@@ -46,14 +46,14 @@ public:
         SweepPreviewCursor cursor)
         : entered_(enteredPromise_.get_future()),
           returned_(returnedPromise_.get_future()),
-          worker_([this, &exchange, cursor](std::stop_token token) {
+          worker_([this, &exchange, cursor](vna::compat::StopToken token) {
               enteredPromise_.set_value();
               result_ = exchange.waitForNext(cursor, token);
               returnedPromise_.set_value();
           }) {}
 
     ~PreviewWaitCall() {
-        worker_.request_stop();
+        worker_.requestStop();
     }
 
     [[nodiscard]] bool hasEntered() {
@@ -61,12 +61,12 @@ public:
     }
 
     void requestStop() {
-        worker_.request_stop();
+        worker_.requestStop();
     }
 
     std::optional<SweepPreviewEvent> finish() {
         if (returned_.wait_for(2s) != std::future_status::ready) {
-            worker_.request_stop();
+            worker_.requestStop();
             throw std::runtime_error{"preview wait did not finish"};
         }
         worker_.join();
@@ -79,7 +79,7 @@ private:
     std::promise<void> returnedPromise_;
     std::future<void> returned_;
     std::optional<SweepPreviewEvent> result_;
-    std::jthread worker_;
+    vna::compat::JoiningThread worker_;
 };
 
 TEST(SweepPreviewExchangeTest, SlowReaderReceivesLatestCumulativePreview) {
@@ -199,10 +199,10 @@ TEST(SweepPreviewExchangeTest, RejectsFutureAndSkippedGeneration) {
 
 TEST(SweepPreviewExchangeTest, CancellationReturnsNoEvent) {
     SweepPreviewExchange exchange{vna::test::testSweepStatus()};
-    std::stop_source alreadyStopped;
-    alreadyStopped.request_stop();
+    vna::compat::StopSource alreadyStopped;
+    alreadyStopped.requestStop();
     EXPECT_EQ(
-        exchange.waitForNext({}, alreadyStopped.get_token()),
+        exchange.waitForNext({}, alreadyStopped.getToken()),
         std::nullopt);
 
     PreviewWaitCall wait{exchange, {1}};

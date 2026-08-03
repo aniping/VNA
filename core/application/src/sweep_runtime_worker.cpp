@@ -18,10 +18,10 @@ SweepRuntimeFailure failure(
 
 }  // namespace
 
-void SweepRuntimeImpl::run(std::stop_token token) noexcept {
+void SweepRuntimeImpl::run(vna::compat::StopToken token) noexcept {
     std::uint64_t sequence = 1;
     try {
-        while (!token.stop_requested()) {
+        while (!token.stopRequested()) {
             if (!prepareCycle(token)) {
                 finish(SweepRuntimeState::Stopped);
                 return;
@@ -29,7 +29,7 @@ void SweepRuntimeImpl::run(std::stop_token token) noexcept {
             const auto startedAt = std::chrono::steady_clock::now();
             recordAttempt();
             const auto disposition = capture(sequence, token);
-            if (token.stop_requested()) {
+            if (token.stopRequested()) {
                 finish(SweepRuntimeState::Stopped);
                 return;
             }
@@ -56,10 +56,10 @@ void SweepRuntimeImpl::run(std::stop_token token) noexcept {
 
 SweepDisposition SweepRuntimeImpl::capture(
     std::uint64_t sequence,
-    std::stop_token token) {
+    vna::compat::StopToken token) {
     const auto identity = SweepPreviewIdentity{
         plan_.publication->generation, acquisition::SweepId{sequence}};
-    std::shared_ptr<std::stop_source> cycleStop;
+    std::shared_ptr<vna::compat::StopSource> cycleStop;
     {
         std::lock_guard lock{mutex_};
         activeIdentity_ = identity;
@@ -70,8 +70,8 @@ SweepDisposition SweepRuntimeImpl::capture(
             0);
         previews_.updateForRuntime(displayStatusLocked());
     }
-    std::stop_callback stopCycle{
-        token, [cycleStop] { cycleStop->request_stop(); }};
+    vna::compat::StopCallback stopCycle{
+        token, [cycleStop] { cycleStop->requestStop(); }};
     SweepPreviewAssembler assembler{{
         plan_.acquisition,
         plan_.publication,
@@ -85,8 +85,8 @@ SweepDisposition SweepRuntimeImpl::capture(
     auto captured = source_(
         {plan_.acquisition, identity.sweepId, sequence,
          plan_.maximumPointsPerChunk},
-        observer, cycleStop->get_token());
-    if (cycleStop->stop_requested()) {
+        observer, cycleStop->getToken());
+    if (cycleStop->getToken().stopRequested()) {
         cancelActiveAfterSource(identity);
         return SweepDisposition::Canceled;
     }
@@ -164,12 +164,12 @@ bool SweepRuntimeImpl::claimPublication() noexcept {
 
 bool SweepRuntimeImpl::paceUntil(
     std::chrono::steady_clock::time_point deadline,
-    std::stop_token token) const {
+    vna::compat::StopToken token) const {
     std::unique_lock lock{mutex_};
     changed_.wait_until(lock, deadline, [&] {
-        return token.stop_requested();
+        return token.stopRequested();
     });
-    return !token.stop_requested();
+    return !token.stopRequested();
 }
 
 void SweepRuntimeImpl::failTerminal(

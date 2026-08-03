@@ -1,11 +1,11 @@
 #include "command_idempotency_internal.hpp"
 
 #include <array>
-#include <bit>
 #include <cstddef>
-#include <cstring>
 #include <stdexcept>
 #include <type_traits>
+
+#include <vna/compat/bit_cast.hpp>
 
 namespace vna::application {
 namespace {
@@ -13,13 +13,7 @@ namespace {
 bool sameDouble(double left, double right) noexcept {
     using DoubleBits = std::array<std::byte, sizeof(double)>;
     const auto bits = [](double value) noexcept {
-#if defined(__cpp_lib_bit_cast)
-        return std::bit_cast<DoubleBits>(value);
-#else
-        DoubleBits result{};
-        std::memcpy(result.data(), &value, sizeof(value));
-        return result;
-#endif
+        return vna::compat::bitCast<DoubleBits>(value);
     };
     return bits(left) == bits(right);
 }

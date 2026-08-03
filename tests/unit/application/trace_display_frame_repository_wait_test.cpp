@@ -3,7 +3,7 @@
 #include <chrono>
 #include <future>
 #include <stdexcept>
-#include <stop_token>
+#include <vna/compat/joining_thread.hpp>
 #include <thread>
 #include <utility>
 
@@ -42,7 +42,7 @@ public:
         : entered_(enteredPromise_.get_future()),
           returned_(returnedPromise_.get_future()),
           worker_([this, &repository, traceId, afterSequence](
-                      std::stop_token token) {
+                      vna::compat::StopToken token) {
               enteredPromise_.set_value();
               result_ = repository.waitForNext(
                   traceId, afterSequence, token);
@@ -50,7 +50,7 @@ public:
           }) {}
 
     ~WaitCall() {
-        worker_.request_stop();
+        worker_.requestStop();
     }
 
     [[nodiscard]] bool hasEntered() {
@@ -62,12 +62,12 @@ public:
     }
 
     void requestStop() {
-        worker_.request_stop();
+        worker_.requestStop();
     }
 
     TraceDisplayFrameHandle finish() {
         if (returned_.wait_for(2s) != std::future_status::ready) {
-            worker_.request_stop();
+            worker_.requestStop();
             throw std::runtime_error{"repository wait did not finish"};
         }
         worker_.join();
@@ -80,7 +80,7 @@ private:
     std::promise<void> returnedPromise_;
     std::future<void> returned_;
     TraceDisplayFrameHandle result_;
-    std::jthread worker_;
+    vna::compat::JoiningThread worker_;
 };
 
 TEST(TraceDisplayFrameRepositoryWaitTest, ReturnsNewestRetainedFrameImmediately) {
@@ -132,11 +132,11 @@ TEST(TraceDisplayFrameRepositoryWaitTest, CancellationReturnsNull) {
     TraceDisplayFrameRepository repository{1};
     ASSERT_TRUE(repository.publish(frameFor(display_model::TraceId{1}, 1))
                     .hasValue());
-    std::stop_source cancelled;
-    cancelled.request_stop();
+    vna::compat::StopSource cancelled;
+    cancelled.requestStop();
     EXPECT_EQ(
         repository.waitForNext(
-            display_model::TraceId{1}, 0, cancelled.get_token()),
+            display_model::TraceId{1}, 0, cancelled.getToken()),
         nullptr);
 
     WaitCall wait{repository, display_model::TraceId{1}, 1};

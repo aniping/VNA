@@ -5,11 +5,14 @@ add_library(
 )
 add_library(vna::measurement ALIAS vna_measurement)
 
-target_compile_features(vna_measurement PUBLIC cxx_std_20)
+target_compile_features(vna_measurement PUBLIC cxx_std_17)
 target_include_directories(
     vna_measurement
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-target_link_libraries(vna_measurement PUBLIC vna::frame_contracts)
+target_link_libraries(
+    vna_measurement
+    PUBLIC vna::cpp_compat vna::frame_contracts
+)
 target_compile_options(vna_measurement PRIVATE -Wall -Wextra -Wpedantic)

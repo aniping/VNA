@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <numbers>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -15,7 +14,7 @@ bool finite(const frames::ComplexSample& sample) {
 }
 
 std::optional<frames::FrameError> projectLogMagnitudeValues(
-    std::span<const frames::ComplexSample> source,
+    vna::compat::Span<const frames::ComplexSample> source,
     std::vector<double>& values) {
     values.reserve(source.size());
     for (const auto& sample : source) {
@@ -33,7 +32,7 @@ std::optional<frames::FrameError> projectLogMagnitudeValues(
 }
 
 std::vector<double> projectPhaseValues(
-    std::span<const frames::ComplexSample> source) {
+    vna::compat::Span<const frames::ComplexSample> source) {
     std::vector<double> values;
     values.reserve(source.size());
     for (const auto& sample : source) {
@@ -42,7 +41,7 @@ std::vector<double> projectPhaseValues(
             continue;
         }
         auto degrees = std::atan2(sample.imaginary, sample.real) * 180.0 /
-                       std::numbers::pi_v<double>;
+                       3.14159265358979323846;
         if (degrees >= 180.0) {
             degrees -= 360.0;
         }
@@ -54,7 +53,7 @@ std::vector<double> projectPhaseValues(
 }  // namespace
 
 frames::Result<ProjectedTraceSamples> projectTraceSamples(
-    std::span<const frames::ComplexSample> source,
+    vna::compat::Span<const frames::ComplexSample> source,
     display_model::TraceFormat format) {
     if (!std::all_of(source.begin(), source.end(), finite)) {
         return frames::Result<ProjectedTraceSamples>{frames::FrameError{
@@ -94,7 +93,8 @@ frames::Result<ProjectedTraceSamples> projectTraceSamples(
         return frames::Result<ProjectedTraceSamples>{validated.error()};
     }
     return projectTraceSamples(
-        std::span<const frames::ComplexSample>{validated.value().samples},
+        vna::compat::Span<const frames::ComplexSample>{
+            validated.value().samples},
         format);
 }
 

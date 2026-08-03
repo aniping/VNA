@@ -16,7 +16,7 @@ using RawResult = std::variant<
 RawResult acquireRaw(
     const SingleSweepWorkItem& work,
     const RawSweepSource& source,
-    std::stop_token token) {
+    vna::compat::StopToken token) {
     try {
         auto payload = source(work.frequencyAxis, token);
         if (!payload.hasValue()) {
@@ -46,7 +46,7 @@ RawResult acquireRaw(
 SweepPipelineResult buildSingleSweepFrame(
     const SingleSweepWorkItem& work,
     const RawSweepSource& source,
-    std::stop_token token,
+    vna::compat::StopToken token,
     const SweepCancellationCheck& canceled) {
     if (canceled()) {
         return SweepPipelineCanceled{};

@@ -6,7 +6,7 @@
 #include <future>
 #include <mutex>
 #include <optional>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <stdexcept>
 #include <variant>
 #include <vector>
@@ -28,7 +28,7 @@ TEST(SingleSweepExecutorTest, PublishesFivePointGoldenBeforeSuccess) {
     OperationManager manager;
     TraceDisplayFrameRepository repository{1};
     RawSweepSource source = [](const frames::FrequencyAxis& axis,
-                               std::stop_token) {
+                               vna::compat::StopToken) {
         return simulation::simulateSweep(axis);
     };
     SingleSweepExecutor executor{1, std::move(source), manager, repository};
@@ -83,7 +83,7 @@ TEST(SingleSweepExecutorTest, RejectsInvalidConstruction) {
         SingleSweepExecutor(1, std::move(empty), manager, repository),
         std::invalid_argument);
     RawSweepSource source = [](const frames::FrequencyAxis& axis,
-                               std::stop_token) {
+                               vna::compat::StopToken) {
         return simulation::simulateSweep(axis);
     };
     TraceDisplayPublisher emptyPublisher;
@@ -105,7 +105,7 @@ TEST(SingleSweepExecutorTest, RejectsFullQueueWithoutCreatingOperation) {
     auto releaseFuture = release.get_future().share();
     std::atomic<int> calls{0};
     RawSweepSource source = [&](const frames::FrequencyAxis& axis,
-                                std::stop_token) {
+                                vna::compat::StopToken) {
         if (calls.fetch_add(1) == 0) {
             entered.set_value();
             releaseFuture.wait();
@@ -141,7 +141,7 @@ TEST(SingleSweepExecutorTest, RejectsSubmissionAfterStopWithoutOperation) {
     OperationManager manager;
     TraceDisplayFrameRepository repository{1};
     RawSweepSource source = [](const frames::FrequencyAxis& axis,
-                               std::stop_token) {
+                               vna::compat::StopToken) {
         return simulation::simulateSweep(axis);
     };
     SingleSweepExecutor executor{1, std::move(source), manager, repository};
@@ -165,7 +165,7 @@ TEST(SingleSweepExecutorTest, CancelsOnlyAfterSourceReleases) {
     std::promise<void> release;
     auto releaseFuture = release.get_future().share();
     RawSweepSource source = [&](const frames::FrequencyAxis& axis,
-                                std::stop_token) {
+                                vna::compat::StopToken) {
         entered.set_value();
         releaseFuture.wait();
         return simulation::simulateSweep(axis);
@@ -198,14 +198,14 @@ TEST(SingleSweepExecutorTest, DestructorStopsSourceAndJoinsBeforeReturning) {
     std::optional<OperationSnapshot> queued;
     {
         RawSweepSource source = [&](const frames::FrequencyAxis& axis,
-                                    std::stop_token token) {
+                                    vna::compat::StopToken token) {
             ++calls;
             entered.set_value();
-            std::stop_callback notify{token, [&] {
+            vna::compat::StopCallback notify{token, [&] {
                 sourceCondition.notify_all();
             }};
             std::unique_lock lock{sourceMutex};
-            sourceCondition.wait(lock, [&] { return token.stop_requested(); });
+            sourceCondition.wait(lock, [&] { return token.stopRequested(); });
             return simulation::simulateSweep(axis);
         };
         SingleSweepExecutor executor{1, std::move(source), manager, repository};

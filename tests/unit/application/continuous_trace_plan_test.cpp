@@ -2,7 +2,7 @@
 
 #include <cstdint>
 #include <optional>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <utility>
 #include <variant>
 
@@ -45,7 +45,7 @@ StateSnapshot publicationState(
 auto finiteSource(acquisition::test_support::ControlledSource controlled) {
     return [controlled](const acquisition::ContinuousAcquisitionPlan& plan,
                         std::uint64_t sequence,
-                        std::stop_token token) {
+                        vna::compat::StopToken token) {
         if (sequence == 1) {
             return controlled(plan, sequence, token);
         }

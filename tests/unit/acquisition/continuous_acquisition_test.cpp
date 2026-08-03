@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <stdexcept>
 #include <utility>
 
@@ -56,7 +56,7 @@ TEST(ContinuousAcquisitionTest, StartsAndPublishesCompleteFramesInSequence) {
 TEST(ContinuousAcquisitionTest, PassesAuthoritativeIfBandwidthAndPowerToSource) {
     std::optional<ContinuousAcquisitionPlan> observed;
     RawSweepSource source = [&](const auto& plan, std::uint64_t,
-                                std::stop_token) {
+                                vna::compat::StopToken) {
         observed = plan;
         return frames::Result<frames::RawReceiverPayload>{frames::FrameError{
             frames::FrameErrorCode::InvalidFrequencyAxis}};
@@ -72,7 +72,10 @@ TEST(ContinuousAcquisitionTest, PassesAuthoritativeIfBandwidthAndPowerToSource) 
 
 TEST(ContinuousAcquisitionTest, RejectsInvalidIfBandwidthAndPower) {
     int sourceCalls = 0;
-    RawSweepSource source = [&](const auto&, std::uint64_t, std::stop_token) {
+    RawSweepSource source = [&](
+        const auto&,
+        std::uint64_t,
+        vna::compat::StopToken) {
         ++sourceCalls;
         return frames::Result<frames::RawReceiverPayload>{frames::FrameError{
             frames::FrameErrorCode::InvalidFrequencyAxis}};

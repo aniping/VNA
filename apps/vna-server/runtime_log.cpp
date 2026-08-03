@@ -1,7 +1,6 @@
 #include "runtime_log.hpp"
 
 #include <cstdio>
-#include <filesystem>
 #include <memory>
 #include <string>
 #include <utility>
@@ -48,10 +47,10 @@ void reportFileFallback() noexcept {
 }
 
 void initializeWithFile(
-    const std::filesystem::path& releaseRoot,
+    const vna::compat::filesystem::path& releaseRoot,
     const std::shared_ptr<ConsoleSink>& console) {
     const auto logDirectory = releaseRoot / "logs";
-    std::filesystem::create_directories(logDirectory);
+    vna::compat::filesystem::create_directories(logDirectory);
     auto file = std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
         (logDirectory / "vna.log").native(),
         maxFileBytes,
@@ -68,7 +67,8 @@ void initializeConsoleOnly(const std::shared_ptr<ConsoleSink>& console) {
 
 }  // namespace
 
-void initializeRuntimeLog(const std::filesystem::path& releaseRoot) noexcept {
+void initializeRuntimeLog(
+    const vna::compat::filesystem::path& releaseRoot) noexcept {
     try {
         const auto console = makeConsoleSink();
         try {

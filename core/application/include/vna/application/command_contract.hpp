@@ -52,6 +52,10 @@ public:
         return left.value_ == right.value_ || *left.value_ == *right.value_;
     }
 
+    friend bool operator!=(const TextId& left, const TextId& right) noexcept {
+        return !(left == right);
+    }
+
 private:
     std::shared_ptr<const std::string> value_;
 };

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <functional>
-#include <stop_token>
+#include <vna/compat/stop_token.hpp>
 #include <variant>
 
 #include <vna/application/single_sweep_executor.hpp>
@@ -21,7 +21,7 @@ using SweepCancellationCheck = std::function<bool()>;
 [[nodiscard]] SweepPipelineResult buildSingleSweepFrame(
     const SingleSweepWorkItem& work,
     const RawSweepSource& source,
-    std::stop_token token,
+    vna::compat::StopToken token,
     const SweepCancellationCheck& canceled);
 
 }  // namespace vna::application::internal

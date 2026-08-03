@@ -7,14 +7,14 @@ add_library(
 )
 add_library(vna::acquisition ALIAS vna_acquisition)
 
-target_compile_features(vna_acquisition PUBLIC cxx_std_20)
+target_compile_features(vna_acquisition PUBLIC cxx_std_17)
 target_include_directories(
     vna_acquisition
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
 target_link_libraries(
     vna_acquisition
-    PUBLIC vna::raw_receiver_contracts
+    PUBLIC vna::cpp_compat vna::raw_receiver_contracts
     PRIVATE Threads::Threads
 )
 target_compile_options(vna_acquisition PRIVATE -Wall -Wextra -Wpedantic)
