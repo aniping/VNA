@@ -42,6 +42,7 @@ test('status bar removes development diagnostics and Sweep uses honest controls'
   assert.match(sweep, /<strong>Sweep<\/strong>[\s\S]*aria-label="Close Sweep"/)
   assert.match(sweep, /class="sweep-pages"/)
   assert.match(sweep, /Start Sweep/)
+  assert.match(sweep, /@keydown\.enter\.prevent="updateCount"/)
   assert.doesNotMatch(sweep, /Apply Sweeps|<span>×<\/span>/)
   assert.match(sweep, /class="unavailable-row"[\s\S]*disabled/)
   for (const label of sweepControlUnavailableItems) assert.match(model, new RegExp(label))

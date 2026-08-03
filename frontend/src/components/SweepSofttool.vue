@@ -71,7 +71,7 @@ function updateCount(): void {
         <label class="inline-value" for="sweep-count">Sweeps
           <input id="sweep-count" v-model="countDraft" inputmode="numeric"
             :disabled="disabled || busy || channel.sweepMode !== 'single'"
-            @change="updateCount" />
+            @change="updateCount" @keydown.enter.prevent="updateCount" />
         </label>
         <button class="start-sweep" type="button" :disabled="disabled || busy"
           @click="emit('restart', channel.id)">Start Sweep</button>
