@@ -4,10 +4,13 @@ import ToolbarGlyph from './ToolbarGlyph.vue'
 defineProps<{
   maximized: boolean
   canMaximize: boolean
+  canRestartSweep: boolean
+  sweepBusy: boolean
 }>()
 
 const emit = defineEmits<{
   toggleMaximize: []
+  restartSweep: []
 }>()
 
 const groups = [
@@ -33,7 +36,7 @@ const groups = [
     { icon: 'system-menu', label: 'Open System Menu' },
   ] },
   { label: 'Sweep', items: [
-    { icon: 'restart-sweep', label: 'Restart Sweep', disabledReason: 'disabled during Continuous sweep' },
+    { icon: 'restart-sweep', label: 'Restart Sweep', action: 'restart' },
   ] },
   { label: 'Diagram Controls', items: [
     { icon: 'edit-diagrams', label: 'Edit Diagram Area' },
@@ -83,6 +86,19 @@ const groups = [
             @click="emit('toggleMaximize')"
             @keydown.enter.prevent="emit('toggleMaximize')"
             @keydown.space.prevent="emit('toggleMaximize')"
+          >
+            <ToolbarGlyph :name="item.icon" />
+          </button>
+          <button
+            v-else-if="'action' in item && item.action === 'restart'"
+            class="toolbar-button"
+            type="button"
+            data-toolbar-item="restart-sweep"
+            :disabled="!canRestartSweep"
+            :aria-busy="sweepBusy"
+            :aria-label="canRestartSweep ? item.label : `${item.label}, unavailable`"
+            :title="canRestartSweep ? item.label : `${item.label} — Unavailable`"
+            @click="emit('restartSweep')"
           >
             <ToolbarGlyph :name="item.icon" />
           </button>

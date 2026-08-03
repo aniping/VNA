@@ -184,9 +184,9 @@ pnpm run dev
 不创建本地 Trace 或 Window。
 默认 S21 Trace 的色块和曲线为绿色；活动 Trace 信息条、活动 Channel 和右上角
 真实 WindowId 使用蓝/青蓝色高亮，所有 Diagram 外框保持统一细深灰蓝（手册
-第 112、127–129、935–936 页，ZNA v41 补充）。尚无测量帧时 Diagram 显示空态；后台连续采集
-会自动更新显示帧。Toolbar 的 `Restart Sweep` 尚未接入该服务端命令，当前仍按
-禁用处理。
+第 112、127–129、935–936 页，ZNA v41 补充）。尚无测量帧时 Diagram 显示空态；后台
+连续采集会自动更新显示帧。采集中保留上一完整曲线，并用同代、同身份和兼容轴的累计
+Preview 分段覆盖已采集部分；两处 `Restart Sweep` 都复用服务端单 worker 命令。
 LogMagnitude、Phase 与 Smith 都直接绘制连续帧集中的后端样本。笛卡尔图使用
 10×10 主网格和同 Trace 色参考线：LogMagnitude 刻度来自权威 Scale 快照；Phase
 样本仍为 `[-180, 180)`，默认显示视口为 `[-225°, 225°]`、45°/div、Ref 0°。
@@ -202,9 +202,9 @@ Smith 直接投影复数平面坐标，并显示 `200 mU/ Ref 1 U` 的标准归�
 Center 时保持当前 Span，修改 Span 时保持当前 Center，并通过 revision 冲突检查
 提交完整扫频设置。
 
-`Power / Bw / Avg` 当前提供 Power 与 IF Bandwidth 设置，`Sweep` 提供 Points
-设置；尚未进入领域模型的 Averaging 不显示伪造状态。这些设置与 Stimulus 共用
-同一个 Channel 更新命令。
+`Power / Bw / Avg` 当前提供 Power 与 IF Bandwidth 设置；`Sweep` 提供 Points、
+Continuous、Single、Sweeps 和 Restart，底部状态显示权威阶段、总进度及首扫星号。
+`Trigger` 显示当前 None，尚未支持的触发源保持禁用。Averaging 不显示伪造状态。
 
 活动 Trace 的 `scale` 快照非空时，`Scale` Hard Key 会打开 Scale Values
 Softtool。当前仅 Scale/Div 可编辑：输入有限且大于零的数值后按 Enter 提交，

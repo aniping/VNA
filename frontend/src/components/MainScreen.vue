@@ -1,21 +1,25 @@
 <script setup lang="ts">
 import { computed, ref, toRef, watch } from 'vue'
 import type { LiveDisplayConnection } from '../api/liveDisplaySession'
+import type { LiveDisplayState } from '../api/displayFrameSetState'
 import type {
   MeasurementType,
   StateSnapshot,
+  SweepMode,
   SweepSettings,
   TraceFormat,
 } from '../api/vnaApi'
-import type { MultiFormatTraceDisplayFrame } from '../api/traceDisplayFrameSet'
 import ChannelSofttool from './ChannelSofttool.vue'
 import DiagramGrid from './DiagramGrid.vue'
 import FormatSofttool from './FormatSofttool.vue'
 import HardkeyPanel from './HardkeyPanel.vue'
 import InstrumentToolbar from './InstrumentToolbar.vue'
+import InstrumentStatusBar from './InstrumentStatusBar.vue'
 import MeasurementSofttool from './MeasurementSofttool.vue'
 import ScaleSofttool from './ScaleSofttool.vue'
 import StimulusSofttool from './StimulusSofttool.vue'
+import SweepSofttool from './SweepSofttool.vue'
+import type { SweepSofttoolPage } from './sweepSofttoolModel'
 import { selectWorkspacePresentation } from './workspacePresentation'
 import { useActiveTrace } from './useActiveTrace'
 import {
@@ -32,17 +36,18 @@ const props = defineProps<{
   serviceError: string
   displayError: string
   busy: boolean
-  frames: ReadonlyMap<number, MultiFormatTraceDisplayFrame>
+  display: LiveDisplayState
 }>()
 const emit = defineEmits<{
   ensureAllSParameters: [traceId: number]
   updateTraceMeasurementType: [traceId: number, measurementType: MeasurementType]
   updateSweep: [channelId: number, sweep: SweepSettings]
+  updateSweepControl: [channelId: number, mode: SweepMode, sweepCount: number]
+  restartSweep: [channelId: number]
   updateTraceFormat: [traceId: number, format: TraceFormat]
   updateTraceScalePerDivision: [traceId: number, value: number]
 }>()
 
-const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
 const channel = computed(() => props.state?.instrument.channels[0])
 const { activeTraceId, activeTrace, activeMeasurement } = useActiveTrace(toRef(props, 'state'))
 const isDiagramMaximized = ref(false)
@@ -50,37 +55,27 @@ const canMaximizeDiagram = computed(() => Boolean(activeTrace.value))
 const workspace = computed(() => selectWorkspacePresentation({
   state: props.state,
   connection: props.connection,
-  hasFrame: activeTrace.value ? props.frames.has(activeTrace.value.id) : false,
+  hasFrame: activeTrace.value ? props.display.lastComplete.has(activeTrace.value.id)
+    || Boolean(props.display.currentPartial?.traces.has(activeTrace.value.id)) : false,
   displayError: props.displayError,
 }))
-const acquisitionStatus = computed(() => {
-  if (!channel.value) return 'Sweep — · Trigger —'
-  const sweepMode = channel.value.sweepMode.replace(/^./, (letter) => letter.toUpperCase())
-  const trigger = channel.value.triggerSource.replace(/^./, (letter) => letter.toUpperCase())
-  return `${sweepMode} · ${trigger}`
-})
 // Nullable scale is the display-model capability seam; format must not re-derive support.
 const activeScale = computed(() => activeTrace.value?.scale ?? null)
-const activeSofttool = ref<'measurement' | 'format' | 'scale' | 'stimulus' | 'channel' | null>(
+const activeSofttool = ref<'measurement' | 'format' | 'scale' | 'stimulus' | 'channel' | 'sweep' | null>(
   null,
 )
 const stimulusKey = ref<StimulusKey>('Start')
 const channelKey = ref<ChannelKey>('Power / Bw / Avg')
+const sweepPage = ref<SweepSofttoolPage>('parameters')
 const activeKey = computed(() => {
   if (activeSofttool.value === 'measurement') return 'Meas'
   if (activeSofttool.value === 'format') return 'Format'
   if (activeSofttool.value === 'scale') return 'Scale'
   if (activeSofttool.value === 'stimulus') return stimulusKey.value
   if (activeSofttool.value === 'channel') return channelKey.value
+  if (activeSofttool.value === 'sweep') return sweepPage.value === 'trigger' ? 'Trigger' : 'Sweep'
   return null
 })
-const entityCounts = computed(() => {
-  const instrument = props.state?.instrument
-  if (!instrument) return 'Ch — · Meas — · Trc — · Win —'
-  return `Ch ${instrument.channels.length} · Meas ${instrument.measurements.length}`
-    + ` · Trc ${instrument.traces.length} · Win ${instrument.windows.length}`
-})
-
 watch(activeTrace, (trace) => {
   if (!trace) isDiagramMaximized.value = false
 }, { immediate: true })
@@ -112,28 +107,34 @@ function selectHardkey(key: HardkeyName): void {
     stimulusKey.value = key
     activeSofttool.value = 'stimulus'
   }
+  if ((key === 'Sweep' || key === 'Trigger') && channel.value) {
+    sweepPage.value = key === 'Trigger' ? 'trigger' : 'parameters'
+    activeSofttool.value = 'sweep'
+    return
+  }
   if (isChannelKey(key) && channel.value) {
     channelKey.value = key
     activeSofttool.value = 'channel'
   }
 }
-
 function forwardSweepUpdate(channelId: number, sweep: SweepSettings): void {
   emit('updateSweep', channelId, sweep)
 }
-
 function forwardTraceFormatUpdate(traceId: number, format: TraceFormat): void {
   emit('updateTraceFormat', traceId, format)
 }
-
+function forwardSweepControl(channelId: number, mode: SweepMode, sweepCount: number): void {
+  emit('updateSweepControl', channelId, mode, sweepCount)
+}
+function forwardRestartSweep(channelId: number): void {
+  emit('restartSweep', channelId)
+}
 function forwardMeasurementTypeUpdate(measurementType: MeasurementType): void {
   if (activeTrace.value) emit('updateTraceMeasurementType', activeTrace.value.id, measurementType)
 }
-
 function forwardAllSParameters(): void {
   if (activeTrace.value) emit('ensureAllSParameters', activeTrace.value.id)
 }
-
 function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
   emit('updateTraceScalePerDivision', traceId, value)
 }
@@ -146,7 +147,10 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
         <InstrumentToolbar
           :maximized="isDiagramMaximized"
           :can-maximize="canMaximizeDiagram"
+          :can-restart-sweep="Boolean(channel) && !workspace.controlsDisabled && !busy"
+          :sweep-busy="busy"
           @toggle-maximize="toggleDiagramMaximized"
+          @restart-sweep="channel && forwardRestartSweep(channel.id)"
         />
         <div
           v-if="!workspace.showDiagrams"
@@ -161,7 +165,8 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
         <DiagramGrid
           v-else
           :state="state"
-          :frames="frames"
+          :frames="display.lastComplete"
+          :partial="display.currentPartial"
           :active-trace-id="activeTrace?.id"
           :maximized="isDiagramMaximized"
           @select-trace="activeTraceId = $event"
@@ -211,6 +216,18 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
         :busy="busy"
         @update-sweep="forwardSweepUpdate"
       />
+      <SweepSofttool
+        v-else-if="activeSofttool === 'sweep' && channel && state"
+        :channel="channel"
+        :runtime="state.sweepRuntime"
+        :page="sweepPage"
+        :disabled="workspace.controlsDisabled"
+        :busy="busy"
+        @select-page="sweepPage = $event"
+        @update-sweep="forwardSweepUpdate"
+        @update-control="forwardSweepControl"
+        @restart="forwardRestartSweep"
+      />
 
       <HardkeyPanel
         :active-key="activeKey"
@@ -221,29 +238,12 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
       />
     </div>
 
-    <nav class="menu-bar" aria-label="Application menu">
-      <button
-        v-for="item in menus"
-        :key="item"
-        type="button"
-        :aria-label="`${item}, not supported`"
-        :title="`${item}, not supported`"
-        disabled
-      >
-        {{ item }}
-      </button>
-      <span class="menu-spacer" />
-      <span
-        class="status-pill"
-        :class="workspace.statusTone"
-        :title="displayError || serviceError"
-      >
-        {{ workspace.statusLabel }}
-      </span>
-      <span title="Sweep mode · Trigger source">{{ acquisitionStatus }}</span>
-      <span>Revision {{ state?.stateRevision ?? '—' }}</span>
-      <span class="entity-counts">{{ entityCounts }}</span>
-      <time>{{ serviceError || 'Local session' }}</time>
-    </nav>
+    <InstrumentStatusBar
+      :state="state"
+      :workspace="workspace"
+      :service-error="serviceError"
+      :display-error="displayError"
+      :sweep-status="display.sweepStatus"
+    />
   </section>
 </template>

@@ -65,7 +65,7 @@ export const hardkeyGroups: HardkeyGroup[] = [
       ...channelKeys.map((label) => ({ label, enabled: true, requiresChannel: true })),
       { label: 'Cal' },
       { label: 'Channel Config' },
-      { label: 'Trigger' },
+      { label: 'Trigger', enabled: true, requiresChannel: true },
       { label: 'Offset / Embed' },
     ],
   },
