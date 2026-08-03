@@ -65,6 +65,7 @@ add_executable(
     sweep_runtime_configuration_test.cpp
     sweep_runtime_test.cpp
     sweep_runtime_control_test.cpp
+    sweep_runtime_mode_test.cpp
     sweep_runtime_invariant_test.cpp
 )
 vna_configure_application_test(vna_application_sweep_runtime_tests)

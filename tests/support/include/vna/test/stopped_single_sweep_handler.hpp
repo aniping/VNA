@@ -2,6 +2,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <condition_variable>
+#include <mutex>
+#include <stdexcept>
+#include <stop_token>
 #include <utility>
 
 #include <vna/application/command_bus.hpp>
@@ -35,6 +39,16 @@ inline application::SingleSweepCommandHandler& stoppedSingleSweepHandler() {
     return handler;
 }
 
+inline application::FactoryPreset singleSweepFactoryPreset() {
+    auto preset = application::makeFactoryPreset();
+    const auto updated = preset.commandBusState.instrument.updateChannelSweepControl(
+        domain::ChannelId{1}, domain::SweepMode::Single, 1);
+    if (!updated.hasValue()) {
+        throw std::logic_error{"invalid single-sweep test preset"};
+    }
+    return preset;
+}
+
 inline acquisition::ContinuousAcquisitionPlan commandBusTestPlan(
     const application::CommandBusInitialState& initialState) {
     auto plan = acquisition::test_support::validPlan();
@@ -48,6 +62,21 @@ inline acquisition::ContinuousAcquisitionPlan commandBusTestPlan(
         plan.powerDbm = sweep.powerDbm;
     }
     return plan;
+}
+
+inline acquisition::RawSweepCaptureResult waitUntilRuntimeStops(
+    const acquisition::RawSweepCaptureRequest&,
+    const acquisition::RawSweepChunkObserver&,
+    std::stop_token token) {
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::stop_callback notify{token, [&] {
+        std::lock_guard lock{mutex};
+        changed.notify_all();
+    }};
+    std::unique_lock lock{mutex};
+    changed.wait(lock, [&] { return token.stop_requested(); });
+    return acquisition::RawSweepCaptureCanceled{};
 }
 
 // Tests own the same explicit repository/catalog borrowing graph as production.
@@ -71,12 +100,7 @@ public:
           runtime_(
               {commandBusTestPlan(initialState), catalog_.capture(), 2,
                {.mode = domain::SweepMode::Single, .sweepCount = 1}},
-              [](const acquisition::RawSweepCaptureRequest&,
-                 const acquisition::RawSweepChunkObserver&,
-                 std::stop_token) {
-                  return acquisition::RawSweepCaptureResult{
-                      acquisition::RawSweepCaptureCanceled{}};
-              },
+              waitUntilRuntimeStops,
               previews_, catalog_, operations_) {}
 
     [[nodiscard]] application::TracePublicationCatalog& catalog() noexcept {

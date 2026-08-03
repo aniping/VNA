@@ -91,8 +91,10 @@ bool SweepRuntimeImpl::prepareCycle(std::stop_token token) {
     applyPendingConfiguration();
     if (!activeRequest_.has_value() &&
         plan_.execution.mode == domain::SweepMode::Single) {
+        snapshot_.phase = SweepRuntimePhase::Hold;
         changed_.wait(lock, [&] {
-            return token.stop_requested() || pendingOperation_.has_value();
+            return token.stop_requested() || pendingOperation_.has_value() ||
+                plan_.execution.mode == domain::SweepMode::Continuous;
         });
     }
     if (token.stop_requested()) {

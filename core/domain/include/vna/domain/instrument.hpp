@@ -90,6 +90,7 @@ struct ChannelSnapshot {
     ChannelId id;
     SweepSettings sweep;
     SweepMode sweepMode{SweepMode::Continuous};
+    std::uint32_t sweepCount{1};
     TriggerSource triggerSource{TriggerSource::None};
 };
 
@@ -110,6 +111,10 @@ public:
     [[nodiscard]] Result<ChannelId> updateChannelSweep(
         ChannelId channelId,
         SweepSettings settings);
+    [[nodiscard]] Result<ChannelId> updateChannelSweepControl(
+        ChannelId channelId,
+        SweepMode mode,
+        std::uint32_t sweepCount);
     [[nodiscard]] Result<MeasurementId> createMeasurement(
         ChannelId channelId,
         MeasurementType type);

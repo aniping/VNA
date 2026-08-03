@@ -39,6 +39,11 @@ std::string describe(const application::UpdateChannelSweepCommand& command) {
     return "更新通道#" + std::to_string(command.channelId.value()) +
            "扫频设置";
 }
+std::string describe(
+    const application::UpdateChannelSweepControlCommand& command) {
+    return "更新通道#" + std::to_string(command.channelId.value()) +
+           "扫频运行方式";
+}
 std::string describe(const application::CreateMeasurementCommand& command) {
     return "为通道#" + std::to_string(command.channelId.value()) + "创建" +
            measurementName(command.type) + "测量";

@@ -80,7 +80,13 @@ SweepRuntimeImpl::prepareConfiguration(const StateSnapshot& candidate) {
     auto pending = std::make_unique<PendingSweepRuntimeConfiguration>(
         PendingSweepRuntimeConfiguration{
             SweepRuntimePlan{std::move(acquisition), prepared.candidate_,
-                             plan_.maximumPointsPerChunk, plan_.execution},
+                             plan_.maximumPointsPerChunk,
+                             {channel == candidate.instrument.channels.cend()
+                                  ? plan_.execution.mode
+                                  : channel->sweepMode,
+                              channel == candidate.instrument.channels.cend()
+                                  ? plan_.execution.sweepCount
+                                  : channel->sweepCount}},
             std::move(prepared)});
     return PreparedSweepRuntimeConfiguration{std::make_unique<
         detail::PreparedSweepRuntimeConfigurationState>(
@@ -99,6 +105,7 @@ void SweepRuntimeImpl::commitConfiguration(
     pendingConfiguration_ = std::move(state->pending);
     snapshot_.configuredStateRevision =
         pendingConfiguration_->plan.publication->stateRevision;
+    snapshot_.configuredExecution = pendingConfiguration_->plan.execution;
     if (snapshot_.phase == SweepRuntimePhase::Hold &&
         !pendingOperation_.has_value() && !activeRequest_.has_value()) {
         // Hold is already a safe Sweep boundary; applying here prevents a
@@ -126,6 +133,7 @@ void SweepRuntimeImpl::applyPendingConfiguration() {
     pendingConfiguration_.reset();
     snapshot_.appliedStateRevision = plan_.publication->stateRevision;
     snapshot_.appliedGeneration = plan_.publication->generation;
+    snapshot_.appliedExecution = plan_.execution;
 }
 
 }  // namespace vna::application::internal

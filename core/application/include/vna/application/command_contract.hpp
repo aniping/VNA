@@ -69,6 +69,12 @@ struct UpdateChannelSweepCommand {
     domain::SweepSettings sweep;
 };
 
+struct UpdateChannelSweepControlCommand {
+    domain::ChannelId channelId;
+    domain::SweepMode mode;
+    std::uint32_t sweepCount;
+};
+
 struct CreateMeasurementCommand {
     domain::ChannelId channelId;
     domain::MeasurementType type;
@@ -112,6 +118,7 @@ struct StartSingleSweepCommand {
 using CommandPayload = std::variant<
     CreateChannelCommand,
     UpdateChannelSweepCommand,
+    UpdateChannelSweepControlCommand,
     CreateMeasurementCommand,
     CreateWindowCommand,
     CreateTraceCommand,

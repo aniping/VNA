@@ -52,6 +52,28 @@ CommandResult CommandBus::execute(const UpdateChannelSweepCommand& command) {
         CommandValue{channel.value()});
 }
 
+CommandResult CommandBus::execute(
+    const UpdateChannelSweepControlCommand& command) {
+    auto candidate = instrument_;
+    const auto updated = candidate.updateChannelSweepControl(
+        command.channelId, command.mode, command.sweepCount);
+    if (!updated.hasValue()) {
+        return domainError(updated.error());
+    }
+    const auto channels = instrument_.snapshot().channels;
+    const auto current = std::find_if(
+        channels.cbegin(), channels.cend(), [&command](const auto& channel) {
+            return channel.id == command.channelId;
+        });
+    if (current->sweepMode == command.mode &&
+        current->sweepCount == command.sweepCount) {
+        return succeededWithoutRevision(CommandValue{command.channelId});
+    }
+    return commitConfiguration(
+        std::move(candidate), displayWorkspace_,
+        CommandValue{command.channelId});
+}
+
 CommandResult CommandBus::execute(const CreateMeasurementCommand& command) {
     auto candidateInstrument = instrument_;
     auto candidateDisplay = displayWorkspace_;

@@ -139,6 +139,8 @@ private:
     [[nodiscard]] CommandResult execute(
         const UpdateChannelSweepCommand& command);
     [[nodiscard]] CommandResult execute(
+        const UpdateChannelSweepControlCommand& command);
+    [[nodiscard]] CommandResult execute(
         const CreateMeasurementCommand& command);
     [[nodiscard]] CommandResult execute(const CreateWindowCommand& command);
     [[nodiscard]] CommandResult execute(const CreateTraceCommand& command);

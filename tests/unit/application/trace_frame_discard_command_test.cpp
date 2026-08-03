@@ -23,6 +23,17 @@ constexpr domain::SweepSettings validSweep() {
     };
 }
 
+CommandBusInitialState singleChannelState() {
+    CommandBusInitialState state;
+    const auto channel = state.instrument.createChannel(validSweep()).value();
+    static_cast<void>(state.instrument.updateChannelSweepControl(
+        channel, domain::SweepMode::Single, 1));
+    static_cast<void>(state.instrument.createMeasurement(
+        channel, domain::MeasurementType::S11));
+    static_cast<void>(state.displayWorkspace.createWindow());
+    return state;
+}
+
 template <typename Value>
 Value successValue(const CommandResult& result) {
     return std::get<Value>(std::get<CommandSuccess>(result.outcome).value);
@@ -34,16 +45,8 @@ class TraceFrameDiscardCommandTest
 protected:
     TraceFrameDiscardCommandTest()
         : handler_(*this),
-          bus_(InstrumentId{"instrument-1"}, handler_, runtimeOwner_.runtime()) {
-        const auto channel = successValue<domain::ChannelId>(dispatch(
-            CreateChannelCommand{.sweep = validSweep()}));
-        measurementId_ = successValue<domain::MeasurementId>(dispatch(
-            CreateMeasurementCommand{
-                .channelId = channel,
-                .type = domain::MeasurementType::S11}));
-        windowId_ = successValue<display_model::WindowId>(
-            dispatch(CreateWindowCommand{}));
-    }
+          bus_(InstrumentId{"instrument-1"}, handler_, runtimeOwner_.runtime(),
+               std::move(initialState_)) {}
 
     CommandResult dispatch(CommandPayload payload) {
         return bus_.dispatch(CommandEnvelope{
@@ -101,13 +104,14 @@ private:
     }
 
 protected:
-    vna::test::CommandBusRuntimeOwner runtimeOwner_{{}, 1};
+    CommandBusInitialState initialState_{singleChannelState()};
+    vna::test::CommandBusRuntimeOwner runtimeOwner_{initialState_, 1};
     TraceDisplayFrameRepository& repository_{runtimeOwner_.repository()};
     std::size_t discardCalls_{0};
     SingleSweepCommandHandler handler_;
     CommandBus bus_;
-    domain::MeasurementId measurementId_{0};
-    display_model::WindowId windowId_{0};
+    domain::MeasurementId measurementId_{1};
+    display_model::WindowId windowId_{1};
     std::uint64_t nextCommandId_{1};
 };
 

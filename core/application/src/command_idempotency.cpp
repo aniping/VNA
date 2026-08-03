@@ -92,6 +92,13 @@ bool samePayload(
 }
 
 bool samePayload(
+    const UpdateChannelSweepControlCommand& left,
+    const UpdateChannelSweepControlCommand& right) noexcept {
+    return left.channelId == right.channelId && left.mode == right.mode &&
+        left.sweepCount == right.sweepCount;
+}
+
+bool samePayload(
     const EnsureAllSParametersCommand& left,
     const EnsureAllSParametersCommand& right) noexcept {
     return left.traceId == right.traceId;

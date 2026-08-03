@@ -47,6 +47,29 @@ Result<ChannelId> Instrument::updateChannelSweep(
     return Result<ChannelId>{channelId};
 }
 
+Result<ChannelId> Instrument::updateChannelSweepControl(
+    ChannelId channelId,
+    SweepMode mode,
+    std::uint32_t sweepCount) {
+    if ((mode != SweepMode::Continuous && mode != SweepMode::Single) ||
+        sweepCount == 0 || sweepCount > 100'000) {
+        return Result<ChannelId>{
+            DomainError{.code = DomainErrorCode::InvalidSweepSettings}};
+    }
+    const auto channel = std::find_if(
+        state_.channels.begin(), state_.channels.end(),
+        [channelId](const ChannelSnapshot& candidate) {
+            return candidate.id == channelId;
+        });
+    if (channel == state_.channels.end()) {
+        return Result<ChannelId>{
+            DomainError{.code = DomainErrorCode::ChannelNotFound}};
+    }
+    channel->sweepMode = mode;
+    channel->sweepCount = sweepCount;
+    return Result<ChannelId>{channelId};
+}
+
 Result<MeasurementId> Instrument::createMeasurement(
     ChannelId channelId,
     MeasurementType type) {

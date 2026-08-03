@@ -28,8 +28,10 @@ SweepRuntimeImpl::SweepRuntimeImpl(
         ? SweepRuntimePhase::Hold
         : SweepRuntimePhase::Preparing;
     snapshot_.configuredStateRevision = plan_.publication->stateRevision;
+    snapshot_.configuredExecution = plan_.execution;
     snapshot_.appliedStateRevision = plan_.publication->stateRevision;
     snapshot_.appliedGeneration = plan_.publication->generation;
+    snapshot_.appliedExecution = plan_.execution;
     worker_ = std::jthread{[this](std::stop_token token) { run(token); }};
 }
 
