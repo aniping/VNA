@@ -235,7 +235,6 @@ TEST_F(SweepRuntimeTest, GenerationAdvanceRetiresStalePlan) {
     const auto committed = catalog_.commit(
         std::move(std::get<PreparedTracePublicationPlan>(prepared)));
     ASSERT_TRUE(std::holds_alternative<TracePublicationPlanHandle>(committed));
-
     source.releaseComplete(1);
     runtime.join();
     const auto snapshot = runtime.snapshot();
