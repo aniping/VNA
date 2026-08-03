@@ -85,6 +85,25 @@ StateSnapshot initialState(const FactoryPreset& preset) {
     return state;
 }
 
+void expectCompletedAcrossPlans(
+    OperationManager& operations,
+    TraceDisplayFrameRepository& repository,
+    SweepRuntime& runtime,
+    OperationId operationId) {
+    const auto terminal = std::get<OperationSnapshot>(
+        operations.snapshot(operationId));
+    EXPECT_EQ(terminal.submittedAtStateRevision, 7U);
+    const auto* succeeded = std::get_if<OperationSucceeded>(&terminal.state);
+    ASSERT_NE(succeeded, nullptr);
+    EXPECT_EQ(succeeded->frameId, frames::FrameId{2});
+    const auto published = repository.latestFrameSet();
+    ASSERT_NE(published, nullptr);
+    EXPECT_EQ(published->generation, 2U);
+    EXPECT_EQ(published->frames.front().stateRevision, 8U);
+    EXPECT_EQ(runtime.snapshot().completedSweeps, 2U);
+    EXPECT_EQ(runtime.snapshot().phase, SweepRuntimePhase::Hold);
+}
+
 TEST(SweepRuntimeOperationRevisionTest,
      MultiSweepOperationRetainsAdmissionRevisionAcrossAppliedPlans) {
     const auto preset = makeFactoryPreset();
@@ -130,18 +149,7 @@ TEST(SweepRuntimeOperationRevisionTest,
     source.release(2);
     ASSERT_EQ(completedFuture.wait_for(2s), std::future_status::ready);
 
-    const auto terminal = std::get<OperationSnapshot>(
-        operations.snapshot(operationId));
-    EXPECT_EQ(terminal.submittedAtStateRevision, 7U);
-    const auto* succeeded = std::get_if<OperationSucceeded>(&terminal.state);
-    ASSERT_NE(succeeded, nullptr);
-    EXPECT_EQ(succeeded->frameId, frames::FrameId{2});
-    const auto published = repository.latestFrameSet();
-    ASSERT_NE(published, nullptr);
-    EXPECT_EQ(published->generation, 2U);
-    EXPECT_EQ(published->frames.front().stateRevision, 8U);
-    EXPECT_EQ(runtime.snapshot().completedSweeps, 2U);
-    EXPECT_EQ(runtime.snapshot().phase, SweepRuntimePhase::Hold);
+    expectCompletedAcrossPlans(operations, repository, runtime, operationId);
     runtime.stop();
 }
 

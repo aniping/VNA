@@ -20,7 +20,7 @@ struct ActiveSweepRequest {
     std::uint32_t remainingSweeps;
 };
 
-struct RestartAdmission {
+struct RestartAdmissionData {
     OperationId createdId;
     std::optional<OperationId> queued{};
     std::optional<OperationId> activeWithoutSource{};
@@ -34,7 +34,8 @@ struct PendingSweepRuntimeConfiguration {
     PreparedTracePublicationPlan publication;
 };
 
-using RestartAdmissionResult = std::variant<RestartAdmission, SweepRuntimeRequestError>;
+using RestartAdmissionResult =
+    std::variant<RestartAdmissionData, SweepRuntimeRequestError>;
 
 // The public runtime stays a narrow lifecycle seam. Its worker details live in
 // this private type so control can grow without bloating its public facade.
@@ -54,7 +55,7 @@ public:
         const StateSnapshot& candidate);
     void commitConfiguration(
         PreparedSweepRuntimeConfiguration prepared) noexcept;
-    [[nodiscard]] SweepRuntimeRequestResult requestRestart(
+    [[nodiscard]] SweepRuntimeAdmissionResult admitRestart(
         domain::ChannelId channelId, OperationSubmission submission);
     [[nodiscard]] SweepRuntimeSnapshot snapshot() const;
 private:
@@ -66,8 +67,9 @@ private:
     void retireAfterSource() noexcept;
     [[nodiscard]] std::exception_ptr cancelDetachedRequests(
         std::optional<OperationId> queued, std::optional<OperationId> active) noexcept;
-    [[nodiscard]] RestartAdmissionResult admitRestart(
+    [[nodiscard]] RestartAdmissionResult prepareRestart(
         domain::ChannelId channelId, OperationSubmission submission);
+    void settleRestart(RestartAdmissionData admission) noexcept;
     void requireTransition(OperationResult result, const char* transition);
     void settleTerminalFailure(OperationId operationId) noexcept;
     void observePreviewRange(
@@ -115,6 +117,8 @@ private:
     bool cycleCancellationRequested_{};
     bool admissionClosed_{};
     std::jthread worker_;
+
+    friend class vna::application::RestartAdmission;
 };
 
 }  // namespace vna::application::internal
@@ -125,6 +129,11 @@ struct PreparedSweepRuntimeConfigurationState {
     internal::SweepRuntimeImpl* owner;
     std::unique_lock<std::mutex> gate;
     std::unique_ptr<internal::PendingSweepRuntimeConfiguration> pending;
+};
+
+struct RestartAdmissionState {
+    internal::SweepRuntimeImpl* owner{};
+    std::optional<internal::RestartAdmissionData> admission;
 };
 
 }  // namespace vna::application::detail

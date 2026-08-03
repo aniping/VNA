@@ -95,6 +95,7 @@ struct CommandBusStats {
 };
 
 class SweepRuntime;
+class RestartAdmission;
 struct CommandBusInitialState;
 
 class CommandBus {
@@ -152,7 +153,8 @@ private:
         const EnsureAllSParametersCommand& command);
     [[nodiscard]] CommandResult execute(
         const StartSingleSweepCommand& command,
-        const CommandEnvelope& envelope);
+        const CommandEnvelope& envelope,
+        RestartAdmission& admission);
     [[nodiscard]] CommandResult commitConfiguration(
         domain::Instrument candidateInstrument,
         display_model::DisplayWorkspace candidateDisplay,

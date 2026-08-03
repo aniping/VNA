@@ -8,7 +8,8 @@ namespace vna::application {
 
 CommandResult CommandBus::execute(
     const StartSingleSweepCommand& command,
-    const CommandEnvelope& envelope) {
+    const CommandEnvelope& envelope,
+    RestartAdmission& admission) {
     const auto instrument = instrument_.snapshot();
     const auto channel = std::find_if(
         instrument.channels.cbegin(),
@@ -22,7 +23,7 @@ CommandResult CommandBus::execute(
     }
     // Runtime already owns the full immutable publication plan. Admission
     // carries correlation only; it must not rebuild a legacy one-Trace plan.
-    const auto submitted = sweepRuntime_.requestRestart(command.channelId, {
+    auto submitted = sweepRuntime_.admitRestart(command.channelId, {
         envelope.commandId, envelope.sessionId, stateRevision_});
     if (const auto* error =
             std::get_if<SweepRuntimeRequestError>(&submitted)) {
@@ -32,7 +33,8 @@ CommandResult CommandBus::execute(
             : ApplicationErrorCode::ResourceBusy;
         return applicationError(code);
     }
-    const auto operationId = std::get<OperationId>(submitted);
+    admission = std::get<RestartAdmission>(std::move(submitted));
+    const auto operationId = admission.operationId();
     return CommandResult{
         .stateRevision = stateRevision_,
         .outcome = CommandSuccess{.value = CommandValue{operationId}},

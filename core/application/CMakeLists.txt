@@ -26,6 +26,7 @@ add_library(
     src/sweep_preview_validation.cpp
     src/sweep_runtime.cpp
     src/sweep_runtime_control.cpp
+    src/sweep_runtime_restart.cpp
     src/sweep_runtime_configuration.cpp
     src/sweep_generation_transaction.cpp
     src/sweep_configuration_command.cpp

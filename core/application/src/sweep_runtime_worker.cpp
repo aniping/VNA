@@ -180,8 +180,8 @@ bool SweepRuntimeImpl::claimPublication() noexcept {
     if (cycleCancellationRequested_) {
         return false;
     }
-    // Restart admission waits for this short external publication gate. The
-    // operation callback runs only after the gate is released.
+    // A publication that already claimed this gate may finish; a replacement
+    // starts at the next boundary without waiting in CommandBus admission.
     finalizingPublication_ = true;
     return true;
 }

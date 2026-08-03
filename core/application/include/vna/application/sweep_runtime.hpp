@@ -17,6 +17,7 @@ struct StateSnapshot;
 
 namespace detail {
 struct PreparedSweepRuntimeConfigurationState;
+struct RestartAdmissionState;
 }
 
 namespace internal {
@@ -100,8 +101,34 @@ struct SweepRuntimeRequestError {
     SweepRuntimeRequestErrorCode code;
 };
 
+// Admission installs an accepted request without completing replaced Operations.
+// The creating Runtime outlives it; callers settle only after outer locks.
+// Destruction also settles, so an accepted Operation cannot be orphaned.
+class RestartAdmission {
+public:
+    RestartAdmission() noexcept;
+    RestartAdmission(RestartAdmission&& other) noexcept;
+    RestartAdmission& operator=(RestartAdmission&& other) noexcept;
+    ~RestartAdmission();
+
+    RestartAdmission(const RestartAdmission&) = delete;
+    RestartAdmission& operator=(const RestartAdmission&) = delete;
+
+    [[nodiscard]] OperationId operationId() const noexcept;
+    void settle() noexcept;
+
+private:
+    explicit RestartAdmission(
+        std::unique_ptr<detail::RestartAdmissionState> state) noexcept;
+
+    std::unique_ptr<detail::RestartAdmissionState> state_;
+    friend class internal::SweepRuntimeImpl;
+};
+
 using SweepRuntimeRequestResult =
     std::variant<OperationId, SweepRuntimeRequestError>;
+using SweepRuntimeAdmissionResult =
+    std::variant<RestartAdmission, SweepRuntimeRequestError>;
 
 enum class SweepRuntimeFailureCode {
     CaptureFailed,
@@ -165,6 +192,9 @@ public:
         const StateSnapshot& candidate);
     void commitConfiguration(
         PreparedSweepRuntimeConfiguration prepared) noexcept;
+    [[nodiscard]] SweepRuntimeAdmissionResult admitRestart(
+        domain::ChannelId channelId,
+        OperationSubmission submission);
     [[nodiscard]] SweepRuntimeRequestResult requestRestart(
         domain::ChannelId channelId,
         OperationSubmission submission);

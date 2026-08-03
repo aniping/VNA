@@ -135,6 +135,39 @@ PreparedSweepRuntimeConfiguration::operator=(
 PreparedSweepRuntimeConfiguration::~PreparedSweepRuntimeConfiguration() =
     default;
 
+RestartAdmission::RestartAdmission() noexcept = default;
+
+RestartAdmission::RestartAdmission(
+    std::unique_ptr<detail::RestartAdmissionState> state) noexcept
+    : state_(std::move(state)) {}
+
+RestartAdmission::RestartAdmission(RestartAdmission&& other) noexcept = default;
+
+RestartAdmission& RestartAdmission::operator=(
+    RestartAdmission&& other) noexcept {
+    if (this != &other) {
+        settle();
+        state_ = std::move(other.state_);
+    }
+    return *this;
+}
+
+RestartAdmission::~RestartAdmission() { settle(); }
+
+OperationId RestartAdmission::operationId() const noexcept {
+    if (state_ == nullptr || !state_->admission.has_value()) {
+        std::terminate();
+    }
+    return state_->admission->createdId;
+}
+
+void RestartAdmission::settle() noexcept {
+    auto state = std::move(state_);
+    if (state != nullptr) {
+        state->owner->settleRestart(std::move(*state->admission));
+    }
+}
+
 class SweepRuntime::Impl final : public internal::SweepRuntimeImpl {
 public:
     using SweepRuntimeImpl::SweepRuntimeImpl;
@@ -160,10 +193,23 @@ void SweepRuntime::commitConfiguration(
     PreparedSweepRuntimeConfiguration prepared) noexcept {
     impl_->commitConfiguration(std::move(prepared));
 }
+SweepRuntimeAdmissionResult SweepRuntime::admitRestart(
+    domain::ChannelId channelId,
+    OperationSubmission submission) {
+    return impl_->admitRestart(channelId, std::move(submission));
+}
 SweepRuntimeRequestResult SweepRuntime::requestRestart(
     domain::ChannelId channelId,
     OperationSubmission submission) {
-    return impl_->requestRestart(channelId, std::move(submission));
+    auto admitted = admitRestart(channelId, std::move(submission));
+    if (const auto* error =
+            std::get_if<SweepRuntimeRequestError>(&admitted)) {
+        return *error;
+    }
+    auto admission = std::get<RestartAdmission>(std::move(admitted));
+    const auto operationId = admission.operationId();
+    admission.settle();
+    return operationId;
 }
 SweepRuntimeSnapshot SweepRuntime::snapshot() const { return impl_->snapshot(); }
 

@@ -42,6 +42,7 @@ add_executable(
     single_sweep_command_handler_test.cpp
     single_sweep_executor_failure_test.cpp
     start_single_sweep_command_test.cpp
+    start_single_sweep_reentrancy_test.cpp
     start_single_sweep_validation_test.cpp
     single_sweep_executor_test.cpp
     single_sweep_trace_retirement_test.cpp

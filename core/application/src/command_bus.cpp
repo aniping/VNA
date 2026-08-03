@@ -85,7 +85,8 @@ CommandBus::CommandBus(
 CommandBus::~CommandBus() = default;
 
 CommandResult CommandBus::dispatch(const CommandEnvelope& command) {
-    const std::scoped_lock lock{mutex_};
+    RestartAdmission admission;
+    std::unique_lock lock{mutex_};
     if (command.instrumentId != instrumentId_) {
         return applicationError(ApplicationErrorCode::WrongInstrument);
     }
@@ -114,11 +115,11 @@ CommandResult CommandBus::dispatch(const CommandEnvelope& command) {
     }
 
     const auto result = std::visit(
-        [this, &command](const auto& payload) {
+        [this, &command, &admission](const auto& payload) {
             if constexpr (std::is_same_v<
                               std::decay_t<decltype(payload)>,
                               StartSingleSweepCommand>) {
-                return execute(payload, command);
+                return execute(payload, command, admission);
             } else {
                 return execute(payload);
             }
@@ -127,6 +128,8 @@ CommandResult CommandBus::dispatch(const CommandEnvelope& command) {
     if (idempotency_->isCacheable(result)) {
         idempotency_->commit(std::move(prepared), result);
     }
+    lock.unlock();
+    admission.settle();
     return result;
 }
 
