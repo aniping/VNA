@@ -8,6 +8,7 @@
 #include <variant>
 
 #include <vna/application/command_contract.hpp>
+#include <vna/application/sweep_runtime.hpp>
 #include <vna/display_model/display_workspace.hpp>
 #include <vna/domain/instrument.hpp>
 
@@ -87,6 +88,10 @@ struct StateSnapshot {
     ControlSnapshot control;
     domain::InstrumentSnapshot instrument;
     display_model::DisplayWorkspaceSnapshot display;
+    // Configuration candidates do not consume runtime observation fields;
+    // CommandBus::snapshot always replaces this default with one authoritative
+    // value while holding the Bus-to-Runtime lock order.
+    SweepRuntimeSnapshot sweepRuntime{};
 };
 
 struct CommandBusStats {
@@ -94,7 +99,6 @@ struct CommandBusStats {
     std::uint64_t idempotencyEvictions{};
 };
 
-class SweepRuntime;
 class RestartAdmission;
 struct CommandBusInitialState;
 

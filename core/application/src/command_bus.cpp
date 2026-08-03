@@ -162,6 +162,7 @@ StateSnapshot CommandBus::snapshot() const {
         .control = controlAuthority_->snapshot(),
         .instrument = instrument_.snapshot(),
         .display = displayWorkspace_.snapshot(),
+        .sweepRuntime = sweepRuntime_.snapshot(),
     };
 }
 
