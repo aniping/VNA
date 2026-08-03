@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { SweepStreamStatus } from '../api/sweepPreview'
 import type { StateSnapshot } from '../api/vnaApi'
-import { statusBarChannelLabel, statusBarSweepLabel } from './sweepSofttoolModel'
+import { statusBarChannelLabel, statusBarProgress } from './sweepSofttoolModel'
 
 const props = defineProps<{
   state: StateSnapshot | null
@@ -11,9 +11,10 @@ const props = defineProps<{
 const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
 const channel = computed(() => props.state?.instrument.channels[0])
 const channelLabel = computed(() => statusBarChannelLabel(channel.value))
-const sweepLabel = computed(() => statusBarSweepLabel(
+const progress = computed(() => statusBarProgress(
   props.sweepStatus, props.state?.sweepRuntime.phase,
 ))
+const progressStyle = computed(() => ({ '--status-progress': `${progress.value.percent}%` }))
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   year: 'numeric', month: '2-digit', day: '2-digit',
   hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
@@ -38,7 +39,14 @@ onBeforeUnmount(() => { if (clock !== undefined) window.clearInterval(clock) })
     >{{ item }}</button>
     <span class="menu-spacer" />
     <span class="status-channel">{{ channelLabel }}</span>
-    <span class="status-sweep">{{ sweepLabel }}</span>
+    <span v-if="progress.firstSweep" class="status-first-sweep"
+      aria-label="First sweep after configuration" title="First sweep after configuration">★</span>
+    <span class="status-progress" :style="progressStyle" role="progressbar"
+      aria-label="Sweep progress" aria-valuemin="0" aria-valuemax="100"
+      :aria-valuenow="progress.percent" :aria-valuetext="progress.label">
+      <span class="status-progress-fill" aria-hidden="true" />
+      <span class="status-progress-label">{{ progress.label }}</span>
+    </span>
     <time class="status-time" :datetime="localDateTimeIso">{{ localDateTime }}</time>
   </nav>
 </template>

@@ -4,7 +4,7 @@ import test from 'node:test'
 
 import { hardkeyGroups } from '../src/components/hardkeyModel.ts'
 import {
-  parseSweepCount, parseSweepPoints, sweepProgressLabel,
+  parseSweepCount, parseSweepPoints, statusBarProgress,
 } from '../src/components/sweepSofttoolModel.ts'
 
 test('ZNB control groups retain their evidenced columns and button order', () => {
@@ -39,9 +39,12 @@ test('unsupported hard keys stay unavailable in the product UI', () => {
 test('Sweep and Restart entries route to semantic controls with honest disabled boundaries', () => {
   const source = readFileSync(new URL('../../../../src/components/SweepSofttool.vue', import.meta.url), 'utf8')
     + readFileSync(new URL('../../../../src/components/InstrumentToolbar.vue', import.meta.url), 'utf8')
-  assert.equal(source.match(/<form @submit\.prevent=/g)?.length, 1)
+    + readFileSync(new URL('../../../../src/components/MainScreen.vue', import.meta.url), 'utf8')
+  assert.doesNotMatch(source, /<form @submit\.prevent=/)
+  assert.match(source, /@change="updatePoints"[\s\S]*@keydown\.enter\.prevent="updatePoints"/)
   assert.match(source, /Start Sweep[\s\S]*Restart Sweep/)
   assert.match(source, /name="trigger-source"[\s\S]*disabled/)
+  assert.match(source, /activeSofttool\.value === 'sweep' \? nextSweepPage\(sweepPage\.value\) : 'parameters'/)
   assert.doesNotMatch(source, /Apply Sweeps|Configured|Applied/)
 })
 
@@ -52,5 +55,7 @@ test('Sweep drafts and status labels use frozen authority ranges and progress', 
     userPhase: 'sweeping' as const, progress: { completedAcquisitionPoints: 51,
       totalAcquisitionPoints: 201 }, firstSweepAfterConfiguration: true,
     activePreviewIdentity: { generation: 2, sweepId: 8 } }
-  assert.equal(sweepProgressLabel(runtime), 'Sweeping 51/201 (25%) *')
+  assert.deepEqual(statusBarProgress(runtime, 'hold'), {
+    label: 'Ch1 25%', percent: 25, firstSweep: true,
+  })
 })

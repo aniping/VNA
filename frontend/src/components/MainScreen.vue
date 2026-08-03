@@ -19,7 +19,7 @@ import MeasurementSofttool from './MeasurementSofttool.vue'
 import ScaleSofttool from './ScaleSofttool.vue'
 import StimulusSofttool from './StimulusSofttool.vue'
 import SweepSofttool from './SweepSofttool.vue'
-import type { SweepSofttoolPage } from './sweepSofttoolModel'
+import { nextSweepPage, type SweepSofttoolPage } from './sweepSofttoolModel'
 import { selectWorkspacePresentation } from './workspacePresentation'
 import { useActiveTrace } from './useActiveTrace'
 import {
@@ -108,7 +108,8 @@ function selectHardkey(key: HardkeyName): void {
     activeSofttool.value = 'stimulus'
   }
   if ((key === 'Sweep' || key === 'Trigger') && channel.value) {
-    sweepPage.value = key === 'Trigger' ? 'trigger' : 'control'
+    sweepPage.value = key === 'Trigger' ? 'trigger'
+      : activeSofttool.value === 'sweep' ? nextSweepPage(sweepPage.value) : 'parameters'
     activeSofttool.value = 'sweep'
     return
   }

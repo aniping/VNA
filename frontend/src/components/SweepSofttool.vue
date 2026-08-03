@@ -2,8 +2,9 @@
 import { computed, ref, watch } from 'vue'
 import type { ChannelSnapshot, SweepMode, SweepSettings } from '../api/vnaApi'
 import {
-  parseSweepCount, parseSweepPoints, sweepControlUnavailableItems, sweepSofttoolPages,
-  triggerSourceItems, type SweepSofttoolPage,
+  parseSweepCount, parseSweepPoints, sweepControlUnavailableItems, sweepParameterRows,
+  sweepSofttoolPages, sweepTypeItems, triggerInRows, triggerOutRows, triggerSourceItems,
+  type SweepSofttoolPage,
 } from './sweepSofttoolModel'
 
 const props = defineProps<{
@@ -23,7 +24,6 @@ const pointsDraft = ref('')
 const countDraft = ref('')
 const points = computed(() => parseSweepPoints(pointsDraft.value))
 const sweepCount = computed(() => parseSweepCount(countDraft.value))
-const pageLabel = computed(() => sweepSofttoolPages.find(({ id }) => id === props.page)?.label)
 const sweepModes: SweepMode[] = ['continuous', 'single']
 
 function restoreDrafts(): void {
@@ -50,37 +50,38 @@ function updateCount(): void {
   <aside class="sweep-softtool" aria-label="Sweep menu">
     <header class="sweep-header">
       <strong>Sweep</strong>
-      <span>{{ pageLabel }}</span>
       <button class="sweep-close" type="button" aria-label="Close Sweep" title="Close Sweep"
         @click="emit('close')">×</button>
     </header>
     <section class="sweep-page-content">
       <template v-if="page === 'control'">
-        <h2>Sweep Control</h2>
         <fieldset class="radio-list">
           <legend class="sr-only">Sweep mode</legend>
           <label v-for="mode in sweepModes" :key="mode"
             class="radio-row" :class="{ selected: channel.sweepMode === mode }">
             <input type="radio" name="sweep-mode" :value="mode"
               :checked="channel.sweepMode === mode"
-              :disabled="disabled || busy || channel.sweepMode === mode"
+              :disabled="disabled || busy"
               @change="updateMode(mode)" />
             <span>{{ mode === 'continuous' ? 'Continuous' : 'Single' }}</span>
           </label>
         </fieldset>
-        <label class="inline-value" for="sweep-count">Sweeps
+        <label class="setting-row" for="sweep-count"><span>Sweeps</span>
           <input id="sweep-count" v-model="countDraft" inputmode="numeric"
             :disabled="disabled || busy || channel.sweepMode !== 'single'"
             @change="updateCount" @keydown.enter.prevent="updateCount" />
         </label>
         <button class="start-sweep" type="button" :disabled="disabled || busy"
-          @click="emit('restart', channel.id)">Start Sweep</button>
+          @click="emit('restart', channel.id)"><b aria-hidden="true">↻</b>Start Sweep</button>
         <button v-for="item in sweepControlUnavailableItems" :key="item"
           class="unavailable-row" type="button" disabled tabindex="-1"
-          :aria-label="`${item}, not supported`" :title="`${item} — Not supported`">{{ item }}</button>
+          :aria-label="`${item}, not supported`" :title="`${item} — Not supported`">
+          <b v-if="item === 'Restart Manager'" aria-hidden="true">⚙</b><span>{{ item }}</span>
+          <em v-if="item === 'Sweep Controller' || item === 'Pipelining'">Off</em>
+          <i v-if="item === 'Restart Manager' || item === 'Pipelining'">▶</i>
+        </button>
       </template>
       <template v-else-if="page === 'trigger'">
-        <h2>Trigger In</h2>
         <fieldset class="radio-list">
           <legend class="sr-only">Trigger source</legend>
           <label v-for="source in triggerSourceItems" :key="source"
@@ -90,68 +91,96 @@ function updateCount(): void {
             <span>{{ source }}</span>
           </label>
         </fieldset>
+        <button class="unavailable-row" type="button" disabled tabindex="-1">Manual Trigger</button>
+        <button v-for="row in triggerInRows" :key="row.label"
+          class="setting-row" type="button" disabled tabindex="-1">
+          <span>{{ row.label }}</span><em>{{ row.value }}</em><i>▼</i>
+        </button>
         <button class="unavailable-row" type="button" disabled tabindex="-1"
-          aria-label="Trigger Manager, not supported">Trigger Manager</button>
+          aria-label="Trigger Manager, not supported"><b aria-hidden="true">⚙</b>
+          <span>Trigger Manager</span><i>▶</i></button>
+      </template>
+      <template v-else-if="page === 'parameters'">
+        <label class="setting-row active-setting" for="sweep-points">
+          <span>Number of Points</span><input id="sweep-points" v-model="pointsDraft"
+            inputmode="numeric" autofocus :disabled="disabled || busy"
+            @change="updatePoints" @keydown.enter.prevent="updatePoints"
+            @keydown.escape.prevent="restoreDrafts" />
+        </label>
+        <button v-for="row in sweepParameterRows" :key="row.label"
+          class="setting-row" type="button" disabled tabindex="-1">
+          <span>{{ row.label }}</span><em>{{ row.value }}</em>
+        </button>
+        <fieldset class="radio-list partial-list">
+          <legend class="sr-only">Partial measurements</legend>
+          <label class="radio-row"><input type="radio" disabled /><span>All Partial<br />Meas'ments</span></label>
+          <label class="radio-row"><input type="radio" disabled /><span>First Partial<br />Meas'ment</span></label>
+        </fieldset>
+        <button class="setting-row" type="button" disabled tabindex="-1">
+          <span>Freq Sweep Mode</span><em>—</em><i>▼</i></button>
+      </template>
+      <template v-else-if="page === 'type'">
+        <fieldset class="radio-list">
+          <legend class="sr-only">Sweep type</legend>
+          <label v-for="item in sweepTypeItems" :key="item" class="radio-row">
+            <input type="radio" :checked="item === 'Lin Freq'" disabled /><span>{{ item }}</span>
+          </label>
+        </fieldset>
+        <button class="unavailable-row" type="button" disabled tabindex="-1">
+          <b aria-hidden="true">⚙</b><span>Define Segments</span><i>▶</i></button>
+        <button class="setting-row" type="button" disabled tabindex="-1">
+          <span>Seg X-Axis</span><em>Freq based</em><i>▼</i></button>
       </template>
       <template v-else>
-        <h2>Sweep Params</h2>
-        <form @submit.prevent="updatePoints">
-          <label for="sweep-points">Points</label>
-          <div class="value-entry">
-            <input id="sweep-points" v-model="pointsDraft" inputmode="numeric"
-              :disabled="disabled || busy" @blur="restoreDrafts"
-              @keydown.escape.prevent="restoreDrafts" />
-            <span>pts</span>
-          </div>
-          <button type="submit" :disabled="disabled || busy || points === null
-            || points === channel.sweep.points">Apply Points</button>
-        </form>
+        <button v-for="row in triggerOutRows" :key="row.label"
+          class="setting-row" type="button" disabled tabindex="-1">
+          <span>{{ row.label }}</span><em>{{ row.value }}</em>
+          <i v-if="row.label !== 'Trigger Out Active'">▼</i>
+        </button>
       </template>
     </section>
     <nav class="sweep-pages" aria-label="Sweep pages">
       <button v-for="item in sweepSofttoolPages" :key="item.id" type="button"
-        class="sweep-page" :class="{ selected: item.id === page }"
-        :aria-selected="item.id === page" @click="emit('selectPage', item.id)">
-        {{ item.label }}
-      </button>
+        class="sweep-page" :class="{ selected: item.page === page }"
+        :aria-selected="item.page === page" :title="item.label"
+        @click="emit('selectPage', item.page)">{{ item.label }}</button>
     </nav>
   </aside>
 </template>
 <style scoped>
-.sweep-softtool { display: grid; grid-template: 42px 1fr / minmax(0, 1fr) 66px;
+.sweep-softtool { display: grid; grid-template: 42px 1fr / minmax(0, 1fr) 84px;
   min-width: 0; overflow: hidden; background: #1c282e; border-left: 2px solid #05090b; }
 .sweep-header { display: flex; align-items: center; gap: 7px; grid-column: 1 / -1;
   min-width: 0; padding: 5px 8px; background: #25333a; font-size: 11px; }
-.sweep-header span { overflow: hidden; color: #c5d0d4; text-overflow: ellipsis; white-space: nowrap; }
 .sweep-close { width: 25px; height: 28px; margin-left: auto; border: 0; background: #53656e;
   font-size: 20px; line-height: 1; }
 .sweep-page-content { min-width: 0; overflow: auto; background: #1c282e; }
-.sweep-page-content h2 { margin: 0; padding: 8px; background: #11191d; font-size: 12px; }
-.sweep-pages { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-top: 5px; background: #11191d; }
-.sweep-page { min-height: 54px; padding: 5px; border: 1px solid #11191d; background: #53656e;
-  color: #f7f9fa; font-size: 10px; line-height: 1.1; text-align: left; }
-.sweep-page.selected { position: relative; z-index: 1; margin-left: -8px; border-color: #168fda; background: #168fda; }
+.sweep-pages { display: flex; min-width: 0; padding-top: 5px; flex-direction: column;
+  background: #11191d; }
+.sweep-page { display: flex; align-items: center; width: 100%; min-height: 43px; padding: 6px;
+  border: 1px solid #11191d; color: #f7f9fa; background: #53656e;
+  font-size: 10px; line-height: 1.1; text-align: left; }
+.sweep-page.selected { border-color: #082536; color: #fff; background: #168fda; }
 .radio-list { display: grid; gap: 2px; margin: 5px; padding: 0; border: 0; }
 .radio-row { display: flex; align-items: center; gap: 7px; min-height: 39px; padding: 0 7px;
-  border: 1px solid #11191d; background: #53656e; font-size: 11px; }
-.radio-row.selected { border-left: 4px solid #168fda; background: #65808d; }
-.radio-row input { margin: 0; accent-color: #168fda; }
-.inline-value { display: flex; align-items: center; justify-content: space-between; min-height: 39px;
-  margin: 5px; padding: 0 7px; background: #53656e; font-size: 11px; }
-.inline-value input { width: 66px; padding: 4px; color: #fff; border: 1px solid #71838c;
-  background: #05090b; text-align: right; }
-.start-sweep, .unavailable-row { width: calc(100% - 10px); min-height: 39px; margin: 2px 5px 0;
-  padding: 5px 7px; border: 1px solid #11191d; background: #53656e; font-size: 10px; text-align: left; }
-.start-sweep { border-color: #0b4258; background: #268fc5; font-weight: 700; }
-form { margin: 10px 5px; padding: 8px; background: #11191d; }
-form label { display: block; margin-bottom: 5px; font-size: 11px; }
-.value-entry { display: grid; grid-template-columns: 1fr 45px; height: 38px; }
-.value-entry input { min-width: 0; padding: 0 7px; color: #fff; border: 1px solid #71838c;
-  background: #05090b; text-align: right; }
-.value-entry span { display: grid; place-items: center; background: #53656e; font-size: 10px; }
-form button { width: 100%; height: 38px; margin-top: 9px; border: 1px solid #0b4258;
-  background: #268fc5; font-weight: 700; }
+  border: 1px solid #11191d; background: #26343b; font-size: 11px; }
+.radio-row.selected { background: #26343b; }
+.radio-row input { width: 14px; height: 14px; margin: 0; appearance: none;
+  border: 2px solid #839197; border-radius: 50%; background: #26343b; }
+.radio-row input:checked { background: #168fda; box-shadow: inset 0 0 0 3px #26343b; }
+.setting-row, .start-sweep, .unavailable-row { display: flex; align-items: center; gap: 6px;
+  width: calc(100% - 10px); min-height: 39px; margin: 2px 5px 0; padding: 5px 7px;
+  border: 1px solid #11191d; background: #53656e; font-size: 10px; text-align: left; }
+.setting-row { flex-wrap: wrap; justify-content: space-between; }
+.setting-row span { width: 100%; }
+.setting-row em, .unavailable-row em { margin-left: auto; font-style: normal; color: #f7f9fa; }
+.setting-row i, .unavailable-row i { margin-left: 2px; font-style: normal; }
+.setting-row input { width: 70px; margin-left: auto; padding: 2px 4px; color: #fff;
+  border: 0; background: #05090b; text-align: right; }
+.active-setting { border-bottom-color: #168fda; }
+.start-sweep { background: #53656e; font-weight: 700; }
+.start-sweep b, .unavailable-row b { font-size: 17px; line-height: 1; }
+.partial-list { margin-top: 2px; margin-bottom: 2px; }
 button:disabled { color: #839197; background: #35434a; cursor: default; }
-button.selected:disabled { color: #fff; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
 </style>

@@ -75,5 +75,11 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
 .menu-bar button:disabled { color: #c5d0d4; cursor: default; }
 .menu-bar > span, .menu-bar time { align-self: center; margin: 0 7px; font-size: 12px; }
 .status-channel { color: #eef4f6; font-weight: 600; white-space: nowrap; }
-.status-sweep { min-width: 170px; color: #c5d0d4; white-space: nowrap; }
+.status-first-sweep { margin: 0 1px !important; color: #fff; font-size: 15px !important; line-height: 1; }
+.status-progress { position: relative; width: 150px; height: 18px; margin: 0 2px !important;
+  overflow: hidden; border: 1px solid #182328; background: #60737d; color: #eef4f6; }
+.status-progress-fill { position: absolute; inset: 0 auto 0 0; width: var(--status-progress);
+  background: #1b9f38; }
+.status-progress-label { position: relative; z-index: 1; display: grid; place-items: center;
+  height: 100%; font-size: 11px; line-height: 1; white-space: nowrap; }
 .status-time { min-width: 150px; color: #c5d0d4; text-align: right; white-space: nowrap; }

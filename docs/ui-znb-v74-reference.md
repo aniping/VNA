@@ -58,7 +58,15 @@ ZNB 将测量应用与控制入口组织在同一触摸屏；项目据此采用 
 4. 虚拟 Hardkey 面板，约 160 px 宽：固定在最右侧，按 ZNB 前面板证据为各组
    保留不同列数，不能用一个固定两列算法重排全部按键。
 5. 底部菜单与状态栏，约 34 px 高：File、Trace、Channel、Display、Tools、System、Help，
-   以及活动 Channel、平均状态、进度和时间。
+   以及活动 Channel、平均状态、绿色扫频进度条和时间；首扫星号位于 Channel 与
+   进度条之间（ZNB v74 第 49、79 页）。
+
+Sweep Softtool 按第 533–556 页使用五个固定 tab 槽位：Sweep Params、Sweep Type、
+Trigger In、Trigger Out、Sweep Control。五个槽位始终按手册顺序显示，当前 tab 使用
+蓝色活动态；五页展开内容分别对照第 534、537、550、554、556 页。Sweep Type 与
+Trigger Out 页允许打开以保留原机信息结构，但未进入领域合同的内部控件全部原生禁用。
+五个槽位同时常驻是用户在本项目中明确冻结的覆盖要求。其余 opener 行为遵守第 285–286
+页：首次按 Sweep 进入 Sweep Params，已打开时循环下一页，Trigger 直接进入 Trigger In。
 
 手册默认状态只显示一个包含 S21 dB Magnitude Trace 的主图。Diagram 数量必须
 来自 `StateSnapshot` 中的真实 Window；只有服务中真实存在的 Trace 才显示 Trace
