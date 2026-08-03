@@ -8,6 +8,7 @@ endfunction()
 
 add_executable(
     vna_application_command_tests
+    command_bus_configuration_test.cpp
     channel_command_test.cpp
     command_bus_test.cpp
     command_bus_catalog_dependency_test.cpp
