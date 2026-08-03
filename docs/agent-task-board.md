@@ -1,6 +1,6 @@
 # Agent 长期任务看板
 
-更新时间：2026-08-03 19:29（Asia/Shanghai）
+更新时间：2026-08-03 20:18（Asia/Shanghai）
 
 记录基线：`efc64d2`（本看板首次提交前）
 
@@ -22,7 +22,7 @@
 | 应用与协议 Agent | `019fb706-7b1a-7463-9219-0828161778db` | 2026-08-03 14:53 | 为现有Preview WS补齐R&S权威Sweep状态push | SweepRuntime/PreviewExchange/Web codec；不新增路由、worker或store | 已集成 | 2026-08-03 17:22 | 用户批准1450行原子提交例外；`10c473f`已集成为`8bca529`。权威阶段、完整采集进度、首扫星号与自包含latest-only状态已进入主线，聚焦71/71、最终竞态1/1及双审PASS |
 | 产品与架构 Agent | `019fb71a-3fa2-7be0-af61-77606cb15402` | 2026-08-03 00:42 | 编写 ZNB Sweep运行与逐步显示规格/ADR-0011 | 独占产品状态机、ZNB证据与ADR | 已集成 | 2026-08-03 01:48 | 双审PASS；`a1f74fb`已集成为`e352de7`，规格保留未采集点视觉与ZNB容量/型号范围后续门禁 |
 | 平台与数据 Agent | `019fb706-16bc-7693-95d9-8f62808acfc7` | 2026-08-03 02:25 | TDD实现局部Measurement范围合成与Trace投影 | measurement/data-plane；不依赖application/acquisition，不跑Linux/全量 | 已集成 | 2026-08-03 02:55 | `7c54d24`/`3d6fca6`已集成为`f793e35`/`d5a15f5`；646行、Root聚焦99/99及双审PASS，P2完成 |
-| 前端与体验 Agent | `019fb709-e33c-7dd1-b688-032d48a9c426` | 2026-08-03 18:59 | 按ZNB v74修正Sweep软菜单与状态栏1:1布局 | p49–50、p79、p550、p556–558；不改数据/命令合同 | 已集成 | 2026-08-03 19:29 | `b50e672`已集成为`2eb6e1e`，Root另以`b87029c`补齐Enter提交；正式release build PASS，1280×800真实浏览器验证竖向菜单、禁用项、状态栏、Sweeps=3与Start Sweep闭环，控制台clean |
+| 前端与体验 Agent | `019fb709-e33c-7dd1-b688-032d48a9c426` | 2026-08-03 18:59 | 按ZNB v74修正Sweep软菜单与状态栏1:1布局 | p49–50、p79、GUI Reference p285–286、Sweep p533–558；不改数据/命令合同 | 已集成 | 2026-08-03 20:18 | `b50e672`已集成为`2eb6e1e`，Root以`b87029c`与`f3dd3b9`补齐交互及完整GUI Reference布局；五槽同显、五页展开、权威进度条、禁用边界和真实Sweep命令均通过正式release浏览器验收，控制台clean |
 
 ## 最近已集成
 
@@ -30,7 +30,7 @@
 
 | 时间 | 提交 | 内容 |
 | --- | --- | --- |
-| 2026-08-03 19:29 | `b50e672`→`2eb6e1e`；`b87029c` | 按ZNB v74还原紧凑状态栏与Sweep/Trigger竖向Softtool，补齐Enter提交扫频次数；正式release及1280×800真实浏览器验收通过，API确认Single×3、权威进度与逐点替换 |
+| 2026-08-03 20:18 | `b50e672`→`2eb6e1e`；`b87029c`；`f3dd3b9` | 按GUI Reference p285–286及Sweep p533–558补齐五槽同显、五页展开内容、蓝色单选态与权威绿色进度条；正式release中实际点击Single/Start/Continuous、Sweep循环及Trigger直达均通过 |
 | 2026-08-03 18:15 | `65dddb2`…`9597080`→`dc5efd4`…`5eb85b2` | 集成F1 Sweep控制与渐进曲线前端闭环：lastComplete背景逐点覆盖、双通道会话、严格generation/身份/轴过滤、Continuous/Single/Restart及权威状态/进度/首扫星号；相关17项、跨lane 5/5、build与双审PASS |
 | 2026-08-03 17:22 | `10c473f`→`8bca529` | 集成R6权威Sweep状态push：Preparing/Sweeping/Calculation/Hold/Failed、完整采集进度、首扫星号与自包含latest-only Preview状态；聚焦71/71、最终竞态1/1及双审PASS |
 | 2026-08-03 14:18 | `755b530`→`3191290` | 集成R5一致Sweep运行状态、Continuous/Single控制wire与独立Preview WebSocket；三事件统一eventCursor、共用唯一Exchange和有界session，聚焦socket15/15、server build及双审PASS |
@@ -47,7 +47,7 @@
 
 | 时间 | 检查结果 |
 | --- | --- |
-| 2026-08-03 19:29 | UI-L2集成与正式release验收完成；真实点击发现Sweeps输入仅change提交，Root以`b87029c`补齐Enter键并聚焦4/4复验。最终API为revision2、Single×3，Start Sweep显示Sweeping 32/402，SVG同代保持201点全轴且新前缀替换旧后缀，控制台0告警。 |
+| 2026-08-03 20:18 | 复核GUI Reference目录及Sweep五页展开内容后，以`f3dd3b9`补齐Params/Type/Trigger In/Trigger Out/Control五槽同显和完整禁用槽位，状态文字改权威绿色进度条。聚焦9/9、正式release build及内置浏览器真实点击闭环通过，控制台0告警。 |
 | 2026-08-03 18:15 | F1四笔提交无冲突集成主线为`dc5efd4`、`ffafa68`、`19e74c1`、`5eb85b2`，未重复开发验证。单Channel Sweep里程碑全部切片已入主线，下一步仅做一次Windows全量测试、正式打包和真实浏览器验收。 |
 | 2026-08-03 18:13 | F1 Standards/Spec双审最终PASS，跨lane代次回归已关闭。Agent仅按四笔&lt;500行组织已验证成果的Git历史，不拆产品任务、不追加构建测试。 |
 | 2026-08-03 18:03 | F1 Spec审核发现并修正generation重连基线、不兼容Preview整事件拒绝、仅轴变化清帧三项边界；Power/IFBW不再误清，用户已冻结的retain-last-complete策略保持不变。当前等待双审最终收口。 |
