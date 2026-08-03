@@ -13,6 +13,7 @@
 #include <vna/application/sweep_runtime.hpp>
 #include <vna/application/trace_publication_catalog.hpp>
 #include <vna/test/continuous_acquisition_test_support.hpp>
+#include <vna/test/sweep_status_test_support.hpp>
 
 namespace vna::application {
 namespace {
@@ -159,7 +160,7 @@ protected:
     TraceDisplayFrameRepository repository_{4};
     TracePublicationCatalog catalog_{
         preset_.acquisitionChannelId, repository_, initialState(preset_)};
-    SweepPreviewExchange previews_;
+    SweepPreviewExchange previews_{vna::test::testSweepStatus()};
     OperationManager operations_;
 };
 
@@ -192,7 +193,6 @@ TEST_F(SweepRuntimeTest, RecoversThreeStructuredSweepFailures) {
               SweepRuntimeFailureCode::CompleteProcessingFailed);
     EXPECT_EQ(snapshot.lastSweepFailure->attemptedSequence, 3U);
 }
-
 TEST_F(SweepRuntimeTest, InvalidatesPreviewBeforeUnexpectedCancelFails) {
     ControlledCaptureSource source{{CaptureOutcome::Canceled}};
     SweepRuntime runtime{{acquisition::test_support::validPlan(),
@@ -201,7 +201,7 @@ TEST_F(SweepRuntimeTest, InvalidatesPreviewBeforeUnexpectedCancelFails) {
 
     ASSERT_TRUE(source.waitForRequest(1));
     source.releasePreview(1);
-    const auto available = previews_.waitForNext({0});
+    const auto available = previews_.waitForNext({2});
     ASSERT_TRUE(available.has_value());
     source.releaseComplete(1);
     runtime.join();

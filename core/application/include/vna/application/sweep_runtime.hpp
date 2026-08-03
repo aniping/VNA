@@ -9,6 +9,7 @@
 #include <vna/acquisition/raw_sweep_capture.hpp>
 #include <vna/application/operation_manager.hpp>
 #include <vna/application/sweep_preview_exchange.hpp>
+#include <vna/application/sweep_runtime_status.hpp>
 #include <vna/application/trace_publication_catalog.hpp>
 
 namespace vna::application {
@@ -83,13 +84,6 @@ enum class SweepRuntimeState {
     Failed,
 };
 
-enum class SweepRuntimePhase {
-    Hold,
-    Preparing,
-    Sweeping,
-    Publishing,
-};
-
 enum class SweepRuntimeRequestErrorCode {
     Stopped,
     Retired,
@@ -149,7 +143,10 @@ struct SweepRuntimeFailure {
 
 struct SweepRuntimeSnapshot {
     SweepRuntimeState state{SweepRuntimeState::Running};
-    SweepRuntimePhase phase{SweepRuntimePhase::Preparing};
+    SweepUserPhase phase{SweepUserPhase::Preparing};
+    std::optional<acquisition::SweepId> activeSweepId;
+    SweepAcquisitionProgress progress{};
+    bool firstSweepAfterConfiguration{};
     std::uint64_t configuredStateRevision{};
     SweepRuntimeExecutionPolicy configuredExecution{};
     // These identify the immutable plan used at the last Sweep boundary.
@@ -166,6 +163,12 @@ struct SweepRuntimeSnapshot {
     std::optional<SweepRuntimeFailure> lastSweepFailure;
     std::exception_ptr terminalFailure;
 };
+
+// Composition creates the Exchange from this value before moving the same
+// immutable plan into SweepRuntime. The Runtime validates that both ends began
+// from one generation/channel/revision and one complete-Sweep workload.
+[[nodiscard]] SweepRuntimeDisplayStatus initialSweepRuntimeStatus(
+    const SweepRuntimePlan& plan);
 
 // The runtime is the sole owner of one capture source and starts one worker.
 // Exchange, catalog, and operation manager are borrowed and must outlive it.

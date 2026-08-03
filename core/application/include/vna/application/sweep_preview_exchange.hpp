@@ -10,12 +10,14 @@
 #include <vector>
 
 #include <vna/acquisition/continuous_acquisition.hpp>
+#include <vna/application/sweep_runtime_status.hpp>
 #include <vna/application/trace_display_frame.hpp>
 
 namespace vna::application {
 
 namespace internal {
 class SweepGenerationTransaction;
+class SweepRuntimeImpl;
 }
 
 struct SweepPreviewIdentity {
@@ -80,19 +82,32 @@ struct SweepPreviewCursor {
     std::uint64_t value{};
 };
 
+struct SweepPreviewStreamStatus {
+    SweepRuntimeDisplayStatus runtime;
+    std::optional<SweepPreviewIdentity> activePreviewIdentity;
+};
+
 struct SweepPreviewAvailable {
     SweepPreviewCursor cursor;
     SweepPreviewHandle preview;
+    SweepPreviewStreamStatus status;
 };
 
 struct SweepPreviewInvalidated {
     SweepPreviewCursor cursor;
     SweepPreviewIdentity identity;
+    SweepPreviewStreamStatus status;
 };
 
 struct SweepPreviewGenerationAdvanced {
     SweepPreviewCursor cursor;
     std::uint64_t generation;
+    SweepPreviewStreamStatus status;
+};
+
+struct SweepPreviewStatusChanged {
+    SweepPreviewCursor cursor;
+    SweepPreviewStreamStatus status;
 };
 
 using SweepPreviewGenerationResult = std::variant<
@@ -102,10 +117,13 @@ using SweepPreviewGenerationResult = std::variant<
 using SweepPreviewEvent = std::variant<
     SweepPreviewAvailable,
     SweepPreviewInvalidated,
-    SweepPreviewGenerationAdvanced>;
+    SweepPreviewGenerationAdvanced,
+    SweepPreviewStatusChanged>;
 
 class SweepPreviewExchange {
 public:
+    explicit SweepPreviewExchange(SweepRuntimeDisplayStatus initialStatus);
+
     // Every successful mutation advances one shared cursor. Waiters therefore
     // observe the newest Preview or invalidation without replaying history.
     // Methods are thread-safe; destruction requires all calls to have ended.
@@ -119,11 +137,30 @@ public:
 
 private:
     friend class internal::SweepGenerationTransaction;
+    friend class internal::SweepRuntimeImpl;
+    [[nodiscard]] SweepPreviewPublishResult publishForRuntime(
+        SweepPreview preview,
+        SweepRuntimeDisplayStatus status);
+    [[nodiscard]] SweepPreviewPublishResult publishImpl(
+        SweepPreview preview,
+        const SweepRuntimeDisplayStatus* runtimeStatus);
+    void updateForRuntime(SweepRuntimeDisplayStatus status) noexcept;
+    [[nodiscard]] bool invalidateForRuntime(
+        SweepPreviewIdentity identity,
+        SweepRuntimeDisplayStatus status) noexcept;
+    [[nodiscard]] bool matchesInitialStatus(
+        const SweepRuntimeDisplayStatus& expected) const noexcept;
+    [[nodiscard]] static bool validStatus(
+        const SweepRuntimeDisplayStatus& status) noexcept;
+    [[nodiscard]] static SweepPreviewStreamStatus streamStatus(
+        const SweepRuntimeDisplayStatus& runtime,
+        const SweepPreviewHandle& preview);
     mutable std::mutex mutex_;
     mutable std::condition_variable changed_;
     std::uint64_t generation_{1};
     std::uint64_t lastSweepId_{};
     std::uint64_t nextCursor_{1};
+    SweepRuntimeDisplayStatus status_;
     std::optional<SweepPreviewIdentity> activeIdentity_;
     SweepPreviewHandle currentPreview_;
     std::optional<SweepPreviewEvent> latestEvent_;

@@ -5,8 +5,9 @@
 Continuous、Single、Hold 和 Restart 共用一个 `SweepRuntime`。它是唯一
 `RawSweepSource` 所有者，使用一个采集 worker，并在一次 Sweep 的安全边界切换
 完整不可变计划。Channel 持有 Continuous/Single、Trigger Source 和 Sweep 参数
-等配置；Hold、Preparing、Sweeping、Publishing、Failed 等运行状态由
-`SweepRuntime` 持有，两者不得互相冒充。
+等配置；Hold、Preparing、Sweeping、Calculation、Failed 等用户运行状态由
+`SweepRuntime` 持有，两者不得互相冒充。内部 Publishing 只是 Calculation 的
+提交步骤，不得成为协议或页面中的第二套用户状态。
 
 配置事务先在可见状态之外编译候选计划，再原子提交 Channel 配置、新
 `stateRevision` 和完整 pending plan。已经开始的 Sweep 使用启动时捕获的
@@ -36,6 +37,11 @@ FrameSet 发布全部完成后才结束。Single 或 Restart 的 Operation 也�
 提交点之后才能进入 Succeeded。预览到达、最后一个 raw chunk 到达或页面绘制
 完成都不是 Operation 成功条件。同一 generation 的失败与取消保留上一完整结果；
 generation 变化仍按 ADR-0009 原子失效旧完整 FrameSet 和当前 Preview。
+
+权威进度按完整硬件工作量计算：分母为频点数乘 source-state 数，分子为本 Sweep
+已经校验的 raw range 样本总数。Trace 或 Measurement 数量不重复增加分母。
+material generation 应用后首轮标记持续到该 generation 首个完整 FrameSet 成功
+发布；Scale 与 Restart 本身不产生这个标记。
 
 多轮 Single Operation 可以在 Sweep 边界采用更新后的配置。其
 `submittedAtStateRevision` 只记录请求准入时的 revision；每轮 FrameSet 自身的

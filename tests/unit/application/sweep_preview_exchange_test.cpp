@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <vna/application/sweep_preview_exchange.hpp>
+#include <vna/test/sweep_status_test_support.hpp>
 
 namespace vna::application {
 namespace {
@@ -82,7 +83,7 @@ private:
 };
 
 TEST(SweepPreviewExchangeTest, SlowReaderReceivesLatestCumulativePreview) {
-    SweepPreviewExchange exchange;
+    SweepPreviewExchange exchange{vna::test::testSweepStatus()};
     auto first = previewFor(11, {-1.0, -2.0, -3.0});
     first.traces.front().frequenciesHz.resize(2);
     std::get<CartesianTraceDisplaySamples>(first.traces.front().samples)
@@ -99,15 +100,16 @@ TEST(SweepPreviewExchangeTest, SlowReaderReceivesLatestCumulativePreview) {
     ASSERT_TRUE(event.has_value());
     const auto* available = std::get_if<SweepPreviewAvailable>(&*event);
     ASSERT_NE(available, nullptr);
-    EXPECT_EQ(available->cursor.value, 2U);
+    EXPECT_EQ(available->cursor.value, 3U);
     EXPECT_EQ(available->preview->traces.front().frequenciesHz.size(), 3U);
     EXPECT_EQ(firstHandle->traces.front().frequenciesHz.size(), 2U);
 }
 
 TEST(SweepPreviewExchangeTest, GenerationAdvanceInvalidatesWithoutNewPreview) {
-    SweepPreviewExchange exchange;
+    SweepPreviewExchange exchange{vna::test::testSweepStatus()};
     ASSERT_TRUE(std::holds_alternative<SweepPreviewHandle>(
         exchange.publish(previewFor(11, {-1.0, -2.0, -3.0}))));
+    EXPECT_TRUE(exchange.invalidate({1, acquisition::SweepId{7}}));
 
     const auto advanced = exchange.advanceGeneration(2);
 
@@ -115,13 +117,15 @@ TEST(SweepPreviewExchangeTest, GenerationAdvanceInvalidatesWithoutNewPreview) {
         advanced));
     EXPECT_EQ(
         std::get<SweepPreviewGenerationAdvanced>(advanced).cursor.value,
-        2U);
+        4U);
     const auto event = exchange.waitForNext(SweepPreviewCursor{1});
     ASSERT_TRUE(event.has_value());
     const auto* generation =
         std::get_if<SweepPreviewGenerationAdvanced>(&*event);
     ASSERT_NE(generation, nullptr);
     EXPECT_EQ(generation->generation, 2U);
+    EXPECT_TRUE(generation->status.runtime.firstSweepAfterConfiguration);
+    EXPECT_EQ(generation->status.activePreviewIdentity, std::nullopt);
 
     auto stale = previewFor(12, {-1.0, -2.0, -3.0});
     stale.identity.sweepId = acquisition::SweepId{8};
@@ -133,8 +137,8 @@ TEST(SweepPreviewExchangeTest, GenerationAdvanceInvalidatesWithoutNewPreview) {
 }
 
 TEST(SweepPreviewExchangeTest, GenerationAdvanceWakesEmptyExchangeWaiter) {
-    SweepPreviewExchange exchange;
-    PreviewWaitCall wait{exchange, {}};
+    SweepPreviewExchange exchange{vna::test::testSweepStatus()};
+    PreviewWaitCall wait{exchange, {1}};
     ASSERT_TRUE(wait.hasEntered());
 
     const auto advanced = exchange.advanceGeneration(2);
@@ -146,24 +150,24 @@ TEST(SweepPreviewExchangeTest, GenerationAdvanceWakesEmptyExchangeWaiter) {
     const auto* generation =
         std::get_if<SweepPreviewGenerationAdvanced>(&*event);
     ASSERT_NE(generation, nullptr);
-    EXPECT_EQ(generation->cursor.value, 1U);
+    EXPECT_EQ(generation->cursor.value, 2U);
     EXPECT_EQ(generation->generation, 2U);
 }
 
 TEST(SweepPreviewExchangeTest, InvalidationSealsSweepUntilNewIdentity) {
-    SweepPreviewExchange exchange;
+    SweepPreviewExchange exchange{vna::test::testSweepStatus()};
     const SweepPreviewIdentity firstIdentity{1, acquisition::SweepId{7}};
     ASSERT_TRUE(std::holds_alternative<SweepPreviewHandle>(
         exchange.publish(previewFor(11, {-1.0, -2.0, -3.0}))));
 
     EXPECT_TRUE(exchange.invalidate(firstIdentity));
     EXPECT_FALSE(exchange.invalidate(firstIdentity));
-    const auto event = exchange.waitForNext(SweepPreviewCursor{1});
+    const auto event = exchange.waitForNext(SweepPreviewCursor{2});
     ASSERT_TRUE(event.has_value());
     const auto* invalidated = std::get_if<SweepPreviewInvalidated>(&*event);
     ASSERT_NE(invalidated, nullptr);
     EXPECT_EQ(invalidated->identity, firstIdentity);
-    EXPECT_EQ(invalidated->cursor.value, 2U);
+    EXPECT_EQ(invalidated->cursor.value, 3U);
 
     const auto late = exchange.publish(previewFor(11, {-1.0, -2.0, -3.0}));
     ASSERT_TRUE(std::holds_alternative<SweepPreviewError>(late));
@@ -177,7 +181,7 @@ TEST(SweepPreviewExchangeTest, InvalidationSealsSweepUntilNewIdentity) {
 }
 
 TEST(SweepPreviewExchangeTest, RejectsFutureAndSkippedGeneration) {
-    SweepPreviewExchange exchange;
+    SweepPreviewExchange exchange{vna::test::testSweepStatus()};
     auto future = previewFor(11, {-1.0, -2.0, -3.0});
     future.identity.generation = 2;
 
@@ -194,14 +198,14 @@ TEST(SweepPreviewExchangeTest, RejectsFutureAndSkippedGeneration) {
 }
 
 TEST(SweepPreviewExchangeTest, CancellationReturnsNoEvent) {
-    SweepPreviewExchange exchange;
+    SweepPreviewExchange exchange{vna::test::testSweepStatus()};
     std::stop_source alreadyStopped;
     alreadyStopped.request_stop();
     EXPECT_EQ(
         exchange.waitForNext({}, alreadyStopped.get_token()),
         std::nullopt);
 
-    PreviewWaitCall wait{exchange, {}};
+    PreviewWaitCall wait{exchange, {1}};
     ASSERT_TRUE(wait.hasEntered());
     wait.requestStop();
     EXPECT_EQ(wait.finish(), std::nullopt);
@@ -209,8 +213,8 @@ TEST(SweepPreviewExchangeTest, CancellationReturnsNoEvent) {
 
 TEST(SweepPreviewExchangeTest, PublishAtWaitRegistrationCannotBeLost) {
     for (std::uint64_t sequence = 1; sequence <= 50; ++sequence) {
-        SweepPreviewExchange exchange;
-        PreviewWaitCall wait{exchange, {}};
+        SweepPreviewExchange exchange{vna::test::testSweepStatus()};
+        PreviewWaitCall wait{exchange, {1}};
         ASSERT_TRUE(wait.hasEntered());
         ASSERT_TRUE(std::holds_alternative<SweepPreviewHandle>(
             exchange.publish(previewFor(

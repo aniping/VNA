@@ -15,6 +15,7 @@
 #include <vna/application/factory_preset.hpp>
 #include <vna/application/sweep_runtime.hpp>
 #include <vna/test/continuous_acquisition_test_support.hpp>
+#include <vna/test/sweep_status_test_support.hpp>
 
 namespace vna::application {
 namespace {
@@ -102,7 +103,7 @@ public:
     StateSnapshot initial_;
     TraceDisplayFrameRepository repository_{4};
     TracePublicationCatalog catalog_;
-    SweepPreviewExchange previews_;
+    SweepPreviewExchange previews_{vna::test::testSweepStatus()};
     OperationManager operations_;
     SweepRuntime runtime_;
     CommandBus bus_;

@@ -24,9 +24,16 @@ SweepRuntimeImpl::SweepRuntimeImpl(
         plan_.execution.sweepCount > 100'000) {
         throw std::invalid_argument{"invalid sweep runtime plan"};
     }
-    snapshot_.phase = plan_.execution.mode == domain::SweepMode::Single
-        ? SweepRuntimePhase::Hold
-        : SweepRuntimePhase::Preparing;
+    const auto initialStatus = initialSweepRuntimeStatus(plan_);
+    if (!previews_.matchesInitialStatus(initialStatus)) {
+        throw std::invalid_argument{"sweep preview status does not match plan"};
+    }
+    previews_.updateForRuntime(initialStatus);
+    snapshot_.phase = initialStatus.userPhase;
+    snapshot_.activeSweepId = initialStatus.sweepId;
+    snapshot_.progress = initialStatus.progress;
+    snapshot_.firstSweepAfterConfiguration =
+        initialStatus.firstSweepAfterConfiguration;
     snapshot_.configuredStateRevision = plan_.publication->stateRevision;
     snapshot_.configuredExecution = plan_.execution;
     snapshot_.appliedStateRevision = plan_.publication->stateRevision;
@@ -101,21 +108,30 @@ void SweepRuntimeImpl::recordAttempt() {
     ++snapshot_.attemptedSweeps;
 }
 
-void SweepRuntimeImpl::recordCompleted() {
-    std::lock_guard lock{mutex_};
-    ++snapshot_.completedSweeps;
-}
-
-void SweepRuntimeImpl::reject(SweepRuntimeFailure value) {
+void SweepRuntimeImpl::reject(
+    SweepPreviewIdentity identity,
+    SweepRuntimeFailure value) {
     std::lock_guard lock{mutex_};
     ++snapshot_.rejectedSweeps;
     snapshot_.lastSweepFailure = std::move(value);
+    setDisplayStatusLocked(
+        SweepUserPhase::Failed,
+        identity.sweepId,
+        snapshot_.progress.completedPoints);
+    invalidateLocked(identity);
 }
 
 void SweepRuntimeImpl::finish(SweepRuntimeState state) noexcept {
     std::lock_guard lock{mutex_};
     if (snapshot_.state == SweepRuntimeState::Running) {
         snapshot_.state = state;
+        if (state != SweepRuntimeState::Failed) {
+            setDisplayStatusLocked(
+                SweepUserPhase::Hold,
+                std::nullopt,
+                snapshot_.progress.totalPoints);
+            previews_.updateForRuntime(displayStatusLocked());
+        }
     }
 }
 

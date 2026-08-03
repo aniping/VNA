@@ -14,6 +14,7 @@
 #include <vna/application/factory_preset.hpp>
 #include <vna/application/sweep_runtime.hpp>
 #include <vna/test/continuous_acquisition_test_support.hpp>
+#include <vna/test/sweep_status_test_support.hpp>
 
 namespace vna::application {
 namespace {
@@ -101,7 +102,7 @@ void expectCompletedAcrossPlans(
     EXPECT_EQ(published->generation, 2U);
     EXPECT_EQ(published->frames.front().stateRevision, 8U);
     EXPECT_EQ(runtime.snapshot().completedSweeps, 2U);
-    EXPECT_EQ(runtime.snapshot().phase, SweepRuntimePhase::Hold);
+    EXPECT_EQ(runtime.snapshot().phase, SweepUserPhase::Hold);
 }
 
 TEST(SweepRuntimeOperationRevisionTest,
@@ -111,7 +112,8 @@ TEST(SweepRuntimeOperationRevisionTest,
     TraceDisplayFrameRepository repository{4};
     TracePublicationCatalog catalog{
         preset.acquisitionChannelId, repository, initial};
-    SweepPreviewExchange previews;
+    SweepPreviewExchange previews{vna::test::testSweepStatus(
+        acquisition::test_support::validPlan(), 7)};
     OperationManager operations;
     BoundarySource source;
     SweepRuntime runtime{

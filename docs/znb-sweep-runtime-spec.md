@@ -53,13 +53,13 @@ Channel 配置只公开：
 运行时至少可观察以下阶段：
 
 ```text
-Idle(Hold) → Preparing → Sweeping → Processing/Publishing → Idle(Hold)
+Idle(Hold) → Preparing → Sweeping → Calculation → Idle(Hold)
                       ↘ Failed / Canceled ↗
 ```
 
-Continuous 在 Publishing 后继续 Preparing；Single 在指定轮数全部完成后进入
-Hold。页面可以按 ZNB 第 558 页显示 Idle、Preparing、Continuous/Sweeping 与
-Calculation 等状态，但显示文字不得成为另一套状态机。
+Continuous 在完整提交后继续 Preparing；Single 在指定轮数全部完成后进入 Hold。
+页面按 ZNB 第 558 页显示 Hold、Preparing、Sweeping、Calculation 与 Failed；
+内部 Publishing 归入 Calculation，不得成为公开状态或另一套状态机。
 
 ## 4. 统一运行控制
 
@@ -145,6 +145,10 @@ K17 选件（第 531、1307 页）。首期不启用该选件。
 - acquisition 交付按源状态和连续频点范围标识的 raw chunk；数据面按当前计划从
   chunk 合成 Measurement 并投影 Trace Preview，前端不接触 raw receiver 数据。
 - Preview 只走 latest-only 实时推送；慢客户端可以丢过时 Preview。
+- 权威完整 Sweep 进度以 `points × sourceStates` 为分母，以已校验 raw range
+  样本数为分子；All-S 与多 Trace 复用同一采集工作，不重复增加分母。
+- 设置导致 material generation 变化后，首轮标记从安全边界应用开始，直到该代
+  首个完整 FrameSet 成功发布才清除；Scale 与 Restart 不单独置位。
 - Preview 不进入 FrameRepository，不可 REST/SCPI 查询、不可记录，不参与文件保存、
   Marker、Limit 或 Operation 完成判断，也不写逐 chunk 运行日志。
 - Restart、失败、连接到新 SweepId 或 generation 变化时立即废弃旧 currentPartial；

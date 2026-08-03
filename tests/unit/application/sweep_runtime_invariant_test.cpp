@@ -10,6 +10,7 @@
 #include <vna/application/sweep_runtime.hpp>
 #include <vna/application/trace_publication_catalog.hpp>
 #include <vna/test/continuous_acquisition_test_support.hpp>
+#include <vna/test/sweep_status_test_support.hpp>
 
 namespace vna::application {
 namespace {
@@ -49,7 +50,7 @@ protected:
         preset_.acquisitionChannelId, repository_,
         {0, {}, preset_.commandBusState.instrument.snapshot(),
          preset_.commandBusState.displayWorkspace.snapshot()}};
-    SweepPreviewExchange previews_;
+    SweepPreviewExchange previews_{vna::test::testSweepStatus()};
     OperationManager operations_;
 };
 
@@ -63,7 +64,7 @@ TEST_F(SweepRuntimeInvariantTest, OperationMismatchFailsRuntimeWithoutOrphan) {
     const auto operationId = std::get<OperationId>(runtime.requestRestart(
         domain::ChannelId{1}, {
         CommandId{"restart-invariant"}, SessionId{"session-1"}, 5}));
-    const auto preview = waitBounded(previews_, SweepPreviewCursor{0});
+    const auto preview = waitBounded(previews_, SweepPreviewCursor{3});
     auto tampered = OperationResult{OperationError{
         .code = OperationErrorCode::NotFound}};
     if (preview.has_value()) {
@@ -89,7 +90,12 @@ TEST_F(SweepRuntimeInvariantTest, OperationMismatchFailsRuntimeWithoutOrphan) {
     const auto cursor = std::get<SweepPreviewAvailable>(*preview).cursor;
     const auto invalidated = waitBounded(previews_, cursor);
     ASSERT_TRUE(invalidated.has_value());
-    EXPECT_TRUE(std::holds_alternative<SweepPreviewInvalidated>(*invalidated));
+    const auto& status = std::visit(
+        [](const auto& value) -> const SweepPreviewStreamStatus& {
+            return value.status;
+        }, *invalidated);
+    EXPECT_EQ(status.runtime.userPhase, SweepUserPhase::Failed);
+    EXPECT_EQ(status.activePreviewIdentity, std::nullopt);
 }
 }  // namespace
 }  // namespace vna::application

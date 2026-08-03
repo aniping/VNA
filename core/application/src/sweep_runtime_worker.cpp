@@ -50,8 +50,6 @@ void SweepRuntimeImpl::run(std::stop_token token) noexcept {
         }
         finish(SweepRuntimeState::Stopped);
     } catch (...) {
-        invalidate({plan_.publication->generation,
-                    acquisition::SweepId{sequence}});
         failTerminal(std::current_exception());
     }
 }
@@ -66,6 +64,11 @@ SweepDisposition SweepRuntimeImpl::capture(
         std::lock_guard lock{mutex_};
         activeIdentity_ = identity;
         cycleStop = activeStop_;
+        setDisplayStatusLocked(
+            SweepUserPhase::Preparing,
+            identity.sweepId,
+            0);
+        previews_.updateForRuntime(displayStatusLocked());
     }
     std::stop_callback stopCycle{
         token, [cycleStop] { cycleStop->request_stop(); }};
@@ -79,59 +82,36 @@ SweepDisposition SweepRuntimeImpl::capture(
     const auto observer = [&](const auto& range) {
         observePreviewRange(assembler, previewRejected, identity, range);
     };
-    {
-        std::lock_guard lock{mutex_};
-        snapshot_.phase = SweepRuntimePhase::Sweeping;
-    }
     auto captured = source_(
         {plan_.acquisition, identity.sweepId, sequence,
          plan_.maximumPointsPerChunk},
         observer, cycleStop->get_token());
     if (cycleStop->stop_requested()) {
-        invalidate(identity);
-        cancelActiveAfterSource();
+        cancelActiveAfterSource(identity);
         return SweepDisposition::Canceled;
     }
     if (std::holds_alternative<
             acquisition::RawSweepCaptureCanceled>(captured)) {
         throw std::logic_error{"capture canceled without a stop request"};
     }
-    {
+    if (std::holds_alternative<frames::RawReceiverPayload>(captured)) {
         std::lock_guard lock{mutex_};
-        snapshot_.phase = SweepRuntimePhase::Publishing;
+        setDisplayStatusLocked(
+            SweepUserPhase::Calculation,
+            identity.sweepId,
+            snapshot_.progress.totalPoints);
+        previews_.updateForRuntime(displayStatusLocked());
     }
     return complete(sequence, identity, std::move(captured));
-}
-
-void SweepRuntimeImpl::observePreviewRange(
-    SweepPreviewAssembler& assembler,
-    bool& previewRejected,
-    SweepPreviewIdentity identity,
-    const acquisition::RawSweepPointRange& range) {
-    if (previewRejected) {
-        return;
-    }
-    auto assembled = assembler.append(range);
-    if (const auto* preview = std::get_if<SweepPreview>(&assembled)) {
-        const auto published = previews_.publish(*preview);
-        previewRejected =
-            std::holds_alternative<SweepPreviewError>(published);
-    } else if (std::holds_alternative<SweepPreviewAssemblyError>(assembled)) {
-        previewRejected = true;
-    }
-    if (previewRejected) {
-        rejectPreview(identity);
-    }
 }
 
 SweepDisposition SweepRuntimeImpl::complete(
     std::uint64_t sequence, SweepPreviewIdentity identity,
     acquisition::RawSweepCaptureResult captured) {
     if (const auto* error = std::get_if<frames::FrameError>(&captured)) {
-        invalidate(identity);
         const auto rejected = failure(
             SweepRuntimeFailureCode::CaptureFailed, sequence, *error);
-        reject(rejected);
+        reject(identity, rejected);
         failRequestedSweep(rejected);
         return SweepDisposition::Continue;
     }
@@ -142,36 +122,32 @@ SweepDisposition SweepRuntimeImpl::complete(
     };
     auto frameSet = internal::buildTraceDisplayFrameSet(raw, *plan_.publication);
     if (!frameSet) {
-        invalidate(identity);
         const auto rejected = failure(
             SweepRuntimeFailureCode::CompleteProcessingFailed, sequence);
-        reject(rejected);
+        reject(identity, rejected);
         failRequestedSweep(rejected);
         return SweepDisposition::Continue;
     }
     if (!claimPublication()) {
-        invalidate(identity);
-        cancelActiveAfterSource();
+        cancelActiveAfterSource(identity);
         return SweepDisposition::Canceled;
     }
     const auto published = catalog_.publishIfCurrent(
         plan_.publication, std::move(*frameSet));
-    invalidate(identity);
     if (const auto* error =
             std::get_if<TracePublicationCatalogError>(&published)) {
         if (error->code ==
             TracePublicationCatalogErrorCode::StalePublication) {
-            retireAfterSource();
+            retireAfterSource(identity);
             return SweepDisposition::Retire;
         }
         const auto rejected = failure(
             SweepRuntimeFailureCode::PublicationRejected, sequence, *error);
-        reject(rejected);
+        reject(identity, rejected);
         failRequestedSweep(rejected);
         return SweepDisposition::Continue;
     }
-    recordCompleted();
-    completeRequestedSweep(frames::FrameId{sequence});
+    completeRequestedSweep(identity, frames::FrameId{sequence});
     return SweepDisposition::Continue;
 }
 
@@ -196,17 +172,6 @@ bool SweepRuntimeImpl::paceUntil(
     return !token.stop_requested();
 }
 
-void SweepRuntimeImpl::rejectPreview(
-    SweepPreviewIdentity identity) noexcept {
-    invalidate(identity);
-    std::lock_guard lock{mutex_};
-    ++snapshot_.previewRejectedSweeps;
-}
-
-void SweepRuntimeImpl::invalidate(SweepPreviewIdentity identity) noexcept {
-    static_cast<void>(previews_.invalidate(identity));
-}
-
 void SweepRuntimeImpl::failTerminal(
     std::exception_ptr failure,
     std::optional<OperationId> detachedFirst,
@@ -220,16 +185,25 @@ void SweepRuntimeImpl::failTerminal(
         finalizingPublication_ = false;
         cycleCancellationRequested_ = false;
         queued = std::exchange(pendingOperation_, std::nullopt);
-        identity = std::exchange(activeIdentity_, std::nullopt);
+        identity = activeIdentity_;
+        setDisplayStatusLocked(
+            SweepUserPhase::Failed,
+            identity.has_value()
+                ? std::optional{identity->sweepId}
+                : snapshot_.activeSweepId,
+            snapshot_.progress.completedPoints);
+        if (identity.has_value()) {
+            invalidateLocked(*identity);
+        } else {
+            previews_.updateForRuntime(displayStatusLocked());
+        }
+        activeIdentity_.reset();
         activeStop_.reset();
         if (activeRequest_.has_value()) {
             active = activeRequest_->operationId;
             activeRequest_.reset();
         }
         changed_.notify_all();
-    }
-    if (identity.has_value()) {
-        invalidate(*identity);
     }
     for (const auto operation : {
              detachedFirst, detachedSecond, queued, active}) {

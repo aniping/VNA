@@ -13,6 +13,7 @@
 #include <vna/application/command_bus.hpp>
 #include <vna/application/factory_preset.hpp>
 #include <vna/application/sweep_runtime.hpp>
+#include <vna/test/sweep_status_test_support.hpp>
 
 namespace vna::application {
 namespace {
@@ -75,15 +76,15 @@ CommandEnvelope restartCommand(const char* id, const char* session) {
     };
 }
 
-TEST(StartSingleSweepReentrancyTest,
-     ReplacedQueuedOperationCallbackReentersBusAfterUnlock) {
+TEST(StartSingleSweepReentrancyTest, ReplacedQueuedOperationCallbackReentersBusAfterUnlock) {
     auto preset = makeFactoryPreset();
     static_cast<void>(preset.commandBusState.instrument.updateChannelSweepControl(
         domain::ChannelId{1}, domain::SweepMode::Single, 1));
     TraceDisplayFrameRepository repository{4};
     TracePublicationCatalog catalog{
         preset.acquisitionChannelId, repository, presetState(preset)};
-    SweepPreviewExchange previews;
+    SweepPreviewExchange previews{
+        vna::test::testSweepStatus(preset.acquisitionPlan)};
     OperationManager operations;
     DelayedCancelSource source;
     SweepRuntime runtime{{preset.acquisitionPlan, catalog.capture(), 32,

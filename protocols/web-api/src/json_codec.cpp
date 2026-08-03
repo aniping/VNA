@@ -88,16 +88,18 @@ const char* runtimeStateName(application::SweepRuntimeState state) {
     return "unknown";
 }
 
-const char* runtimePhaseName(application::SweepRuntimePhase phase) {
+const char* runtimePhaseName(application::SweepUserPhase phase) {
     switch (phase) {
-        case application::SweepRuntimePhase::Hold:
+        case application::SweepUserPhase::Hold:
             return "hold";
-        case application::SweepRuntimePhase::Preparing:
+        case application::SweepUserPhase::Preparing:
             return "preparing";
-        case application::SweepRuntimePhase::Sweeping:
+        case application::SweepUserPhase::Sweeping:
             return "sweeping";
-        case application::SweepRuntimePhase::Publishing:
-            return "publishing";
+        case application::SweepUserPhase::Calculation:
+            return "calculation";
+        case application::SweepUserPhase::Failed:
+            return "failed";
     }
     return "unknown";
 }

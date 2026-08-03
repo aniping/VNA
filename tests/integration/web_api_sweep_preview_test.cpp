@@ -57,7 +57,6 @@ protected:
             serverThread_.join();
         }
     }
-
     application::SweepPreview preview(std::size_t points) const {
         const std::vector<double> frequencies{10.0, 20.0, 30.0};
         return {
@@ -77,7 +76,6 @@ protected:
             },
         };
     }
-
     application::SweepTracePreview cartesianTrace(
         PreviewTraceSpec spec,
         std::vector<double> frequencies,
@@ -93,7 +91,6 @@ protected:
             spec.type, spec.format, std::move(frequencies),
             application::CartesianTraceDisplaySamples{unit, std::move(values)}};
     }
-
     application::SweepTracePreview smithTrace(
         std::vector<double> frequencies,
         std::size_t points) const {
@@ -108,13 +105,11 @@ protected:
             application::ComplexTraceDisplaySamples{
                 application::TraceDisplayUnit::Unitless, std::move(values)}};
     }
-
     void publish(std::size_t points) {
         const auto result = commandBus_.previews().publish(preview(points));
         ASSERT_TRUE(std::holds_alternative<
                     application::SweepPreviewHandle>(result));
     }
-
     std::unique_ptr<httplib::ws::WebSocketClient> connect() const {
         auto client = std::make_unique<httplib::ws::WebSocketClient>(
             "ws://127.0.0.1:" + std::to_string(port_) +
@@ -125,13 +120,11 @@ protected:
         }
         return client;
     }
-
     Json read(httplib::ws::WebSocketClient& client) const {
         std::string message;
         EXPECT_EQ(client.read(message), httplib::ws::ReadResult::Text);
         return Json::parse(message);
     }
-
     void expectAvailable(
         const Json& body,
         std::uint64_t eventCursor,
@@ -145,6 +138,9 @@ protected:
         EXPECT_EQ(body.at("stateRevision"), 4U);
         EXPECT_EQ(body.at("sequenceNumber"), 7U);
         EXPECT_EQ(body.at("totalPointCount"), 3U);
+        EXPECT_EQ(body.at("sweepStatus").at("generation"), 1U);
+        EXPECT_EQ(body.at("sweepStatus").at("activePreviewIdentity"),
+                  Json({{"generation", 1}, {"sweepId", 7}}));
         ASSERT_EQ(body.at("traces").size(), 3U);
         EXPECT_EQ(body.at("traces").at(0).at("traceId"), 1U);
         EXPECT_EQ(body.at("traces").at(0).at("measurementId"), 1U);
@@ -159,7 +155,7 @@ protected:
                   Json::array({0.1, 0.2}));
     }
 
-    application::FactoryPreset preset_{application::makeFactoryPreset()};
+    application::FactoryPreset preset_{vna::test::singleSweepFactoryPreset()};
     application::OperationManager operations_;
     vna::test::StoppedCommandBus commandBus_;
     application::TraceDisplayFrameRepository repository_{4};
@@ -168,10 +164,10 @@ protected:
     int port_{-1};
     std::thread serverThread_;
 };
-
 TEST_F(WebApiSweepPreviewTest, PublishesAvailablePrefixToWaitingClient) {
     auto client = connect();
     ASSERT_NE(client, nullptr);
+    EXPECT_EQ(read(*client).at("type"), "status");
     auto reading = std::async(std::launch::async, [&client] {
         std::string message;
         const auto result = client->read(message);
@@ -187,7 +183,7 @@ TEST_F(WebApiSweepPreviewTest, PublishesAvailablePrefixToWaitingClient) {
     ASSERT_EQ(status, std::future_status::ready);
     const auto [result, message] = reading.get();
     ASSERT_EQ(result, httplib::ws::ReadResult::Text);
-    expectAvailable(Json::parse(message), 1, 2);
+    expectAvailable(Json::parse(message), 2, 2);
     client->close();
 }
 
@@ -195,13 +191,13 @@ TEST_F(WebApiSweepPreviewTest, ReconnectBootstrapsLatestCumulativePrefix) {
     publish(2);
     auto first = connect();
     ASSERT_NE(first, nullptr);
-    expectAvailable(read(*first), 1, 2);
+    expectAvailable(read(*first), 2, 2);
     first->close();
 
     publish(3);
     auto reconnected = connect();
     ASSERT_NE(reconnected, nullptr);
-    expectAvailable(read(*reconnected), 2, 3);
+    expectAvailable(read(*reconnected), 3, 3);
     reconnected->close();
 }
 
@@ -209,27 +205,31 @@ TEST_F(WebApiSweepPreviewTest, StreamsInvalidationAndGenerationAdvance) {
     publish(2);
     auto client = connect();
     ASSERT_NE(client, nullptr);
-    expectAvailable(read(*client), 1, 2);
+    expectAvailable(read(*client), 2, 2);
 
     EXPECT_TRUE(commandBus_.previews().invalidate({1, acquisition::SweepId{7}}));
     const auto invalidated = read(*client);
-    EXPECT_EQ(invalidated, Json({{"type", "invalidated"},
-                                 {"eventCursor", 2},
-                                 {"generation", 1},
-                                 {"sweepId", 7}}));
+    EXPECT_EQ(invalidated.at("type"), "invalidated");
+    EXPECT_EQ(invalidated.at("eventCursor"), 3U);
+    EXPECT_EQ(invalidated.at("generation"), 1U);
+    EXPECT_EQ(invalidated.at("sweepStatus").at("activePreviewIdentity"),
+              nullptr);
     const auto advanced = commandBus_.previews().advanceGeneration(2);
     ASSERT_TRUE(std::holds_alternative<
                 application::SweepPreviewGenerationAdvanced>(advanced));
     const auto generation = read(*client);
-    EXPECT_EQ(generation, Json({{"type", "generationAdvanced"},
-                                {"eventCursor", 3},
-                                {"generation", 2}}));
+    EXPECT_EQ(generation.at("type"), "generationAdvanced");
+    EXPECT_EQ(generation.at("eventCursor"), 4U);
+    EXPECT_EQ(generation.at("generation"), 2U);
+    EXPECT_TRUE(generation.at("sweepStatus")
+                    .at("firstSweepAfterConfiguration"));
     client->close();
 }
 
 TEST_F(WebApiSweepPreviewTest, StopWakesReaderWithoutAnEvent) {
     auto client = connect();
     ASSERT_NE(client, nullptr);
+    EXPECT_EQ(read(*client).at("type"), "status");
     auto reading = std::async(std::launch::async, [&client] {
         std::string message;
         return client->read(message);

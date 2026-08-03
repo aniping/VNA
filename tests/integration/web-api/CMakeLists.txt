@@ -52,6 +52,7 @@ vna_configure_web_api_test(vna_web_api_static_tests)
 add_executable(
     vna_web_api_websocket_tests
     ../web_api_sweep_preview_test.cpp
+    ../web_api_sweep_status_test.cpp
     ../web_api_websocket_frame_set_test.cpp
     ../web_api_websocket_latest_test.cpp
     ../web_api_websocket_lifecycle_test.cpp

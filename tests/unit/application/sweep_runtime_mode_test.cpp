@@ -10,6 +10,7 @@
 #include <vna/application/factory_preset.hpp>
 #include <vna/application/sweep_runtime.hpp>
 #include <vna/test/continuous_acquisition_test_support.hpp>
+#include <vna/test/sweep_status_test_support.hpp>
 #include <vna/test/stopped_single_sweep_handler.hpp>
 
 namespace vna::application {
@@ -130,7 +131,8 @@ TEST(SweepRuntimeModeTest, ContinuousConfigurationWakesHeldWorker) {
     TraceDisplayFrameRepository repository{4};
     TracePublicationCatalog catalog{
         preset.acquisitionChannelId, repository, presetSnapshot(preset)};
-    SweepPreviewExchange previews;
+    SweepPreviewExchange previews{
+        vna::test::testSweepStatus(preset.acquisitionPlan)};
     OperationManager operations;
     BlockingRawSource source;
     SweepRuntime runtime{

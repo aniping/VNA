@@ -5,6 +5,7 @@
 #include <variant>
 
 #include <vna/application/sweep_preview_exchange.hpp>
+#include <vna/test/sweep_status_test_support.hpp>
 
 namespace vna::application {
 namespace {
@@ -30,7 +31,7 @@ SweepPreview validPreview() {
 }
 
 SweepPreviewErrorCode rejectedCode(SweepPreview preview) {
-    SweepPreviewExchange exchange;
+    SweepPreviewExchange exchange{vna::test::testSweepStatus()};
     const auto result = exchange.publish(std::move(preview));
     EXPECT_TRUE(std::holds_alternative<SweepPreviewError>(result));
     return std::get<SweepPreviewError>(result).code;
@@ -138,7 +139,7 @@ TEST(SweepPreviewValidationTest, RejectsInvalidPrefixShapeAndValues) {
 }
 
 TEST(SweepPreviewValidationTest, RejectsRegressedOrRewrittenCumulativePrefix) {
-    SweepPreviewExchange exchange;
+    SweepPreviewExchange exchange{vna::test::testSweepStatus()};
     ASSERT_TRUE(std::holds_alternative<SweepPreviewHandle>(
         exchange.publish(validPreview())));
 
@@ -174,7 +175,7 @@ TEST(SweepPreviewValidationTest, RejectsRegressedOrRewrittenCumulativePrefix) {
 }
 
 TEST(SweepPreviewValidationTest, RejectionKeepsLastPreviewAndCursor) {
-    SweepPreviewExchange exchange;
+    SweepPreviewExchange exchange{vna::test::testSweepStatus()};
     ASSERT_TRUE(std::holds_alternative<SweepPreviewHandle>(
         exchange.publish(validPreview())));
     auto invalidNext = validPreview();
@@ -190,7 +191,7 @@ TEST(SweepPreviewValidationTest, RejectionKeepsLastPreviewAndCursor) {
     ASSERT_TRUE(retained.has_value());
     const auto* available = std::get_if<SweepPreviewAvailable>(&*retained);
     ASSERT_NE(available, nullptr);
-    EXPECT_EQ(available->cursor.value, 1U);
+    EXPECT_EQ(available->cursor.value, 2U);
     EXPECT_EQ(available->preview->identity.sweepId, acquisition::SweepId{9});
 }
 

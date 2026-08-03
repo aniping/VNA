@@ -75,6 +75,45 @@ Json previewTraceToJson(const vna::application::SweepTracePreview& trace) {
     return body;
 }
 
+const char* userPhaseName(vna::application::SweepUserPhase phase) {
+    switch (phase) {
+        case vna::application::SweepUserPhase::Hold: return "hold";
+        case vna::application::SweepUserPhase::Preparing: return "preparing";
+        case vna::application::SweepUserPhase::Sweeping: return "sweeping";
+        case vna::application::SweepUserPhase::Calculation:
+            return "calculation";
+        case vna::application::SweepUserPhase::Failed: return "failed";
+    }
+    return "unknown";
+}
+
+Json sweepStatusToJson(
+    const vna::application::SweepPreviewStreamStatus& status) {
+    Json sweepId = nullptr;
+    if (status.runtime.sweepId.has_value()) {
+        sweepId = status.runtime.sweepId->value();
+    }
+    Json active = nullptr;
+    if (status.activePreviewIdentity.has_value()) {
+        active = {{"generation", status.activePreviewIdentity->generation},
+                  {"sweepId", status.activePreviewIdentity->sweepId.value()}};
+    }
+    return {
+        {"generation", status.runtime.generation},
+        {"channelId", status.runtime.channelId.value()},
+        {"stateRevision", status.runtime.stateRevision},
+        {"sweepId", std::move(sweepId)},
+        {"userPhase", userPhaseName(status.runtime.userPhase)},
+        {"progress",
+         {{"completedAcquisitionPoints",
+           status.runtime.progress.completedPoints},
+          {"totalAcquisitionPoints", status.runtime.progress.totalPoints}}},
+        {"firstSweepAfterConfiguration",
+         status.runtime.firstSweepAfterConfiguration},
+        {"activePreviewIdentity", std::move(active)},
+    };
+}
+
 Json previewEventToJson(const vna::application::SweepPreviewAvailable& event) {
     const auto& preview = *event.preview;
     Json traces = Json::array();
@@ -91,6 +130,7 @@ Json previewEventToJson(const vna::application::SweepPreviewAvailable& event) {
         {"sequenceNumber", preview.sequenceNumber},
         {"totalPointCount", preview.totalPointCount},
         {"traces", std::move(traces)},
+        {"sweepStatus", sweepStatusToJson(event.status)},
     };
 }
 
@@ -100,6 +140,7 @@ Json previewEventToJson(const vna::application::SweepPreviewInvalidated& event) 
         {"eventCursor", event.cursor.value},
         {"generation", event.identity.generation},
         {"sweepId", event.identity.sweepId.value()},
+        {"sweepStatus", sweepStatusToJson(event.status)},
     };
 }
 
@@ -109,6 +150,16 @@ Json previewEventToJson(
         {"type", "generationAdvanced"},
         {"eventCursor", event.cursor.value},
         {"generation", event.generation},
+        {"sweepStatus", sweepStatusToJson(event.status)},
+    };
+}
+
+Json previewEventToJson(
+    const vna::application::SweepPreviewStatusChanged& event) {
+    return {
+        {"type", "status"},
+        {"eventCursor", event.cursor.value},
+        {"sweepStatus", sweepStatusToJson(event.status)},
     };
 }
 

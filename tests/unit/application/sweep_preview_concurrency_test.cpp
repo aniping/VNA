@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <vna/application/sweep_preview_exchange.hpp>
+#include <vna/test/sweep_status_test_support.hpp>
 
 namespace vna::application {
 namespace {
@@ -58,7 +59,7 @@ void expectAvailableCursor(
 
 TEST(SweepPreviewConcurrencyTest, InvalidateLinearizesWithPublish) {
     for (int iteration = 0; iteration < 100; ++iteration) {
-        SweepPreviewExchange exchange;
+        SweepPreviewExchange exchange{vna::test::testSweepStatus()};
         const SweepPreviewIdentity identity{1, acquisition::SweepId{9}};
         ASSERT_TRUE(std::holds_alternative<SweepPreviewHandle>(
             exchange.publish(previewFor(identity.sweepId, 1))));
@@ -84,9 +85,9 @@ TEST(SweepPreviewConcurrencyTest, InvalidateLinearizesWithPublish) {
         if (const auto* error = std::get_if<SweepPreviewError>(&*published)) {
             EXPECT_EQ(error->code, SweepPreviewErrorCode::SweepIdRegression);
         }
-        const auto invalidatedCursor = invalidatedCursorAfter(exchange, {1});
-        EXPECT_GE(invalidatedCursor.value, 2U);
-        EXPECT_LE(invalidatedCursor.value, 3U);
+        const auto invalidatedCursor = invalidatedCursorAfter(exchange, {2});
+        EXPECT_GE(invalidatedCursor.value, 3U);
+        EXPECT_LE(invalidatedCursor.value, 4U);
         const auto late = exchange.publish(previewFor(identity.sweepId, 3));
         ASSERT_TRUE(std::holds_alternative<SweepPreviewError>(late));
         EXPECT_EQ(
@@ -102,7 +103,7 @@ TEST(SweepPreviewConcurrencyTest, InvalidateLinearizesWithPublish) {
 
 TEST(SweepPreviewConcurrencyTest, GenerationAdvanceWinsOverOldPublish) {
     for (int iteration = 0; iteration < 100; ++iteration) {
-        SweepPreviewExchange exchange;
+        SweepPreviewExchange exchange{vna::test::testSweepStatus()};
         std::promise<void> startPromise;
         auto start = startPromise.get_future().share();
         std::optional<SweepPreviewPublishResult> published;
@@ -132,8 +133,8 @@ TEST(SweepPreviewConcurrencyTest, GenerationAdvanceWinsOverOldPublish) {
             std::get_if<SweepPreviewGenerationAdvanced>(&*event);
         ASSERT_NE(generationEvent, nullptr);
         EXPECT_EQ(generationEvent->generation, 2U);
-        EXPECT_GE(generationEvent->cursor.value, 1U);
-        EXPECT_LE(generationEvent->cursor.value, 2U);
+        EXPECT_GE(generationEvent->cursor.value, 2U);
+        EXPECT_LE(generationEvent->cursor.value, 3U);
         const auto late = exchange.publish(
             previewFor(acquisition::SweepId{10}, 2));
         ASSERT_TRUE(std::holds_alternative<SweepPreviewError>(late));
@@ -152,32 +153,32 @@ TEST(SweepPreviewConcurrencyTest, GenerationAdvanceWinsOverOldPublish) {
 }
 
 TEST(SweepPreviewConcurrencyTest, BothInvalidateOrdersHaveExactCursors) {
-    SweepPreviewExchange publishFirst;
+    SweepPreviewExchange publishFirst{vna::test::testSweepStatus()};
     ASSERT_TRUE(std::holds_alternative<SweepPreviewHandle>(
         publishFirst.publish(previewFor(acquisition::SweepId{9}, 1))));
     ASSERT_TRUE(std::holds_alternative<SweepPreviewHandle>(
         publishFirst.publish(previewFor(acquisition::SweepId{9}, 2))));
     ASSERT_TRUE(publishFirst.invalidate({1, acquisition::SweepId{9}}));
-    EXPECT_EQ(invalidatedCursorAfter(publishFirst, {2}).value, 3U);
+    EXPECT_EQ(invalidatedCursorAfter(publishFirst, {3}).value, 4U);
 
-    SweepPreviewExchange invalidateFirst;
+    SweepPreviewExchange invalidateFirst{vna::test::testSweepStatus()};
     ASSERT_TRUE(std::holds_alternative<SweepPreviewHandle>(
         invalidateFirst.publish(previewFor(acquisition::SweepId{9}, 1))));
     ASSERT_TRUE(invalidateFirst.invalidate({1, acquisition::SweepId{9}}));
     EXPECT_TRUE(std::holds_alternative<SweepPreviewError>(
         invalidateFirst.publish(previewFor(acquisition::SweepId{9}, 2))));
-    const auto retainedInvalidation = invalidateFirst.waitForNext({1});
+    const auto retainedInvalidation = invalidateFirst.waitForNext({2});
     ASSERT_TRUE(retainedInvalidation.has_value());
     EXPECT_EQ(
         std::get<SweepPreviewInvalidated>(*retainedInvalidation).cursor.value,
-        2U);
+        3U);
     ASSERT_TRUE(std::holds_alternative<SweepPreviewHandle>(
         invalidateFirst.publish(previewFor(acquisition::SweepId{10}, 2))));
-    expectAvailableCursor(invalidateFirst, {2}, 3U);
+    expectAvailableCursor(invalidateFirst, {3}, 4U);
 }
 
 TEST(SweepPreviewConcurrencyTest, BothGenerationOrdersHaveExactCursors) {
-    SweepPreviewExchange publishFirst;
+    SweepPreviewExchange publishFirst{vna::test::testSweepStatus()};
     ASSERT_TRUE(std::holds_alternative<SweepPreviewHandle>(
         publishFirst.publish(previewFor(acquisition::SweepId{9}, 2))));
     ASSERT_TRUE(std::holds_alternative<SweepPreviewGenerationAdvanced>(
@@ -186,9 +187,9 @@ TEST(SweepPreviewConcurrencyTest, BothGenerationOrdersHaveExactCursors) {
     afterPublish.identity.generation = 2;
     ASSERT_TRUE(std::holds_alternative<SweepPreviewHandle>(
         publishFirst.publish(std::move(afterPublish))));
-    expectAvailableCursor(publishFirst, {2}, 3U);
+    expectAvailableCursor(publishFirst, {3}, 4U);
 
-    SweepPreviewExchange advanceFirst;
+    SweepPreviewExchange advanceFirst{vna::test::testSweepStatus()};
     ASSERT_TRUE(std::holds_alternative<SweepPreviewGenerationAdvanced>(
         advanceFirst.advanceGeneration(2)));
     EXPECT_TRUE(std::holds_alternative<SweepPreviewError>(
@@ -198,12 +199,12 @@ TEST(SweepPreviewConcurrencyTest, BothGenerationOrdersHaveExactCursors) {
     EXPECT_EQ(
         std::get<SweepPreviewGenerationAdvanced>(
             *retainedGeneration).cursor.value,
-        1U);
+        2U);
     auto afterAdvance = previewFor(acquisition::SweepId{10}, 2);
     afterAdvance.identity.generation = 2;
     ASSERT_TRUE(std::holds_alternative<SweepPreviewHandle>(
         advanceFirst.publish(std::move(afterAdvance))));
-    expectAvailableCursor(advanceFirst, {1}, 2U);
+    expectAvailableCursor(advanceFirst, {2}, 3U);
 }
 
 }  // namespace

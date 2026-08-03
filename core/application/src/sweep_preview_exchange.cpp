@@ -19,10 +19,34 @@ SweepPreviewCursor cursorOf(const SweepPreviewEvent& event) {
         [](const auto& value) { return value.cursor; }, event);
 }
 
+bool statusMatchesPreview(
+    const SweepRuntimeDisplayStatus& status,
+    const SweepPreview& preview) {
+    return status.generation == preview.identity.generation &&
+        status.channelId == preview.channelId &&
+        status.stateRevision == preview.stateRevision &&
+        status.sweepId == std::optional{preview.identity.sweepId};
+}
+
 }  // namespace
 
 SweepPreviewPublishResult SweepPreviewExchange::publish(
     SweepPreview preview) {
+    return publishImpl(std::move(preview), nullptr);
+}
+
+SweepPreviewPublishResult SweepPreviewExchange::publishForRuntime(
+    SweepPreview preview,
+    SweepRuntimeDisplayStatus status) {
+    if (!validStatus(status)) {
+        return SweepPreviewError{SweepPreviewErrorCode::InvalidIdentity};
+    }
+    return publishImpl(std::move(preview), &status);
+}
+
+SweepPreviewPublishResult SweepPreviewExchange::publishImpl(
+    SweepPreview preview,
+    const SweepRuntimeDisplayStatus* runtimeStatus) {
     if (const auto invalid = internal::validateSweepPreview(preview)) {
         return *invalid;
     }
@@ -36,8 +60,7 @@ SweepPreviewPublishResult SweepPreviewExchange::publish(
             return SweepPreviewError{SweepPreviewErrorCode::FutureGeneration};
         }
         const auto sweepId = preview.identity.sweepId.value();
-        const auto continuing =
-            activeIdentity_.has_value() &&
+        const auto continuing = activeIdentity_.has_value() &&
             *activeIdentity_ == preview.identity;
         if (continuing && currentPreview_ != nullptr &&
             !internal::isCumulativeExtension(*currentPreview_, preview)) {
@@ -46,14 +69,25 @@ SweepPreviewPublishResult SweepPreviewExchange::publish(
         if (!continuing && sweepId <= lastSweepId_) {
             return SweepPreviewError{SweepPreviewErrorCode::SweepIdRegression};
         }
-        if (!continuing) {
-            activeIdentity_ = preview.identity;
-            lastSweepId_ = sweepId;
+        if (runtimeStatus != nullptr &&
+            !statusMatchesPreview(*runtimeStatus, preview)) {
+            return SweepPreviewError{SweepPreviewErrorCode::InvalidIdentity};
         }
         handle = std::make_shared<const SweepPreview>(std::move(preview));
+        const auto nextStatus = runtimeStatus == nullptr
+            ? status_
+            : *runtimeStatus;
+        PreviewEvent nextEvent{SweepPreviewAvailable{
+            SweepPreviewCursor{nextCursor_}, handle,
+            streamStatus(nextStatus, handle)}};
+        if (!continuing) {
+            activeIdentity_ = handle->identity;
+            lastSweepId_ = sweepId;
+        }
+        status_ = nextStatus;
         currentPreview_ = handle;
-        latestEvent_ = SweepPreviewAvailable{
-            SweepPreviewCursor{nextCursor_++}, handle};
+        ++nextCursor_;
+        latestEvent_.swap(nextEvent);
     }
     changed_.notify_all();
     return handle;
@@ -61,44 +95,50 @@ SweepPreviewPublishResult SweepPreviewExchange::publish(
 
 SweepPreviewGenerationResult SweepPreviewExchange::advanceGeneration(
     std::uint64_t nextGeneration) {
-    SweepPreviewGenerationAdvanced advanced{{}, nextGeneration};
-    {
-        std::lock_guard lock{mutex_};
-        if (generation_ == std::numeric_limits<std::uint64_t>::max() ||
-            nextCursor_ == std::numeric_limits<std::uint64_t>::max() ||
-            nextGeneration != generation_ + 1) {
-            return SweepPreviewError{SweepPreviewErrorCode::GenerationNotNext};
-        }
-        advanced.cursor = SweepPreviewCursor{nextCursor_};
-        // Materialize the event before the first visible mutation so this
-        // direct seam has the same strong guarantee as the runtime transaction.
-        PreviewEvent nextEvent{advanced};
-        const auto commitPrepared = [&]() noexcept {
-            generation_ = nextGeneration;
-            activeIdentity_.reset();
-            currentPreview_.reset();
-            ++nextCursor_;
-            latestEvent_.swap(nextEvent);
-        };
-        static_assert(noexcept(commitPrepared()));
-        commitPrepared();
+    std::lock_guard lock{mutex_};
+    if (generation_ == std::numeric_limits<std::uint64_t>::max() ||
+        nextCursor_ == std::numeric_limits<std::uint64_t>::max() ||
+        nextGeneration != generation_ + 1) {
+        return SweepPreviewError{SweepPreviewErrorCode::GenerationNotNext};
     }
+    auto nextStatus = status_;
+    nextStatus.generation = nextGeneration;
+    nextStatus.sweepId.reset();
+    nextStatus.userPhase = status_.userPhase == SweepUserPhase::Hold
+        ? SweepUserPhase::Hold
+        : SweepUserPhase::Preparing;
+    nextStatus.progress.completedPoints =
+        nextStatus.userPhase == SweepUserPhase::Hold
+        ? nextStatus.progress.totalPoints
+        : 0;
+    nextStatus.firstSweepAfterConfiguration = true;
+    SweepPreviewGenerationAdvanced advanced{
+        SweepPreviewCursor{nextCursor_}, nextGeneration,
+        streamStatus(nextStatus, nullptr)};
+    PreviewEvent nextEvent{advanced};
+    generation_ = nextGeneration;
+    status_ = nextStatus;
+    activeIdentity_.reset();
+    currentPreview_.reset();
+    ++nextCursor_;
+    latestEvent_.swap(nextEvent);
     changed_.notify_all();
     return advanced;
 }
 
 bool SweepPreviewExchange::invalidate(
     SweepPreviewIdentity identity) noexcept {
-    {
-        std::lock_guard lock{mutex_};
-        if (!activeIdentity_.has_value() || *activeIdentity_ != identity) {
-            return false;
-        }
-        activeIdentity_.reset();
-        currentPreview_.reset();
-        latestEvent_ = SweepPreviewInvalidated{
-            SweepPreviewCursor{nextCursor_++}, identity};
+    std::lock_guard lock{mutex_};
+    if (!activeIdentity_.has_value() || *activeIdentity_ != identity) {
+        return false;
     }
+    PreviewEvent nextEvent{SweepPreviewInvalidated{
+        SweepPreviewCursor{nextCursor_}, identity,
+        streamStatus(status_, nullptr)}};
+    activeIdentity_.reset();
+    currentPreview_.reset();
+    ++nextCursor_;
+    latestEvent_.swap(nextEvent);
     changed_.notify_all();
     return true;
 }
@@ -108,8 +148,6 @@ std::optional<SweepPreviewEvent> SweepPreviewExchange::waitForNext(
     std::stop_token token) const {
     std::optional<SweepPreviewEvent> result;
     {
-        // Cancellation notification takes the predicate mutex so it cannot
-        // race between the predicate check and the condition-variable wait.
         std::stop_callback notify{token, [this] {
             std::lock_guard lock{mutex_};
             changed_.notify_all();
@@ -117,14 +155,12 @@ std::optional<SweepPreviewEvent> SweepPreviewExchange::waitForNext(
         std::unique_lock lock{mutex_};
         changed_.wait(lock, [&] {
             return token.stop_requested() ||
-                   (latestEvent_.has_value() &&
-                    cursorOf(*latestEvent_).value > after.value);
+                (latestEvent_.has_value() &&
+                 cursorOf(*latestEvent_).value > after.value);
         });
         if (!token.stop_requested()) {
             result = latestEvent_;
         }
-        // A running stop callback can wait for this lock, so release it before
-        // destroying the callback registration.
         lock.unlock();
     }
     return result;

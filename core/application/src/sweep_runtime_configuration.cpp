@@ -112,7 +112,7 @@ void SweepRuntimeImpl::commitConfiguration(
     snapshot_.configuredStateRevision =
         pendingConfiguration_->plan.publication->stateRevision;
     snapshot_.configuredExecution = pendingConfiguration_->plan.execution;
-    if (snapshot_.phase == SweepRuntimePhase::Hold &&
+    if (snapshot_.phase == SweepUserPhase::Hold &&
         !pendingOperation_.has_value() && !activeRequest_.has_value()) {
         // Hold is already a safe Sweep boundary; applying here prevents a
         // configuration from remaining pending until a future Restart.
@@ -129,8 +129,14 @@ void SweepRuntimeImpl::applyPendingConfiguration() {
     if (pendingConfiguration_ == nullptr) {
         return;
     }
+    auto nextStatus = initialSweepRuntimeStatus(
+        pendingConfiguration_->plan);
+    const auto generationChanged = nextStatus.generation !=
+        snapshot_.appliedGeneration;
+    nextStatus.firstSweepAfterConfiguration =
+        snapshot_.firstSweepAfterConfiguration || generationChanged;
     auto committed = SweepGenerationTransaction::commit(
-        catalog_, previews_, pendingConfiguration_->publication);
+        catalog_, previews_, pendingConfiguration_->publication, nextStatus);
     if (std::holds_alternative<SweepGenerationCommitError>(committed)) {
         throw std::logic_error{"InternalInvariantViolation: generation commit"};
     }
@@ -140,6 +146,14 @@ void SweepRuntimeImpl::applyPendingConfiguration() {
     snapshot_.appliedStateRevision = plan_.publication->stateRevision;
     snapshot_.appliedGeneration = plan_.publication->generation;
     snapshot_.appliedExecution = plan_.execution;
+    snapshot_.phase = nextStatus.userPhase;
+    snapshot_.activeSweepId = nextStatus.sweepId;
+    snapshot_.progress = nextStatus.progress;
+    snapshot_.firstSweepAfterConfiguration =
+        nextStatus.firstSweepAfterConfiguration;
+    if (!generationChanged) {
+        previews_.updateForRuntime(displayStatusLocked());
+    }
 }
 
 }  // namespace vna::application::internal

@@ -156,6 +156,12 @@ latest 集合会立即发送。之后采用 latest-only 语义，慢客户端可
 每连接历史队列。客户端消息不作为业务命令；连续曲线必须使用该推送通道，不得轮询
 上面的 REST 单 Trace 诊断接口。
 
+`WS /api/v1/sweep-previews` 推送 latest-only 的累计扫频前缀和权威扫频状态。事件中的
+`sweepStatus` 使用 Preparing、Sweeping、Calculation、Hold、Failed 业务阶段及完整
+采集工作量进度；内部发布步骤不会作为用户状态暴露。配置代次变化后的首个完整帧
+发布前，`firstSweepAfterConfiguration` 为 `true`。连接重建后会从 retained 最新
+事件恢复，Preview 仍是暂态数据，不替代上述完整帧集真值。
+
 ## 前端开发
 
 需要 Node.js 20.19 或更高版本和 pnpm 11.9.0。保持 `vna-server` 运行，另开

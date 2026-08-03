@@ -87,6 +87,9 @@ public:
                   .instrument = initialState.instrument.snapshot(),
                   .display = initialState.displayWorkspace.snapshot(),
               }),
+          previews_(application::initialSweepRuntimeStatus(
+              {commandBusTestPlan(initialState), catalog_.capture(), 2,
+               commandBusTestExecution(initialState)})),
           runtime_(
               {commandBusTestPlan(initialState), catalog_.capture(), 2,
                commandBusTestExecution(initialState)},

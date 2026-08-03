@@ -12,6 +12,7 @@
 #include <vna/application/sweep_runtime.hpp>
 #include <vna/application/trace_publication_catalog.hpp>
 #include <vna/test/continuous_acquisition_test_support.hpp>
+#include <vna/test/sweep_status_test_support.hpp>
 
 namespace vna::application {
 namespace {
@@ -94,7 +95,7 @@ protected:
         preset_.acquisitionChannelId, repository_,
         {0, {}, preset_.commandBusState.instrument.snapshot(),
          preset_.commandBusState.displayWorkspace.snapshot()}};
-    SweepPreviewExchange previews_;
+    SweepPreviewExchange previews_{vna::test::testSweepStatus()};
     OperationManager operations_;
 };
 
@@ -103,7 +104,8 @@ TEST_F(SweepRuntimeControlTest, SingleRestartCompletesOnlyPublishedFrame) {
         {acquisition::test_support::validPlan(), catalog_.capture(), 2,
          {domain::SweepMode::Single, 1}},
         validSource, previews_, catalog_, operations_};
-    EXPECT_EQ(runtime.snapshot().phase, SweepRuntimePhase::Hold);
+    EXPECT_EQ(runtime.snapshot().phase, SweepUserPhase::Hold);
+    EXPECT_EQ(runtime.snapshot().progress, (SweepAcquisitionProgress{6, 6}));
 
     const auto submitted = runtime.requestRestart(domain::ChannelId{1}, {
         CommandId{"restart-1"}, SessionId{"session-1"}, 7});
@@ -119,7 +121,7 @@ TEST_F(SweepRuntimeControlTest, SingleRestartCompletesOnlyPublishedFrame) {
     const auto published = repository_.latestFrameSet();
     ASSERT_NE(published, nullptr);
     EXPECT_EQ(published->frames.front().frameId, succeeded->frameId);
-    EXPECT_EQ(runtime.snapshot().phase, SweepRuntimePhase::Hold);
+    EXPECT_EQ(runtime.snapshot().phase, SweepUserPhase::Hold);
     runtime.stop();
 }
 
@@ -141,7 +143,7 @@ TEST_F(SweepRuntimeControlTest, SingleCompletesAfterConfiguredSweepCount) {
     ASSERT_NE(succeeded, nullptr);
     EXPECT_EQ(succeeded->frameId, frames::FrameId{3});
     EXPECT_EQ(runtime.snapshot().completedSweeps, 3U);
-    EXPECT_EQ(runtime.snapshot().phase, SweepRuntimePhase::Hold);
+    EXPECT_EQ(runtime.snapshot().phase, SweepUserPhase::Hold);
     runtime.stop();
 }
 
@@ -176,7 +178,7 @@ TEST_F(SweepRuntimeControlTest, ReplacementCancelsQueuedBeforeActiveSource) {
     runtime.stop();
 }
 
-TEST_F(SweepRuntimeControlTest, SingleFailureFailsOperationAndHolds) {
+TEST_F(SweepRuntimeControlTest, SingleFailureKeepsFailedUntilRestart) {
     auto plan = acquisition::test_support::validPlan();
     plan.minimumSweepPeriod = 100ms;
     const auto source = [](
@@ -197,7 +199,7 @@ TEST_F(SweepRuntimeControlTest, SingleFailureFailsOperationAndHolds) {
                          operations_.snapshot(operationId)));
 
     EXPECT_TRUE(std::holds_alternative<OperationFailed>(terminal.state));
-    EXPECT_EQ(runtime.snapshot().phase, SweepRuntimePhase::Hold);
+    EXPECT_EQ(runtime.snapshot().phase, SweepUserPhase::Failed);
     runtime.stop();
 }
 

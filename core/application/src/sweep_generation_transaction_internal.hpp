@@ -24,7 +24,8 @@ public:
     [[nodiscard]] static SweepGenerationCommitResult commit(
         TracePublicationCatalog& catalog,
         SweepPreviewExchange& previews,
-        PreparedTracePublicationPlan& prepared);
+        PreparedTracePublicationPlan& prepared,
+        SweepRuntimeDisplayStatus status);
 
 private:
     [[nodiscard]] static bool canAdvance(
@@ -36,7 +37,8 @@ private:
         TracePublicationCatalog& catalog,
         SweepPreviewExchange& previews,
         std::unique_lock<std::mutex>& catalogLock,
-        TracePublicationPlanHandle candidate);
+        TracePublicationPlanHandle candidate,
+        SweepRuntimeDisplayStatus status);
 };
 
 }  // namespace vna::application::internal

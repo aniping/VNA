@@ -43,7 +43,13 @@ void SweepRuntimeImpl::settleRestart(
         return;
     }
     if (admission.activeIdentity.has_value()) {
-        invalidate(*admission.activeIdentity);
+        std::lock_guard lock{mutex_};
+        setDisplayStatusLocked(
+            SweepUserPhase::Preparing,
+            std::nullopt,
+            0);
+        invalidateLocked(*admission.activeIdentity);
+        activeIdentity_.reset();
     }
     if (admission.activeStop) {
         admission.activeStop->request_stop();

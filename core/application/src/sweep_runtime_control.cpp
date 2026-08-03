@@ -11,7 +11,13 @@ bool SweepRuntimeImpl::prepareCycle(std::stop_token token) {
     applyPendingConfiguration();
     if (!activeRequest_.has_value() &&
         plan_.execution.mode == domain::SweepMode::Single) {
-        snapshot_.phase = SweepRuntimePhase::Hold;
+        if (snapshot_.phase != SweepUserPhase::Failed) {
+            setDisplayStatusLocked(
+                SweepUserPhase::Hold,
+                std::nullopt,
+                snapshot_.progress.totalPoints);
+            previews_.updateForRuntime(displayStatusLocked());
+        }
         changed_.wait(lock, [&] {
             return token.stop_requested() || pendingOperation_.has_value() ||
                 plan_.execution.mode == domain::SweepMode::Continuous;
@@ -32,12 +38,12 @@ bool SweepRuntimeImpl::prepareCycle(std::stop_token token) {
                 ? plan_.execution.sweepCount
                 : 1};
     }
-    snapshot_.phase = SweepRuntimePhase::Preparing;
     activeStop_ = std::move(cycleStop);
     return true;
 }
 
-void SweepRuntimeImpl::cancelActiveAfterSource() {
+void SweepRuntimeImpl::cancelActiveAfterSource(
+    SweepPreviewIdentity identity) {
     std::optional<OperationId> operation;
     {
         std::lock_guard lock{mutex_};
@@ -48,6 +54,13 @@ void SweepRuntimeImpl::cancelActiveAfterSource() {
             operation = activeRequest_->operationId;
             activeRequest_.reset();
         }
+        const auto hold = plan_.execution.mode == domain::SweepMode::Single &&
+            !pendingOperation_.has_value();
+        setDisplayStatusLocked(
+            hold ? SweepUserPhase::Hold : SweepUserPhase::Preparing,
+            std::nullopt,
+            hold ? snapshot_.progress.totalPoints : 0);
+        invalidateLocked(identity);
     }
     if (operation.has_value()) {
         requireTransition(
@@ -57,7 +70,8 @@ void SweepRuntimeImpl::cancelActiveAfterSource() {
     changed_.notify_all();
 }
 
-void SweepRuntimeImpl::retireAfterSource() noexcept {
+void SweepRuntimeImpl::retireAfterSource(
+    SweepPreviewIdentity identity) noexcept {
     std::optional<OperationId> queued, active;
     {
         std::lock_guard lock{mutex_};
@@ -71,6 +85,11 @@ void SweepRuntimeImpl::retireAfterSource() noexcept {
             active = activeRequest_->operationId;
             activeRequest_.reset();
         }
+        setDisplayStatusLocked(
+            SweepUserPhase::Hold,
+            std::nullopt,
+            snapshot_.progress.totalPoints);
+        invalidateLocked(identity);
         changed_.notify_all();
     }
     if (auto failure = cancelDetachedRequests(queued, active)) {
@@ -78,7 +97,9 @@ void SweepRuntimeImpl::retireAfterSource() noexcept {
     }
 }
 
-void SweepRuntimeImpl::completeRequestedSweep(frames::FrameId frameId) {
+void SweepRuntimeImpl::completeRequestedSweep(
+    SweepPreviewIdentity identity,
+    frames::FrameId frameId) {
     std::optional<OperationId> operation;
     {
         std::lock_guard lock{mutex_};
@@ -90,10 +111,16 @@ void SweepRuntimeImpl::completeRequestedSweep(frames::FrameId frameId) {
             --activeRequest_->remainingSweeps == 0) {
             operation = activeRequest_->operationId;
             activeRequest_.reset();
-            snapshot_.phase = plan_.execution.mode == domain::SweepMode::Single
-                ? SweepRuntimePhase::Hold
-                : SweepRuntimePhase::Preparing;
         }
+        ++snapshot_.completedSweeps;
+        snapshot_.firstSweepAfterConfiguration = false;
+        const auto hold = plan_.execution.mode == domain::SweepMode::Single &&
+            !activeRequest_.has_value();
+        setDisplayStatusLocked(
+            hold ? SweepUserPhase::Hold : SweepUserPhase::Preparing,
+            std::nullopt,
+            hold ? snapshot_.progress.totalPoints : 0);
+        invalidateLocked(identity);
         changed_.notify_all();
     }
     if (operation.has_value()) {
@@ -117,9 +144,6 @@ void SweepRuntimeImpl::failRequestedSweep(
         if (activeRequest_.has_value()) {
             operation = activeRequest_->operationId;
             activeRequest_.reset();
-            snapshot_.phase = plan_.execution.mode == domain::SweepMode::Single
-                ? SweepRuntimePhase::Hold
-                : SweepRuntimePhase::Preparing;
         }
         changed_.notify_all();
     }

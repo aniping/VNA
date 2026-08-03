@@ -10,6 +10,7 @@
 #include <vna/application/factory_preset.hpp>
 #include <vna/application/sweep_runtime.hpp>
 #include <vna/test/continuous_acquisition_test_support.hpp>
+#include <vna/test/sweep_status_test_support.hpp>
 
 namespace vna::application {
 namespace {
@@ -109,7 +110,7 @@ protected:
     TraceDisplayFrameRepository repository_{4};
     TracePublicationCatalog catalog_{
         preset_.acquisitionChannelId, repository_, initial_};
-    SweepPreviewExchange previews_;
+    SweepPreviewExchange previews_{vna::test::testSweepStatus()};
     OperationManager operations_;
 };
 
@@ -135,15 +136,16 @@ TEST_F(SweepRuntimeConfigurationTest,
     EXPECT_EQ(catalog_.capture()->generation, 1U);
     source.release(1);
     ASSERT_TRUE(source.waitFor(2));
-
     EXPECT_EQ(catalog_.capture()->generation, 2U);
     const auto event = previews_.waitForNext({0});
     ASSERT_TRUE(event.has_value());
-    EXPECT_TRUE(std::holds_alternative<
-                SweepPreviewGenerationAdvanced>(*event));
+    const auto& status = std::visit(
+        [](const auto& value) -> const SweepPreviewStreamStatus& {
+            return value.status;
+        }, *event);
+    EXPECT_EQ(status.runtime.generation, 2U);
     runtime.stop();
 }
-
 TEST_F(SweepRuntimeConfigurationTest,
        AcquisitionChangeAdvancesGenerationAtNextBoundary) {
     BlockingSource source;
@@ -154,14 +156,12 @@ TEST_F(SweepRuntimeConfigurationTest,
     auto candidate = initial_;
     candidate.stateRevision = 1;
     candidate.instrument.channels[0].sweep.startFrequencyHz = 1'200'000;
-
     stage(runtime, candidate);
     EXPECT_EQ(catalog_.capture()->generation, 1U);
     EXPECT_EQ(runtime.snapshot().appliedStateRevision, 0U);
     EXPECT_EQ(runtime.snapshot().appliedGeneration, 1U);
     source.release(1);
     ASSERT_TRUE(source.waitFor(2));
-
     EXPECT_EQ(catalog_.capture()->generation, 2U);
     EXPECT_EQ(catalog_.capture()->stateRevision, 1U);
     EXPECT_EQ(runtime.snapshot().appliedStateRevision, 1U);
@@ -242,6 +242,7 @@ TEST_F(SweepRuntimeConfigurationTest,
     EXPECT_EQ(catalog_.capture()->generation, 1U);
     EXPECT_EQ(runtime.snapshot().appliedStateRevision, 1U);
     EXPECT_EQ(runtime.snapshot().appliedGeneration, 1U);
+    EXPECT_FALSE(runtime.snapshot().firstSweepAfterConfiguration);
     runtime.stop();
 }
 

@@ -61,10 +61,12 @@ public:
 private:
     [[nodiscard]] bool prepareCycle(std::stop_token token);
     void applyPendingConfiguration();
-    void completeRequestedSweep(frames::FrameId frameId);
+    void completeRequestedSweep(
+        SweepPreviewIdentity identity,
+        frames::FrameId frameId);
     void failRequestedSweep(const SweepRuntimeFailure& failure);
-    void cancelActiveAfterSource();
-    void retireAfterSource() noexcept;
+    void cancelActiveAfterSource(SweepPreviewIdentity identity);
+    void retireAfterSource(SweepPreviewIdentity identity) noexcept;
     [[nodiscard]] std::exception_ptr cancelDetachedRequests(
         std::optional<OperationId> queued, std::optional<OperationId> active) noexcept;
     [[nodiscard]] RestartAdmissionResult prepareRestart(
@@ -89,11 +91,16 @@ private:
         std::stop_token token) const;
     void notifyWorker() const;
     void recordAttempt();
-    void recordCompleted();
-    void reject(SweepRuntimeFailure failure);
-    void rejectPreview(SweepPreviewIdentity identity) noexcept;
+    void reject(
+        SweepPreviewIdentity identity,
+        SweepRuntimeFailure failure);
     [[nodiscard]] bool claimPublication() noexcept;
-    void invalidate(SweepPreviewIdentity identity) noexcept;
+    [[nodiscard]] SweepRuntimeDisplayStatus displayStatusLocked() const;
+    void setDisplayStatusLocked(
+        SweepUserPhase phase,
+        std::optional<acquisition::SweepId> sweepId,
+        std::uint64_t completedPoints) noexcept;
+    void invalidateLocked(SweepPreviewIdentity identity) noexcept;
     void finish(SweepRuntimeState state) noexcept;
     void failTerminal(
         std::exception_ptr failure,

@@ -24,7 +24,8 @@ static_assert(std::is_nothrow_move_assignable_v<TraceDisplayFrameSetHandle>);
 SweepGenerationCommitResult SweepGenerationTransaction::commit(
     TracePublicationCatalog& catalog,
     SweepPreviewExchange& previews,
-    PreparedTracePublicationPlan& prepared) {
+    PreparedTracePublicationPlan& prepared,
+    SweepRuntimeDisplayStatus status) {
     std::unique_lock catalogLock{catalog.mutex_};
     if (prepared.basePlan_.get() != catalog.current_.get()) {
         return SweepGenerationCommitError::StalePrepared;
@@ -34,7 +35,9 @@ SweepGenerationCommitResult SweepGenerationTransaction::commit(
         catalog.current_.swap(candidate);
         return catalog.current_;
     }
-    return advance(catalog, previews, catalogLock, std::move(candidate));
+    return advance(
+        catalog, previews, catalogLock, std::move(candidate),
+        std::move(status));
 }
 
 bool SweepGenerationTransaction::canAdvance(
@@ -58,17 +61,21 @@ SweepGenerationCommitResult SweepGenerationTransaction::advance(
     TracePublicationCatalog& catalog,
     SweepPreviewExchange& previews,
     std::unique_lock<std::mutex>& catalogLock,
-    TracePublicationPlanHandle candidate) {
+    TracePublicationPlanHandle candidate,
+    SweepRuntimeDisplayStatus status) {
     auto& repository = catalog.repository_;
     std::unique_lock repositoryLock{repository.mutex_};
     std::unique_lock previewLock{previews.mutex_};
     if (!canAdvance(repository, previews, catalog.current_->generation,
-                    candidate->generation)) {
+                    candidate->generation) ||
+        status.generation != candidate->generation ||
+        !SweepPreviewExchange::validStatus(status)) {
         return SweepGenerationCommitError::GenerationMismatch;
     }
     TraceMap emptyFrames;
     PreviewEvent nextEvent{SweepPreviewGenerationAdvanced{
-        SweepPreviewCursor{previews.nextCursor_}, candidate->generation}};
+        SweepPreviewCursor{previews.nextCursor_}, candidate->generation,
+        SweepPreviewStreamStatus{status, std::nullopt}}};
     const auto commitPrepared = [&]() noexcept {
         repository.generation_ = candidate->generation;
         repository.latestFrameSet_.reset();
@@ -79,6 +86,7 @@ SweepGenerationCommitResult SweepGenerationTransaction::advance(
             state->changed.notify_all();
         }
         previews.generation_ = candidate->generation;
+        previews.status_ = status;
         previews.activeIdentity_.reset();
         previews.currentPreview_.reset();
         ++previews.nextCursor_;

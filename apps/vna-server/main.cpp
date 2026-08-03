@@ -145,10 +145,13 @@ int runServer() {
     // access and CommandBus before the sole source-owning runtime and repos.
     vna::application::OperationManager operationManager;
     PublicationState publication{preset};
-    vna::application::SweepPreviewExchange previews;
+    auto runtimePlan = vna::application::SweepRuntimePlan{
+        std::move(preset.acquisitionPlan), publication.catalog.capture(),
+        maximumPointsPerChunk};
+    vna::application::SweepPreviewExchange previews{
+        vna::application::initialSweepRuntimeStatus(runtimePlan)};
     vna::application::SweepRuntime sweepRuntime{
-        {std::move(preset.acquisitionPlan), publication.catalog.capture(),
-         maximumPointsPerChunk},
+        std::move(runtimePlan),
         makeSimulationSource(), previews, publication.catalog,
         operationManager};
     logInfo("[连续扫频] 仿真持续测量已启动");
