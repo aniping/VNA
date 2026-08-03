@@ -50,7 +50,7 @@ CommandEnvelope command(const char* id, domain::MeasurementType type) {
 }
 
 TEST(TraceMeasurementTypeCommandConcurrencyTest, DispatchesLinearizeAtRevision) {
-    auto preset = makeFactoryPreset();
+    auto preset = vna::test::singleSweepFactoryPreset();
     vna::test::CommandBusRuntimeOwner runtimeOwner{
         preset.commandBusState, 4};
     CommandBus bus{

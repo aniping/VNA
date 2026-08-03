@@ -87,7 +87,7 @@ protected:
         return std::get_if<CommandSuccess>(&result.outcome);
     }
 
-    FactoryPreset preset_{makeFactoryPreset()};
+    FactoryPreset preset_{vna::test::singleSweepFactoryPreset()};
     vna::test::CommandBusRuntimeOwner runtimeOwner_{
         preset_.commandBusState, 8};
     TraceDisplayFrameRepository& repository_{runtimeOwner_.repository()};

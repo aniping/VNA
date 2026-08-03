@@ -9,7 +9,6 @@
 #include <utility>
 #include <variant>
 
-#include <vna/application/single_sweep_command_handler.hpp>
 #include <vna/application/trace_display_frame_query.hpp>
 #include <vna/application/trace_publication_catalog.hpp>
 #include <vna/test/stopped_single_sweep_handler.hpp>
@@ -21,6 +20,19 @@ using namespace std::chrono_literals;
 
 constexpr domain::SweepSettings sweep() {
     return {1'000'000, 2'000'000, 3, 1'000, -10.0};
+}
+
+CommandBusInitialState singleTraceState() {
+    CommandBusInitialState state;
+    const auto channel = state.instrument.createChannel(sweep()).value();
+    static_cast<void>(state.instrument.updateChannelSweepControl(
+        channel, domain::SweepMode::Single, 1));
+    const auto measurement = state.instrument.createMeasurement(
+        channel, domain::MeasurementType::S11).value();
+    const auto window = state.displayWorkspace.createWindow();
+    static_cast<void>(state.displayWorkspace.createTrace(
+        window, measurement, display_model::TraceFormat::LogMagnitude));
+    return state;
 }
 
 class QueryWaitCall {
@@ -72,25 +84,12 @@ private:
     std::jthread worker_;
 };
 
-class TraceDisplayFrameQueryWaitTest
-    : public ::testing::Test,
-      private SingleSweepExecution {
+class TraceDisplayFrameQueryWaitTest : public ::testing::Test {
 protected:
     TraceDisplayFrameQueryWaitTest()
-        : handler_(*this),
-          bus_(InstrumentId{"instrument-1"}, handler_, runtimeOwner_.runtime()),
+        : bus_(InstrumentId{"instrument-1"}, runtimeOwner_.runtime(),
+               std::move(initialState_)),
           query_(bus_, repository_) {}
-
-    void SetUp() override {
-        EXPECT_TRUE(success(dispatch(CreateChannelCommand{sweep()})));
-        EXPECT_TRUE(success(dispatch(CreateMeasurementCommand{
-            domain::ChannelId{1}, domain::MeasurementType::S11})));
-        EXPECT_TRUE(success(dispatch(CreateWindowCommand{})));
-        EXPECT_TRUE(success(dispatch(CreateTraceCommand{
-            display_model::WindowId{1},
-            domain::MeasurementId{1},
-            display_model::TraceFormat::LogMagnitude})));
-    }
 
     CommandResult dispatch(CommandPayload payload) {
         return bus_.dispatch(CommandEnvelope{
@@ -124,24 +123,10 @@ protected:
         };
     }
 
-private:
-    SingleSweepSubmitResult submit(SingleSweepWorkItem) override {
-        return SingleSweepSubmitError{SingleSweepSubmitErrorCode::Stopped};
-    }
-
-    void invalidateTraceFrame(
-        display_model::TraceId traceId) noexcept override {
-        repository_.discard(traceId);
-    }
-
-    void discardTrace(display_model::TraceId traceId) noexcept override {
-        repository_.discard(traceId);
-    }
-
 protected:
-    vna::test::CommandBusRuntimeOwner runtimeOwner_{{}, 1};
+    CommandBusInitialState initialState_{singleTraceState()};
+    vna::test::CommandBusRuntimeOwner runtimeOwner_{initialState_, 1};
     TraceDisplayFrameRepository& repository_{runtimeOwner_.repository()};
-    SingleSweepCommandHandler handler_;
     CommandBus bus_;
     TraceDisplayFrameQuery query_;
     std::uint64_t nextId_{1};

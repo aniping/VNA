@@ -37,6 +37,9 @@ test('Meas exposes the four choices and one All S-Params command', () => {
 
 test('production UI has no create Channel, Measurement, Trace, or Window path', () => {
   const productionSources = `${app}\n${mainScreen}`
+  const runner = app.match(
+    /async function runCommand[\s\S]*?\r?\n}\r?\n\r?\nasync function handleUpdateSweep/,
+  )?.[0] ?? ''
   const handler = app.match(
     /async function handleUpdateTraceMeasurementType[\s\S]*?\r?\n}\r?\n\r?\nasync function handleEnsure/,
   )?.[0] ?? ''
@@ -44,11 +47,12 @@ test('production UI has no create Channel, Measurement, Trace, or Window path', 
   assert.match(mainScreen, /<MeasurementSofttool[\s\S]*?:measurement-type=[\s\S]*?:busy=/)
   assert.match(mainScreen, /@update-measurement-type="forwardMeasurementTypeUpdate"/)
   assert.match(mainScreen, /emit\('updateTraceMeasurementType', activeTrace\.value\.id/)
-  assert.match(handler, /commandBusy\.value\) return/)
-  assert.match(handler, /await setTraceMeasurementType\([\s\S]*?pendingFrameTraceId = traceId[\s\S]*?removeDisplayFrame\([\s\S]*?await refreshState\(\)/)
+  assert.match(runner, /if \(!snapshot \|\| commandBusy\.value\) return/)
+  assert.match(handler, /runCommand\(async \(snapshot\) =>/)
+  assert.match(handler, /await setTraceMeasurementType\([\s\S]*?pendingFrameTraceId = traceId[\s\S]*?removeLiveDisplayTrace\([\s\S]*?await refreshState\(\)/)
   assert.equal(handler.match(/setTraceMeasurementType\(/g)?.length, 1)
   assert.equal(handler.match(/refreshState\(\)/g)?.length, 1)
   assert.doesNotMatch(handler, /state\.value\s*=/)
-  assert.match(app, /replaceDisplayFramesForSnapshot\(frameSet, state\.value\)/)
+  assert.match(app, /acceptCompleteFrameSet\(display\.value, frameSet, state\.value\)/)
   assert.match(app, /onFrameSet: replaceFrameSet/)
 })

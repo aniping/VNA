@@ -62,7 +62,7 @@ protected:
         return std::get<TraceDisplayFrameSetHandle>(std::move(published));
     }
 
-    FactoryPreset preset_{makeFactoryPreset()};
+    FactoryPreset preset_{vna::test::singleSweepFactoryPreset()};
     vna::test::CommandBusRuntimeOwner runtimeOwner_{
         preset_.commandBusState, 4};
     TraceDisplayFrameRepository& repository_{runtimeOwner_.repository()};
