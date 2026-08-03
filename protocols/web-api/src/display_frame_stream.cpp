@@ -7,9 +7,7 @@
 #include <variant>
 
 namespace vna::web_api::detail {
-namespace {
-
-void closeSocket(
+void DisplayFrameStream::Impl::closeSocket(
     httplib::ws::WebSocket& socket, DisplayStreamClose action) noexcept {
     try {
         socket.close_now(action.status, action.reason);
@@ -18,8 +16,6 @@ void closeSocket(
     }
 }
 
-}  // namespace
-
 void DisplayFrameStream::Impl::install(httplib::Server& server) {
     // The start callback closes the brief interval after beginListen where
     // Server::stop would otherwise see httplib as not running and do nothing.
@@ -27,7 +23,12 @@ void DisplayFrameStream::Impl::install(httplib::Server& server) {
     server.WebSocket(
         "/api/v1/display-frames",
         [this](const httplib::Request&, httplib::ws::WebSocket& socket) {
-            serve(socket);
+            serve(socket, DisplayStreamKind::Complete);
+        });
+    server.WebSocket(
+        "/api/v1/sweep-previews",
+        [this](const httplib::Request&, httplib::ws::WebSocket& socket) {
+            serve(socket, DisplayStreamKind::Preview);
         });
 }
 
@@ -113,7 +114,7 @@ void DisplayFrameStream::Impl::streamFrames(
             const auto& frameSet =
                 *std::get<application::FrameSetAvailable>(*event).frameSet;
             const auto message = encodeDisplayFrameSet(frameSet);
-            if (message.size() > maximumDisplayFrameSetMessageBytes) {
+            if (message.size() > maximumDisplayStreamMessageBytes) {
                 action = {httplib::ws::CloseStatus::MessageTooBig,
                           "display frame set too large"};
                 break;
@@ -130,7 +131,20 @@ void DisplayFrameStream::Impl::streamFrames(
     closeSocket(socket, action);
 }
 
-void DisplayFrameStream::Impl::serve(httplib::ws::WebSocket& socket) noexcept {
+void DisplayFrameStream::Impl::stream(
+    httplib::ws::WebSocket& socket,
+    std::stop_token token,
+    DisplayStreamKind kind) noexcept {
+    if (kind == DisplayStreamKind::Complete) {
+        streamFrames(socket, token);
+        return;
+    }
+    streamPreviews(socket, token);
+}
+
+void DisplayFrameStream::Impl::serve(
+    httplib::ws::WebSocket& socket,
+    DisplayStreamKind kind) noexcept {
     DisplayStreamClose rejection{
         httplib::ws::CloseStatus::PolicyViolation,
         "display stream unavailable"};
@@ -144,8 +158,8 @@ void DisplayFrameStream::Impl::serve(httplib::ws::WebSocket& socket) noexcept {
         // The handler is the only reader; the worker only waits and writes. A
         // client Close wakes this thread, which joins the worker before
         // httplib destroys the socket and any TLS stream.
-        std::jthread worker{[this, &socket](std::stop_token token) {
-            streamFrames(socket, token);
+        std::jthread worker{[this, &socket, kind](std::stop_token token) {
+            stream(socket, token, kind);
         }};
         std::stop_callback cancelWorker{
             session->stop.get_token(), [&worker] { worker.request_stop(); }};

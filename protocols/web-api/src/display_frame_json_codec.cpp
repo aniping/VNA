@@ -36,26 +36,80 @@ const char* cartesianUnit(vna::display_model::TraceFormat format) {
     return "unknown";
 }
 
-Json frameToJson(const vna::application::TraceDisplayFrame& frame) {
-    auto body = frameCommon(frame);
-    if (frame.format == vna::display_model::TraceFormat::Smith) {
-        body["format"] =
-            vna::web_api::detail::traceFormatName(frame.format);
+void appendSamples(
+    Json& body,
+    vna::display_model::TraceFormat format,
+    const vna::application::TraceDisplaySamples& samples) {
+    body["format"] = vna::web_api::detail::traceFormatName(format);
+    if (format == vna::display_model::TraceFormat::Smith) {
         body["valueUnit"] = "U";
         body["values"] = Json::array();
-        const auto& samples = std::get<
-            vna::application::ComplexTraceDisplaySamples>(frame.samples);
-        for (const auto& sample : samples.values) {
+        const auto& complex = std::get<
+            vna::application::ComplexTraceDisplaySamples>(samples);
+        for (const auto& sample : complex.values) {
             body["values"].push_back({sample.real, sample.imaginary});
         }
-        return body;
+        return;
     }
-    const auto& samples = std::get<
-        vna::application::CartesianTraceDisplaySamples>(frame.samples);
-    body["format"] = vna::web_api::detail::traceFormatName(frame.format);
-    body["valueUnit"] = cartesianUnit(frame.format);
-    body["values"] = samples.values;
+    const auto& cartesian = std::get<
+        vna::application::CartesianTraceDisplaySamples>(samples);
+    body["valueUnit"] = cartesianUnit(format);
+    body["values"] = cartesian.values;
+}
+
+Json frameToJson(const vna::application::TraceDisplayFrame& frame) {
+    auto body = frameCommon(frame);
+    appendSamples(body, frame.format, frame.samples);
     return body;
+}
+
+Json previewTraceToJson(const vna::application::SweepTracePreview& trace) {
+    Json body{
+        {"traceId", trace.traceId.value()},
+        {"measurementId", trace.measurementId.value()},
+        {"measurementType",
+         vna::web_api::detail::measurementTypeName(trace.measurementType)},
+        {"frequenciesHz", trace.frequenciesHz},
+    };
+    appendSamples(body, trace.format, trace.samples);
+    return body;
+}
+
+Json previewEventToJson(const vna::application::SweepPreviewAvailable& event) {
+    const auto& preview = *event.preview;
+    Json traces = Json::array();
+    for (const auto& trace : preview.traces) {
+        traces.push_back(previewTraceToJson(trace));
+    }
+    return {
+        {"type", "available"},
+        {"eventCursor", event.cursor.value},
+        {"generation", preview.identity.generation},
+        {"sweepId", preview.identity.sweepId.value()},
+        {"channelId", preview.channelId.value()},
+        {"stateRevision", preview.stateRevision},
+        {"sequenceNumber", preview.sequenceNumber},
+        {"totalPointCount", preview.totalPointCount},
+        {"traces", std::move(traces)},
+    };
+}
+
+Json previewEventToJson(const vna::application::SweepPreviewInvalidated& event) {
+    return {
+        {"type", "invalidated"},
+        {"eventCursor", event.cursor.value},
+        {"generation", event.identity.generation},
+        {"sweepId", event.identity.sweepId.value()},
+    };
+}
+
+Json previewEventToJson(
+    const vna::application::SweepPreviewGenerationAdvanced& event) {
+    return {
+        {"type", "generationAdvanced"},
+        {"eventCursor", event.cursor.value},
+        {"generation", event.generation},
+    };
 }
 
 }  // namespace
@@ -92,6 +146,13 @@ std::string encodeDisplayFrameSet(
         {"sequenceNumber", frameSet.sequenceNumber},
         {"frames", std::move(frames)},
     }.dump();
+}
+
+std::string encodeSweepPreviewEvent(
+    const application::SweepPreviewEvent& event) {
+    return std::visit(
+        [](const auto& value) { return previewEventToJson(value).dump(); },
+        event);
 }
 
 }  // namespace vna::web_api::detail

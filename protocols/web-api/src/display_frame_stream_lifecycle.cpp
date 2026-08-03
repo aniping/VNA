@@ -69,8 +69,9 @@ void DisplayFrameStream::Impl::waitUntilStopped() noexcept {
 }
 
 DisplayFrameStream::DisplayFrameStream(
-    const application::TraceDisplayFrameRepository& repository)
-    : impl_(std::make_unique<Impl>(repository)) {}
+    const application::TraceDisplayFrameRepository& repository,
+    const application::SweepPreviewExchange& previews)
+    : impl_(std::make_unique<Impl>(repository, previews)) {}
 
 DisplayFrameStream::~DisplayFrameStream() {
     requestStop();

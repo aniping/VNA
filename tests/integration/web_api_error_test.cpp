@@ -70,7 +70,7 @@ protected:
     application::TraceDisplayFrameRepository repository_{1};
     application::TraceDisplayFrameQuery query_{commandBus_, repository_};
     WebApi webApi_{
-        commandBus_, operations_, query_, repository_};
+        commandBus_, operations_, query_, {repository_, commandBus_.previews()}};
     int port_{-1};
     std::thread serverThread_;
 };

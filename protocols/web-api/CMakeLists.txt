@@ -9,6 +9,7 @@ add_library(
     src/display_frame_stream_lifecycle.cpp
     src/json_codec.cpp
     src/operation_http_handler.cpp
+    src/sweep_preview_stream.cpp
     src/web_asset_path.cpp
     src/web_api.cpp
 )

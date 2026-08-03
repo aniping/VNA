@@ -76,7 +76,7 @@ protected:
             commandBus_,
             operations_,
             query_,
-            repository_,
+            DisplayStreamSources{repository_, commandBus_.previews()},
             WebApiOptions{.webRoot = root});
         port_ = webApi_->bindToAnyPort("127.0.0.1");
         ASSERT_GT(port_, 0);
@@ -96,7 +96,7 @@ protected:
                 commandBus_,
                 operations_,
                 query_,
-                repository_,
+                DisplayStreamSources{repository_, commandBus_.previews()},
                 WebApiOptions{.webRoot = root}),
             std::invalid_argument);
     }

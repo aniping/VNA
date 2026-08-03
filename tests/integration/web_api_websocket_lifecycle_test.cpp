@@ -37,7 +37,9 @@ protected:
               runtimeOwner_.runtime(),
               std::move(preset_.commandBusState)),
           query_(commandBus_, repository_),
-          webApi_(commandBus_, operations_, query_, repository_) {}
+          webApi_(
+              commandBus_, operations_, query_,
+              {repository_, runtimeOwner_.previews()}) {}
 
     void SetUp() override {
         port_ = webApi_.bindToAnyPort("127.0.0.1");

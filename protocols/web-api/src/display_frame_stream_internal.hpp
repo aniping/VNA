@@ -17,6 +17,11 @@ struct DisplayStreamClose {
     const char* reason;
 };
 
+enum class DisplayStreamKind {
+    Complete,
+    Preview,
+};
+
 // The registry shares this state with stop only while httplib owns socket.
 // The socket gate makes handler release and external close linearizable.
 struct DisplayFrameStreamSession {
@@ -47,8 +52,9 @@ class DisplayFrameStream::Impl {
 public:
     static constexpr std::size_t maximumSessions = 32;
     explicit Impl(
-        const application::TraceDisplayFrameRepository& repository)
-        : repository_(repository) {}
+        const application::TraceDisplayFrameRepository& repository,
+        const application::SweepPreviewExchange& previews)
+        : repository_(repository), previews_(previews) {}
 
     void install(httplib::Server& server);
     [[nodiscard]] bool beginListen() noexcept;
@@ -64,11 +70,24 @@ private:
     void finishRejectedHandler() noexcept;
     void finishSession(
         const std::shared_ptr<DisplayFrameStreamSession>& session) noexcept;
-    void serve(httplib::ws::WebSocket& socket) noexcept;
+    void serve(
+        httplib::ws::WebSocket& socket,
+        DisplayStreamKind kind) noexcept;
+    void stream(
+        httplib::ws::WebSocket& socket,
+        std::stop_token token,
+        DisplayStreamKind kind) noexcept;
     void streamFrames(
         httplib::ws::WebSocket& socket,
         std::stop_token token) noexcept;
+    void streamPreviews(
+        httplib::ws::WebSocket& socket,
+        std::stop_token token) noexcept;
+    static void closeSocket(
+        httplib::ws::WebSocket& socket,
+        DisplayStreamClose action) noexcept;
     const application::TraceDisplayFrameRepository& repository_;
+    const application::SweepPreviewExchange& previews_;
     std::mutex mutex_;
     std::condition_variable sessionsChanged_;
     std::unordered_map<

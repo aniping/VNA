@@ -86,12 +86,13 @@ public:
         application::CommandBus& commandBus,
         application::OperationManager& operations,
         const application::TraceDisplayFrameQuery& displayFrames,
-        const application::TraceDisplayFrameRepository& displayRepository,
+        DisplayStreamSources streamSources,
         const WebApiOptions& options)
         : commandBus_(commandBus),
           operations_(operations),
           displayFrames_(displayFrames),
-          displayStream_(displayRepository) {
+          displayStream_(
+              streamSources.completeFrames, streamSources.sweepPreviews) {
         installRoutes();
         displayStream_.install(server_);
         if (options.webRoot) {
@@ -116,7 +117,7 @@ WebApi::WebApi(
     application::CommandBus& commandBus,
     application::OperationManager& operations,
     const application::TraceDisplayFrameQuery& displayFrames,
-    const application::TraceDisplayFrameRepository& displayRepository,
+    DisplayStreamSources streamSources,
     WebApiOptions options)
     : impl_([&] {
           options.webRoot = detail::validateWebRoot(options.webRoot);
@@ -124,7 +125,7 @@ WebApi::WebApi(
               commandBus,
               operations,
               displayFrames,
-              displayRepository,
+              streamSources,
               options);
       }()) {}
 

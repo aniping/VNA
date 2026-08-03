@@ -16,7 +16,6 @@ namespace vna::web_api {
 namespace {
 
 using Json = nlohmann::json;
-
 Json commandRequest(
     std::string commandId,
     std::uint64_t revision,
@@ -141,7 +140,8 @@ protected:
     vna::test::StoppedCommandBus commandBus_{application::InstrumentId{"instrument-1"}};
     application::TraceDisplayFrameRepository repository_{1};
     application::TraceDisplayFrameQuery query_{commandBus_, repository_};
-    WebApi webApi_{commandBus_, operations_, query_, repository_};
+    WebApi webApi_{
+        commandBus_, operations_, query_, {repository_, commandBus_.previews()}};
     int port_{-1};
     std::thread serverThread_;
     std::uint64_t revision_{0};

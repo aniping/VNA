@@ -2,6 +2,7 @@
 
 #include <memory>
 
+#include <vna/application/sweep_preview_exchange.hpp>
 #include <vna/application/trace_display_frame_repository.hpp>
 
 namespace httplib {
@@ -15,7 +16,8 @@ namespace vna::web_api::detail {
 class DisplayFrameStream {
 public:
     explicit DisplayFrameStream(
-        const application::TraceDisplayFrameRepository& repository);
+        const application::TraceDisplayFrameRepository& repository,
+        const application::SweepPreviewExchange& previews);
     ~DisplayFrameStream();
 
     DisplayFrameStream(const DisplayFrameStream&) = delete;

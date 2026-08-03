@@ -54,7 +54,7 @@ protected:
               commandBus_,
               operations_,
               query_,
-              repository_) {}
+              {repository_, runtimeOwner_.previews()}) {}
 
     void SetUp() override {
         port_ = webApi_.bindToAnyPort("127.0.0.1");

@@ -163,7 +163,7 @@ int runServer() {
         commandBus,
         operationManager,
         displayFrameQuery,
-        publication.repository,
+        {publication.repository, previews},
         {.webRoot = webRoot}};
     logWebEndpoint(spdlog::level::info);
     if (!webApi.listen(webAddress, webPort)) {

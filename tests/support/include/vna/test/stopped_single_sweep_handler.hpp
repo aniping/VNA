@@ -110,6 +110,10 @@ public:
         return operations_;
     }
 
+    [[nodiscard]] application::SweepPreviewExchange& previews() noexcept {
+        return previews_;
+    }
+
 private:
     application::TraceDisplayFrameRepository repository_;
     application::TracePublicationCatalog catalog_;
@@ -122,6 +126,10 @@ class StoppedCommandBus final
     : private CommandBusRuntimeOwner,
       public application::CommandBus {
 public:
+    [[nodiscard]] application::SweepPreviewExchange& previews() noexcept {
+        return CommandBusRuntimeOwner::previews();
+    }
+
     explicit StoppedCommandBus(
         application::InstrumentId instrumentId,
         std::size_t idempotencyCapacity = 1024)
