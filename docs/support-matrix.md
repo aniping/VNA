@@ -24,8 +24,8 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-流水线必须递归检出 `third-part/` 下的 Git submodule，并输出实际 GCC、CMake
-和 Ninja 版本，便于失败时还原工具链基线。
+流水线必须从仓库内 `third-part/archives/` 离线解压固定依赖，并输出实际 GCC、
+CMake 和 Ninja 版本，便于失败时还原工具链基线。构建不得下载三方源码。
 
 ## 协议兼容性门槛
 

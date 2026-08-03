@@ -38,6 +38,12 @@ Thumbs.db
 /archive.zip
 /tmp/
 
+# CMake extracts vendored dependency archives here on first configure.
+/third-part/googletest/
+/third-part/cpp-httplib/
+/third-part/nlohmann-json/
+/third-part/spdlog/
+
 # Local vendor manuals used only as design/protocol references
 /ZNA_UserManual_en_41.pdf
 /ZNB_UserManual_en_74.pdf

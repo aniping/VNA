@@ -1,3 +1,5 @@
+include(${PROJECT_SOURCE_DIR}/cmake/prepare-third-party.cmake)
+
 set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 add_subdirectory(googletest EXCLUDE_FROM_ALL)
@@ -12,8 +14,6 @@ set(HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_USE_NON_BLOCKING_GETADDRINFO OFF CACHE BOOL "" FORCE)
 add_subdirectory(cpp-httplib EXCLUDE_FROM_ALL)
-include(${PROJECT_SOURCE_DIR}/cmake/prepare-cpp-httplib.cmake)
-vna_prepare_patched_cpp_httplib(httplib)
 
 set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
 set(JSON_Install OFF CACHE BOOL "" FORCE)

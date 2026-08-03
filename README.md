@@ -30,11 +30,9 @@
 
 ## 三方依赖
 
-C++ 三方源码统一放在 `third-part/`，并通过 Git submodule 固定版本。克隆后初始化依赖：
-
-```powershell
-git submodule update --init --recursive
-```
+C++ 三方源码以固定版本的 `.tar.xz` 归档提交在 `third-part/archives/`。首次
+CMake 配置时会校验 SHA-256，并仅在源码目录不存在时解压到 `third-part/`；
+构建不需要 Git、网络或补丁工具。复制普通源码目录到离线机器即可构建。
 
 当前固定版本：
 
@@ -50,11 +48,7 @@ git submodule update --init --recursive
 
 需要 CMake、Ninja 和 GCC。Windows 使用 MinGW GCC，Linux 使用系统 GCC；
 项目不支持 MSVC。推荐的开发与测试 preset 还需要 `ccache` 位于 `PATH`。
-首次构建先初始化第三方依赖：
-
-```powershell
-git submodule update --init --recursive
-```
+首次配置会自动从仓库内归档解压第三方依赖。
 
 日常开发只构建 `vna-server`：
 

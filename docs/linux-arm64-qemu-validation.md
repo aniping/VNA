@@ -16,18 +16,18 @@ x86-64 Windows 宿主上的 QEMU/binfmt 模拟层，只验证 `vna-server` 的�
 | SSH | `127.0.0.1:2222`，用户 `arm64` |
 | 私钥路径 | `%USERPROFILE%\.ssh\arm64-docker-ed25519` |
 | 编译器 | GCC/G++ 13.3.0 |
-| 构建工具 | CMake 3.28.3、GNU Make 4.3、Git 2.43.0 |
+| 构建工具 | CMake 3.28.3、GNU Make 4.3 |
 | 基础工具包 | `build-essential` |
 
-Git 是构建依赖：CMake 使用它把仓库内的补丁应用到构建目录中的 cpp-httplib
-副本。脚本只把私钥路径交给 `ssh` 和 `scp`，不会读取或复制私钥内容。
+三方源码归档随仓库提交；CMake 校验后离线解压，目标环境不需要 Git、网络或
+补丁工具。脚本只把私钥路径交给 `ssh` 和 `scp`，不会读取或复制私钥内容。
 
 ## 执行前提
 
 - 用户已在当前任务中明确要求执行 Linux/ARM64 检查；没有本轮明确授权时，不得运行本文脚本或其中任何环境预检、配置、编译、链接、SSH、容器或产物检查步骤。
 - 在 Windows PowerShell 中、仓库根目录执行。
 - 当前分支必须是 `main`，`HEAD` 等于本地 `main`，工作树必须 clean。
-- `third-part/` Git submodule 已初始化，并与主仓库记录的 gitlink 一致。
+- `third-part/archives/` 中四个固定版本归档均已提交。
 - 端口 `2222` 未被其他服务占用。
 - 脚本只归档已提交对象，不同步 `.git`、`build/`、`out/`、`release/`、
   `node_modules/` 或其他工作副本文件。
@@ -87,12 +87,6 @@ try {
   if ((git rev-parse HEAD) -ne (git rev-parse main)) {
     throw 'HEAD does not match the local main ref.'
   }
-  $submoduleStatus = @(git submodule status --recursive)
-  if ($LASTEXITCODE -ne 0 -or
-      ($submoduleStatus | Where-Object { $_[0] -ne ' ' })) {
-    throw 'A submodule is missing or does not match the recorded gitlink.'
-  }
-
   # WSL 没有活跃客户端时可能退出，并连带停止其 Docker daemon。保活进程只覆盖
   # 本次验证，使分开的 SSH、SCP、构建和测试命令共享同一容器生命周期。
   $keeper = Start-Process -FilePath 'wsl.exe' `
@@ -120,7 +114,6 @@ try {
   Invoke-Arm64Ssh @'
 set -eu
 test "$(uname -m)" = aarch64
-test "$(git --version)" = "git version 2.43.0"
 test "$(gcc -dumpfullversion)" = "13.3.0"
 test "$(g++ -dumpfullversion)" = "13.3.0"
 test "$(cmake --version | head -1)" = "cmake version 3.28.3"
@@ -132,7 +125,6 @@ gcc --version | head -1
 g++ --version | head -1
 cmake --version | head -1
 make --version | head -1
-git --version
 '@
 
   New-Item -ItemType Directory -Path $sourceStage | Out-Null
@@ -142,19 +134,6 @@ git --version
   tar.exe -xf $rootArchive -C $sourceStage
   if ($LASTEXITCODE -ne 0) { throw 'Failed to extract the main repository.' }
 
-  $moduleLines = git config --file .gitmodules --get-regexp path
-  if ($LASTEXITCODE -ne 0) { throw 'Failed to enumerate submodules.' }
-  foreach ($line in $moduleLines) {
-    $module = ($line -split '\s+', 2)[1]
-    $moduleSource = Join-Path $repository ($module -replace '/', '\')
-    $moduleTarget = Join-Path $sourceStage ($module -replace '/', '\')
-    $moduleArchive = Join-Path $stageRoot (($module -replace '/', '-') + '.tar')
-    New-Item -ItemType Directory -Path $moduleTarget -Force | Out-Null
-    git -C $moduleSource archive --format=tar -o $moduleArchive HEAD
-    if ($LASTEXITCODE -ne 0) { throw "Failed to archive $module." }
-    tar.exe -xf $moduleArchive -C $moduleTarget
-    if ($LASTEXITCODE -ne 0) { throw "Failed to extract $module." }
-  }
   tar.exe -cf $bundle -C $sourceStage .
   if ($LASTEXITCODE -ne 0) { throw 'Failed to create the source bundle.' }
 
@@ -173,11 +152,12 @@ git --version
   Invoke-Arm64Ssh `
     ("test ! -e '$remoteSource/.git' && test ! -e '$remoteSource/build' && " +
      "test ! -e '$remoteSource/out' && test ! -e '$remoteSource/release' && " +
-     "test ! -e '$remoteSource/node_modules'")
+     "test ! -e '$remoteSource/node_modules' && " +
+     "test -f '$remoteSource/third-part/archives/cpp-httplib-0.51.0-vna1.tar.xz'")
 
   Invoke-TimedArm64Ssh 'CONFIGURE' `
     ("cd '$remoteSource' && cmake -S . -B build-arm64 " +
-     "-G 'Unix Makefiles' -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Debug " +
+     "-G 'Unix Makefiles' -DBUILD_TESTING=OFF -DCMAKE_BUILD_TYPE=Release " +
      '-DCMAKE_CXX_COMPILER=g++')
   Invoke-TimedArm64Ssh 'SERVER_BUILD' `
     ("cd '$remoteSource' && cmake --build build-arm64 " +
@@ -227,6 +207,7 @@ finally {
 成功；`readelf` 对 `vna-server` 报告 `ELF64`、little-endian、`AArch64`。
 报告分别记录配置与服务端构建的 wall time。
 
-若预检缺少 Git、编译器或 `readelf`，应停止并报告缺失工具，不得把未执行目标
-描述为通过。该脚本不执行 Linux 功能测试；QEMU 下的低速属于预期现象，不得用
-这些耗时推断真实 ARM64 设备性能。
+若宿主预检缺少 Git，或目标环境缺少编译器、CMake、Make、`readelf`，应停止并
+报告缺失工具，不得把未执行目标描述为通过。目标构建本身不依赖 Git。该脚本不
+执行 Linux 功能测试；QEMU 下的低速属于预期现象，不得用这些耗时推断真实
+ARM64 设备性能。
