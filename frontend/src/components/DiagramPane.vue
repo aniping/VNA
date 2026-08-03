@@ -6,6 +6,7 @@ import type {
   TraceSnapshot,
 } from '../api/vnaApi'
 import type { MultiFormatTraceDisplayFrame } from '../api/traceDisplayFrameSet'
+import type { CurrentSweepPartial } from '../api/displayFrameSetState'
 import CartesianAxisOverlay from './CartesianAxisOverlay.vue'
 import CartesianCurve from './CartesianCurve.vue'
 import SmithCurve from './SmithCurve.vue'
@@ -25,6 +26,7 @@ const props = defineProps<{
   measurement?: MeasurementSnapshot
   trace?: TraceSnapshot
   frame?: MultiFormatTraceDisplayFrame
+  partial?: CurrentSweepPartial | null
   active: boolean
 }>()
 const emit = defineEmits<{ select: [traceId: number] }>()
@@ -39,7 +41,12 @@ const scaleSummary = computed(() => {
   if (props.trace?.format === 'smith') return '200 mU/ Ref 1 U'
   return axis.value ? formatCartesianScaleSummary(axis.value) : ''
 })
-const curve = computed(() => selectDiagramCurve(props.trace, props.measurement, props.frame))
+const curve = computed(() => selectDiagramCurve(
+  props.trace,
+  props.measurement,
+  props.frame,
+  props.partial ?? undefined,
+))
 
 function formatName(format: string): string {
   const names: Record<string, string> = {

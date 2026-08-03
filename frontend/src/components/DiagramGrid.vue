@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { StateSnapshot } from '../api/vnaApi'
+import type { CurrentSweepPartial } from '../api/displayFrameSetState'
 import type { MultiFormatTraceDisplayFrame } from '../api/traceDisplayFrameSet'
 import DiagramPane from './DiagramPane.vue'
 import { selectDisplayDiagrams } from './diagramModel'
@@ -10,6 +11,7 @@ const props = defineProps<{
   activeTraceId?: number
   maximized: boolean
   frames?: ReadonlyMap<number, MultiFormatTraceDisplayFrame>
+  partial?: CurrentSweepPartial | null
 }>()
 const emit = defineEmits<{ selectTrace: [traceId: number] }>()
 const diagrams = computed(() => selectDisplayDiagrams(props.state, props.activeTraceId))
@@ -41,6 +43,7 @@ function kindForTrace(format?: string): 'cartesian' | 'smith' {
       :channel="diagram.channel"
       :trace="diagram.trace"
       :frame="frameForTrace(diagram.trace?.id)"
+      :partial="partial"
       :measurement="diagram.measurement"
       :active="diagram.active"
       @select="emit('selectTrace', $event)"

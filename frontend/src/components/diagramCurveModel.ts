@@ -1,4 +1,6 @@
 import type { MultiFormatTraceDisplayFrame } from '../api/traceDisplayFrameSet.ts'
+import type { CurrentSweepPartial } from '../api/displayFrameSetState.ts'
+import type { TraceDisplaySamples } from '../api/traceDisplayFrameSet.ts'
 import type { MeasurementSnapshot, TraceSnapshot } from '../api/vnaApi.ts'
 import type {
   CartesianAxisRange,
@@ -27,7 +29,7 @@ export type DiagramCurveModel = CartesianCurveModel | SmithCurveModel
 function identityMatches(
   trace: TraceSnapshot,
   measurement: MeasurementSnapshot,
-  frame: MultiFormatTraceDisplayFrame,
+  frame: TraceDisplaySamples,
 ): boolean {
   return frame.traceId === trace.id
     && frame.measurementId === trace.measurementId
@@ -37,35 +39,98 @@ function identityMatches(
 }
 
 function segmentedCartesianSamples(
-  frame: Extract<MultiFormatTraceDisplayFrame, { format: 'logMagnitude' | 'phase' }>,
+  series: readonly Extract<TraceDisplaySamples, { format: 'logMagnitude' | 'phase' }>[],
+  frequencyMinimumHz: number,
+  frequencyMaximumHz: number,
 ): CartesianSegmentedSamples {
   return {
-    frequencyMinimumHz: frame.frequenciesHz[0],
-    frequencyMaximumHz: frame.frequenciesHz[frame.frequenciesHz.length - 1],
-    segments: [{ frequenciesHz: frame.frequenciesHz, values: frame.values }],
+    frequencyMinimumHz,
+    frequencyMaximumHz,
+    segments: series.map(({ frequenciesHz, values }) => ({ frequenciesHz, values })),
   }
+}
+
+function previewForTrace(
+  partial: CurrentSweepPartial | undefined,
+  trace: TraceSnapshot,
+  measurement: MeasurementSnapshot,
+): TraceDisplaySamples | undefined {
+  const preview = partial?.traces.get(trace.id)
+  return preview && identityMatches(trace, measurement, preview) ? preview : undefined
+}
+
+function prefixMatches(
+  complete: MultiFormatTraceDisplayFrame,
+  preview: TraceDisplaySamples,
+  totalPointCount: number,
+): boolean {
+  return complete.frequenciesHz.length === totalPointCount
+    && preview.frequenciesHz.every((value, index) => value === complete.frequenciesHz[index])
+}
+
+function cartesianSeries(
+  complete: Extract<MultiFormatTraceDisplayFrame, { format: 'logMagnitude' | 'phase' }> | undefined,
+  preview: Extract<TraceDisplaySamples, { format: 'logMagnitude' | 'phase' }> | undefined,
+  partial: CurrentSweepPartial | undefined,
+): CartesianSegmentedSamples | null {
+  const compatible = complete && preview && partial?.generation === complete.generation
+    && prefixMatches(complete, preview, partial.totalPointCount)
+  if (compatible) {
+    return segmentedCartesianSamples([complete, preview], complete.frequenciesHz[0],
+      complete.frequenciesHz[complete.frequenciesHz.length - 1])
+  }
+  if (preview && partial?.axis) {
+    return segmentedCartesianSamples([preview], partial.axis.frequencyMinimumHz,
+      partial.axis.frequencyMaximumHz)
+  }
+  return complete ? segmentedCartesianSamples([complete], complete.frequenciesHz[0],
+    complete.frequenciesHz[complete.frequenciesHz.length - 1]) : null
 }
 
 export function selectDiagramCurve(
   trace?: TraceSnapshot,
   measurement?: MeasurementSnapshot,
   frame?: MultiFormatTraceDisplayFrame,
+  partial?: CurrentSweepPartial,
 ): DiagramCurveModel | null {
-  if (!trace || !measurement || !frame || !identityMatches(trace, measurement, frame)) return null
-  if (frame.format === 'logMagnitude' && trace.scale?.unit === 'dB') {
+  if (!trace || !measurement) return null
+  const complete = frame && identityMatches(trace, measurement, frame) ? frame : undefined
+  const preview = previewForTrace(partial, trace, measurement)
+  if (trace.format === 'logMagnitude' && trace.scale?.unit === 'dB') {
+    const samples = cartesianSeries(
+      complete?.format === 'logMagnitude' ? complete : undefined,
+      preview?.format === 'logMagnitude' ? preview : undefined,
+      partial,
+    )
+    if (!samples) return null
     return { kind: 'cartesian', traceId: trace.id, label: 'Log Magnitude', unit: 'dB',
-      samples: segmentedCartesianSamples(frame),
+      samples,
       range: { minimum: trace.scale.minimum, maximum: trace.scale.maximum } }
   }
-  if (frame.format === 'phase') {
+  if (trace.format === 'phase') {
+    const samples = cartesianSeries(
+      complete?.format === 'phase' ? complete : undefined,
+      preview?.format === 'phase' ? preview : undefined,
+      partial,
+    )
+    if (!samples) return null
     // The backend owns wrapping and degrees; this fixed viewport only projects its frozen domain.
     return { kind: 'cartesian', traceId: trace.id, label: 'Phase', unit: 'degree',
-      samples: segmentedCartesianSamples(frame), range: phaseAxisRange }
+      samples, range: phaseAxisRange }
   }
-  if (frame.format === 'smith') {
+  if (trace.format === 'smith') {
+    const smithComplete = complete?.format === 'smith' ? complete : undefined
+    const smithPreview = preview?.format === 'smith' ? preview : undefined
+    const compatible = smithComplete && smithPreview && partial?.generation === smithComplete.generation
+      && prefixMatches(smithComplete, smithPreview, partial.totalPointCount)
+    const series = compatible ? [smithComplete, smithPreview]
+      : smithPreview ? [smithPreview] : smithComplete ? [smithComplete] : []
+    if (series.length === 0) return null
     // Pair-to-point conversion changes representation only; no RF-domain math lives here.
-    const samples = frame.values.map(([real, imaginary]) => ({ real, imaginary }))
-    return { kind: 'smith', traceId: trace.id, segments: [samples] }
+    const segments = series.map(({ values }) => (
+      values.map(([real, imaginary]) => ({ real, imaginary }))
+    ))
+    return { kind: 'smith', traceId: trace.id, segments }
   }
   return null
 }
