@@ -2,9 +2,9 @@
 
 ## 决策
 
-在实现 Scale 或 Marker 前建立 `core/display-model` 模块。Window、Trace、
+在实现 Scale 或 Marker 前建立 `core/display/model` 模块。Window、Trace、
 TraceFormat、Scale、Marker 和显示布局属于该模块；Channel、Measurement、
-SweepSettings 和采集需求继续属于 `core/domain`。
+SweepSettings 和采集需求继续属于 `core/instrument`。
 
 显示模型可以通过公开标识引用 Measurement，但测量领域不得依赖显示模型。
 Trace 的增加、删除或格式变化不得直接启动采集，也不得改变 Measurement

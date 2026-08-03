@@ -158,7 +158,7 @@ drivers/platform/
 | 本地 IPC | VNA Core 与 Driver Host 的控制消息 |
 | 共享内存 | 可选的大体量原始数据跨进程通道 |
 
-第一阶段采用 [`yhirose/cpp-httplib`](https://github.com/yhirose/cpp-httplib) 实现 HTTP/HTTPS、REST、文件流和 WebSocket/WSS。依赖版本必须由工程清单固定，且只允许出现在 `protocols/web-api`、`protocols/websocket` 等交互层适配器中，内部 Command、Query、Event 和 Frame 契约不得暴露 `httplib` 类型。
+第一阶段采用 [`yhirose/cpp-httplib`](https://github.com/yhirose/cpp-httplib) 实现 HTTP/HTTPS、REST、文件流和 WebSocket/WSS。依赖版本必须由工程清单固定，且只允许出现在 `interfaces/web` 等交互层适配器中，内部 Command、Query、Event 和 Frame 契约不得暴露 `httplib` 类型。
 
 `cpp-httplib` 官方当前未支持或测试 MinGW，因此该组合必须通过 Windows/MinGW 与 Linux/GCC 的兼容性测试。早期本地 UI 先验证 HTTP 与 WebSocket；启用 HTTPS、WSS 或非回环地址监听前，TLS 必须在两个平台通过冒烟测试。验证通过的版本必须固定；若无法满足要求，则只替换协议适配器，不改变内部契约。
 
@@ -180,16 +180,14 @@ drivers/platform/
 
 ```text
 core/
-├── domain/             # Instrument、Channel、Measurement 等领域对象与不变量
-├── application/        # 用例编排、Command/Query Handler
-├── control-plane/      # 命令队列、状态事务、事件发布
-├── data-plane/         # 数据处理图、帧仓库和数据分发
-├── measurement/        # 测量需求、扫频规划和协调
+├── instrument/         # Instrument、Channel、Preset 与能力状态
+├── control/            # Command、Query、Operation、权限与状态事务
+├── sweep/              # 扫频规划、触发、运行时和资源调度
+├── acquisition/        # 原始采集、分块进度和完整性校验
+├── measurement/        # 测量定义、合成、修正和数学处理
 ├── calibration/        # 校准会话、算法契约和 CalSet 管理
-├── display-model/      # Trace、Window、Marker、Limit
-├── operation/          # 长操作、取消、进度和完成语义
-├── project/            # 项目保存、恢复和版本迁移
-└── capability/         # 能力模型和功能校验
+├── display/            # Trace、Window、投影、发布、Marker 与 Limit
+└── project/            # 项目保存、恢复和版本迁移
 ```
 
 ### 5.4 硬件抽象层
@@ -588,54 +586,60 @@ stateDiagram-v2
 ## 18. 目标工程目录
 
 ```text
-vna-platform/
+VectorNetworkAnalyzer/
+├── core/
+│   ├── instrument/
+│   ├── control/
+│   ├── sweep/
+│   ├── acquisition/
+│   ├── measurement/
+│   ├── calibration/
+│   ├── display/
+│   └── project/
+├── interfaces/
+│   ├── web/
+│   ├── scpi/
+│   ├── front-panel/
+│   ├── file-transfer/
+│   └── driver-ipc/
+├── hardware/
+│   ├── interface/
+│   ├── backends/
+│   │   ├── physical/
+│   │   ├── simulation/
+│   │   ├── replay/
+│   │   └── proxy/
+│   └── drivers/
+├── diagnostics/
+├── contracts/
+│   ├── frames/
+│   ├── driver-ipc/
+│   └── schemas/
+├── infrastructure/
+│   ├── platform/
+│   ├── storage/
+│   ├── logging/
+│   ├── configuration/
+│   └── security/
 ├── apps/
 │   ├── vna-server/
 │   ├── vna-driver-host/
-│   ├── vna-simulator/
-│   └── vna-cli/
+│   ├── vna-cli/
+│   └── vna-service-tool/
 ├── frontend/
-├── contracts/
-│   ├── commands/
-│   ├── queries/
-│   ├── events/
-│   ├── frames/
-│   ├── scpi/
-│   └── schemas/
-├── core/
-├── protocols/
-│   ├── web-api/
-│   ├── websocket/
-│   ├── scpi/
-│   ├── file-transfer/
-│   └── ipc/
-├── algorithms/
-├── hal/
-│   ├── api/
-│   ├── capabilities/
-│   ├── sweep-compiler/
-│   ├── state-cache/
-│   ├── resource-arbiter/
-│   └── backends/
-├── drivers/
-│   └── platform/
-│       ├── windows/
-│       └── linux/
-├── infrastructure/
-│   ├── platform/
-│   │   ├── windows/
-│   │   └── linux/
-│   └── ...
-└── tests/
-    ├── unit/
-    ├── contract/
-    ├── algorithm-golden/
-    ├── scpi-conformance/
-    ├── simulation/
-    ├── replay/
-    ├── fault-injection/
-    ├── performance/
-    └── end-to-end/
+├── tests/
+│   ├── unit/
+│   ├── contract/
+│   ├── algorithm-golden/
+│   ├── scpi-conformance/
+│   ├── simulation/
+│   ├── replay/
+│   ├── fault-injection/
+│   ├── performance/
+│   └── end-to-end/
+├── foundation/
+│   └── cpp-compat/
+└── third-part/
 ```
 
 目录表达逻辑边界，不要求每个目录对应独立进程或动态库。只在形成稳定接口和独立发布需求后才拆分物理组件。

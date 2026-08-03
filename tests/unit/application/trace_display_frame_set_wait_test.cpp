@@ -83,15 +83,14 @@ private:
     vna::compat::JoiningThread worker_;
 };
 
-const FrameSetAvailable& expectAvailable(
+FrameSetAvailable expectAvailable(
     const std::optional<TraceDisplayFrameSetEvent>& result) {
     EXPECT_TRUE(result.has_value());
     const auto* available = result
         ? std::get_if<FrameSetAvailable>(&*result)
         : nullptr;
     EXPECT_NE(available, nullptr);
-    static const FrameSetAvailable empty{};
-    return available == nullptr ? empty : *available;
+    return available == nullptr ? FrameSetAvailable{} : *available;
 }
 
 TEST(TraceDisplayFrameSetWaitTest, RetainedReadSkipsToLatestCompleteSet) {
