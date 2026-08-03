@@ -54,7 +54,10 @@ endif()
 # only an explicit request may replace release/VectorNetworkAnalyzer.
 add_custom_target(
     package-release
-    COMMAND ${CMAKE_COMMAND} -P ${CMAKE_SOURCE_DIR}/cmake/package-release.cmake
+    COMMAND ${CMAKE_COMMAND}
+        "-DVNA_RELEASE_BUILD_DIR=${CMAKE_BINARY_DIR}-package"
+        "-DVNA_RELEASE_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+        -P ${CMAKE_SOURCE_DIR}/cmake/package-release.cmake
     USES_TERMINAL
     COMMENT "Build and validate the portable release directory"
     VERBATIM

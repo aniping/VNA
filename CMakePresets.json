@@ -9,15 +9,12 @@
     {
       "name": "base",
       "hidden": true,
-      "generator": "Ninja",
-      "cacheVariables": {
-        "CMAKE_CXX_COMPILER": "g++"
-      }
+      "generator": "Ninja"
     },
     {
       "name": "frontend",
       "inherits": "base",
-      "binaryDir": "${sourceDir}/out/frontend",
+      "binaryDir": "${sourceDir}/out/${hostSystemName}/frontend",
       "cacheVariables": {
         "BUILD_TESTING": false,
         "CMAKE_INSTALL_PREFIX": "${sourceDir}/release/VectorNetworkAnalyzer",
@@ -28,7 +25,7 @@
     {
       "name": "backend",
       "inherits": "base",
-      "binaryDir": "${sourceDir}/out/backend",
+      "binaryDir": "${sourceDir}/out/${hostSystemName}/backend",
       "cacheVariables": {
         "BUILD_TESTING": false,
         "CMAKE_BUILD_TYPE": "Release",
@@ -42,7 +39,7 @@
       "displayName": "Complete debug test build",
       "description": "Build and run every test with ccache and reduced debug information",
       "inherits": "base",
-      "binaryDir": "${sourceDir}/out/test",
+      "binaryDir": "${sourceDir}/out/${hostSystemName}/test",
       "cacheVariables": {
         "BUILD_TESTING": true,
         "CMAKE_BUILD_TYPE": "Debug",
@@ -57,7 +54,7 @@
       "displayName": "Portable release packaging",
       "description": "Configure the explicit portable release packaging target",
       "inherits": "base",
-      "binaryDir": "${sourceDir}/out/release-driver",
+      "binaryDir": "${sourceDir}/out/${hostSystemName}/release-driver",
       "cacheVariables": {
         "BUILD_TESTING": false,
         "CMAKE_BUILD_TYPE": "Release",

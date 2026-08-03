@@ -82,7 +82,7 @@ C++ 三方源码以固定版本的 `.tar.xz` 归档提交在 `third-part/archive
 | --- | --- | --- |
 | `frontend` | 仅编译并安装前端 | `release/VectorNetworkAnalyzer/web/` |
 | `backend` | 仅编译并安装 C++ 后端 | `release/VectorNetworkAnalyzer/bin/` 及启动文件 |
-| `test` | C++ 后端与全部 CTest 目标 | `out/test/` |
+| `test` | C++ 后端与全部 CTest 目标 | `out/<平台>/test/` |
 | `release` | 原子组装完整便携包 | `release/VectorNetworkAnalyzer/` |
 
 只保留以上四个公开 preset，默认使用 8 路并行；下面显式覆盖为 24 路。`frontend`/`release` 要求 Node.js 和 pnpm，`backend`/`test` 不探测前端。
@@ -135,19 +135,29 @@ Linux 完整包从仓库根运行 `./release/VectorNetworkAnalyzer/start.sh`。
 ### Linux GCC 7.3
 
 ```bash
-export LD_LIBRARY_PATH=/opt/vna-gcc73/usr/lib/x86_64-linux-gnu
-cmake -S . -B out/gcc73-release -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  -DBUILD_TESTING=OFF -DVNA_BUILD_FRONTEND=OFF \
-  -DCMAKE_C_COMPILER=/opt/vna-gcc73/usr/bin/gcc-7 \
-  -DCMAKE_CXX_COMPILER=/opt/vna-gcc73/usr/bin/g++-7
-cmake --build out/gcc73-release --target vna-server --parallel "$(nproc)"
+cmake --preset release
+cmake --build --preset release --parallel "$(nproc)"
 ```
 
-全量测试把 `BUILD_TESTING` 改为 `ON`，随后执行：
+Windows 与 Linux 的缓存分别位于 `out/Windows/` 和 `out/Linux/`，同一份源码可直接交替构建。release 内层后端构建会继承上述编译器，不需要删除其他平台缓存或建立工具链软链接。
+默认编译器不是 GCC 7.3 时，可在首次配置前用 `CXX=g++-7 cmake --preset release` 选择当前机器 `PATH` 中的工具链。
+
+全量测试使用 `test` preset：
 
 ```bash
-cmake --build out/gcc73-release --parallel "$(nproc)"
-ctest --test-dir out/gcc73-release --parallel "$(nproc)" --output-on-failure
+cmake --preset test
+cmake --build --preset test --parallel "$(nproc)"
+ctest --preset test --parallel "$(nproc)"
+```
+
+```shell
+cd /mnt/i/ai/cc/VectorNetworkAnalyzer
+
+export PATH=/opt/vna-gcc73/usr/bin:$PATH
+export LD_LIBRARY_PATH=/opt/vna-gcc73/usr/lib/x86_64-linux-gnu:${LD_LIBRARY_PATH:-}
+
+CXX=g++-7 cmake --preset backend
+cmake --build --preset backend --parallel 24
 ```
 
 ## 运行与接口

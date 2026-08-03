@@ -2,7 +2,14 @@ cmake_minimum_required(VERSION 3.25)
 
 get_filename_component(source_candidate "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 file(REAL_PATH "${source_candidate}" source_dir)
-set(build_dir "${source_dir}/out/release-package")
+if(NOT DEFINED VNA_RELEASE_BUILD_DIR OR VNA_RELEASE_BUILD_DIR STREQUAL "")
+    message(FATAL_ERROR "Release build directory was not provided")
+endif()
+if(NOT DEFINED VNA_RELEASE_CXX_COMPILER OR
+        VNA_RELEASE_CXX_COMPILER STREQUAL "")
+    message(FATAL_ERROR "Release C++ compiler was not provided")
+endif()
+get_filename_component(build_dir "${VNA_RELEASE_BUILD_DIR}" ABSOLUTE)
 set(release_parent "${source_dir}/release")
 set(final_dir "${release_parent}/VectorNetworkAnalyzer")
 string(RANDOM LENGTH 12 ALPHABET 0123456789abcdef stage_id)
@@ -110,7 +117,6 @@ if(EXISTS "${backup_dir}" OR IS_SYMLINK "${backup_dir}")
 endif()
 
 find_program(ninja_program NAMES ninja REQUIRED)
-find_program(cxx_compiler NAMES g++ REQUIRED)
 
 # Frontend dist and the CMake build tree are disposable intermediates. Nothing
 # below touches the final release until install and validation both succeed.
@@ -118,7 +124,7 @@ run_step("release configure" "${source_dir}"
     "${CMAKE_COMMAND}" -S "${source_dir}" -B "${build_dir}"
     -G Ninja
     "-DCMAKE_MAKE_PROGRAM=${ninja_program}"
-    "-DCMAKE_CXX_COMPILER=${cxx_compiler}"
+    "-DCMAKE_CXX_COMPILER=${VNA_RELEASE_CXX_COMPILER}"
     -DCMAKE_BUILD_TYPE=Release
     -DBUILD_TESTING=OFF
     -DVNA_BUILD_BACKEND=ON
