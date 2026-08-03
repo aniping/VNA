@@ -42,6 +42,18 @@ inline acquisition::ContinuousAcquisitionPlan commandBusTestPlan(
     return plan;
 }
 
+inline application::SweepRuntimeExecutionPolicy commandBusTestExecution(
+    const application::CommandBusInitialState& initialState) {
+    const auto channels = initialState.instrument.snapshot().channels;
+    if (channels.empty()) {
+        return {.mode = domain::SweepMode::Single, .sweepCount = 1};
+    }
+    return {
+        .mode = channels.front().sweepMode,
+        .sweepCount = channels.front().sweepCount,
+    };
+}
+
 inline acquisition::RawSweepCaptureResult waitUntilRuntimeStops(
     const acquisition::RawSweepCaptureRequest&,
     const acquisition::RawSweepChunkObserver&,
@@ -77,7 +89,7 @@ public:
               }),
           runtime_(
               {commandBusTestPlan(initialState), catalog_.capture(), 2,
-               {.mode = domain::SweepMode::Single, .sweepCount = 1}},
+               commandBusTestExecution(initialState)},
               waitUntilRuntimeStops,
               previews_, catalog_, operations_) {}
 

@@ -80,8 +80,7 @@ std::string describe(const application::EnsureAllSParametersCommand& command) {
            "补齐全部 S 参数";
 }
 std::string describe(const application::StartSingleSweepCommand& command) {
-    return "启动通道#" + std::to_string(command.channelId.value()) +
-           "单次扫频";
+    return "重启通道#" + std::to_string(command.channelId.value()) + "扫频";
 }
 
 std::string resultIdentity(const application::CommandValue& value) {
@@ -110,7 +109,7 @@ std::string resultIdentity(const application::CommandValue& value) {
 
 const char* category(const application::CommandPayload& payload) noexcept {
     return std::holds_alternative<application::StartSingleSweepCommand>(payload)
-               ? "[单次扫频]"
+               ? "[扫频控制]"
                : "[配置命令]";
 }
 

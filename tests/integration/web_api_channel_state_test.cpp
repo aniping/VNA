@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <string>
 #include <thread>
+#include <utility>
 
 #include <vna/application/factory_preset.hpp>
 #include <vna/test/stopped_single_sweep_handler.hpp>
@@ -31,6 +32,24 @@ Json createChannelRequest() {
              {"ifBandwidthHz", 1'000},
              {"powerDbm", -20.0},
          }},
+    };
+}
+
+Json updateSweepControlRequest(
+    std::string commandId,
+    std::uint64_t revision,
+    std::string mode,
+    std::uint32_t sweepCount) {
+    return {
+        {"commandId", std::move(commandId)},
+        {"sessionId", "channel-state-test"},
+        {"instrumentId", "instrument-1"},
+        {"expectedStateRevision", revision},
+        {"type", "updateChannelSweepControl"},
+        {"payload",
+         {{"channelId", 1},
+          {"mode", std::move(mode)},
+          {"sweepCount", sweepCount}}},
     };
 }
 
@@ -60,14 +79,21 @@ protected:
         return Json::parse(response->body);
     }
 
-    Json postCreateChannel() const {
+    httplib::Result postRaw(const Json& command) const {
         httplib::Client client{"127.0.0.1", port_};
-        const auto request = createChannelRequest().dump();
-        const auto response = client.Post(
-            "/api/v1/commands", request, "application/json");
+        return client.Post(
+            "/api/v1/commands", command.dump(), "application/json");
+    }
+
+    Json postCommand(const Json& command) const {
+        const auto response = postRaw(command);
         EXPECT_TRUE(response);
         EXPECT_EQ(response->status, httplib::StatusCode::OK_200);
         return Json::parse(response->body);
+    }
+
+    Json postCreateChannel() const {
+        return postCommand(createChannelRequest());
     }
 
     application::OperationManager operations_;
@@ -84,6 +110,7 @@ protected:
 
 void expectContinuousWithNoTrigger(const Json& channel) {
     EXPECT_EQ(channel.at("sweepMode"), "continuous");
+    EXPECT_EQ(channel.at("sweepCount"), 1U);
     EXPECT_EQ(channel.at("triggerSource"), "none");
 }
 
@@ -94,21 +121,76 @@ TEST_F(WebApiChannelStateTest, FactoryPresetExposesChannelStateAtRevisionZero) {
     const auto& channels = state.at("instrument").at("channels");
     ASSERT_EQ(channels.size(), 1U);
     expectContinuousWithNoTrigger(channels.at(0));
+    EXPECT_EQ(state.at("sweepRuntime").at("state"), "running");
+    EXPECT_TRUE(state.at("sweepRuntime").at("phase").is_string());
+    EXPECT_EQ(
+        state.at("sweepRuntime").at("configured"),
+        Json({
+            {"stateRevision", 0},
+            {"mode", "continuous"},
+            {"sweepCount", 1},
+        }));
+    EXPECT_EQ(
+        state.at("sweepRuntime").at("applied"),
+        Json({
+            {"stateRevision", 0},
+            {"generation", 1},
+            {"mode", "continuous"},
+            {"sweepCount", 1},
+        }));
 }
 
 TEST_F(WebApiChannelStateTest, SingleModeUsesStableWireName) {
-    const auto updated = commandBus_.dispatch({
-        application::CommandId{"single-mode"},
-        application::SessionId{"channel-state-test"},
-        application::InstrumentId{"instrument-1"},
-        application::CommandOrigin::Web, 0,
-        application::UpdateChannelSweepControlCommand{
-            domain::ChannelId{1}, domain::SweepMode::Single, 1}});
-    ASSERT_EQ(updated.stateRevision, 1U);
+    const auto request =
+        updateSweepControlRequest("single-mode", 0, "single", 3);
+    const auto updated = postCommand(request);
+    ASSERT_EQ(updated.at("status"), "succeeded");
+    ASSERT_EQ(updated.at("stateRevision"), 1U);
+    EXPECT_EQ(postCommand(request), updated);
 
     const auto state = getState();
     const auto& channel = state.at("instrument").at("channels").at(0);
     EXPECT_EQ(channel.at("sweepMode"), "single");
+    EXPECT_EQ(channel.at("sweepCount"), 3U);
+    EXPECT_EQ(
+        state.at("sweepRuntime").at("configured"),
+        Json({
+            {"stateRevision", 1},
+            {"mode", "single"},
+            {"sweepCount", 3},
+        }));
+    EXPECT_EQ(
+        state.at("sweepRuntime").at("applied"),
+        Json({
+            {"stateRevision", 0},
+            {"generation", 1},
+            {"mode", "continuous"},
+            {"sweepCount", 1},
+        }));
+}
+
+TEST_F(WebApiChannelStateTest, RejectsInvalidSweepControlWire) {
+    const auto invalidMode =
+        postRaw(updateSweepControlRequest("invalid-mode", 0, "hold", 1));
+    ASSERT_TRUE(invalidMode);
+    EXPECT_EQ(invalidMode->status, httplib::StatusCode::BadRequest_400);
+    EXPECT_EQ(Json::parse(invalidMode->body).at("error"), "invalidCommand");
+
+    auto missingCount =
+        updateSweepControlRequest("missing-count", 0, "single", 1);
+    missingCount.at("payload").erase("sweepCount");
+    const auto missing = postRaw(missingCount);
+    ASSERT_TRUE(missing);
+    EXPECT_EQ(missing->status, httplib::StatusCode::BadRequest_400);
+
+    const auto invalidCount =
+        postRaw(updateSweepControlRequest("zero-count", 0, "single", 0));
+    ASSERT_TRUE(invalidCount);
+    EXPECT_EQ(invalidCount->status, httplib::StatusCode::UnprocessableContent_422);
+    EXPECT_EQ(
+        Json::parse(invalidCount->body).at("errorCode"),
+        "invalid-sweep-settings");
+    EXPECT_EQ(getState().at("stateRevision"), 0U);
 }
 
 TEST_F(WebApiChannelStateTest, CommandCreatedChannelUsesSupportedState) {

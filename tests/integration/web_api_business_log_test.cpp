@@ -133,12 +133,42 @@ TEST_F(WebApiBusinessLogTest, LogsAcceptedRestartOperation) {
     ASSERT_EQ(response->status, httplib::StatusCode::OK_200);
     const auto text = log_.text();
     EXPECT_NE(text.find(
-        "INFO [单次扫频] 启动通道#1单次扫频请求已成功处理 | "
+        "INFO [扫频控制] 重启通道#1扫频请求已成功处理 | "
         "command_id=restart-sweep | session_id=web-log-session | "
         "instrument_id=instrument-1 | revision=4 | operation_id="),
         std::string::npos);
     EXPECT_EQ(text.find("sweep_id="), std::string::npos);
     EXPECT_EQ(text.find("frame_id="), std::string::npos);
+}
+
+TEST_F(WebApiBusinessLogTest, LogsSweepControlResultOncePerRequest) {
+    ASSERT_EQ(post(createChannelRequest("channel", 0))->status, 200);
+    log_.clear();
+    const auto payload = nlohmann::json{
+        {"channelId", 1},
+        {"mode", "single"},
+        {"sweepCount", 2},
+    };
+
+    ASSERT_EQ(post(commandRequest(
+        "control-accepted", 1, "updateChannelSweepControl", payload))->status,
+        httplib::StatusCode::OK_200);
+    ASSERT_EQ(post(commandRequest(
+        "control-rejected", 1, "updateChannelSweepControl", payload))->status,
+        httplib::StatusCode::Conflict_409);
+
+    const auto text = log_.text();
+    EXPECT_NE(text.find(
+        "INFO [配置命令] 更新通道#1扫频运行方式请求已成功处理 | "
+        "command_id=control-accepted | session_id=web-log-session | "
+        "instrument_id=instrument-1 | revision=2"),
+        std::string::npos);
+    EXPECT_NE(text.find(
+        "WARN [配置命令] 更新通道#1扫频运行方式请求被拒绝 | "
+        "command_id=control-rejected | session_id=web-log-session | "
+        "instrument_id=instrument-1 | revision=2 | "
+        "error_code=state-revision-conflict"),
+        std::string::npos);
 }
 
 TEST_F(WebApiBusinessLogTest, DescribesAllSParametersUsingTraceId) {

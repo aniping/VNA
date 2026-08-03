@@ -73,7 +73,18 @@ domain::SweepSettings sweepSettingsFromJson(const Json& payload) {
     };
 }
 
-application::CommandPayload commandPayloadFromJson(
+domain::SweepMode sweepModeFromJson(const Json& payload) {
+    const auto mode = payload.at("mode").get<std::string>();
+    if (mode == "continuous") {
+        return domain::SweepMode::Continuous;
+    }
+    if (mode == "single") {
+        return domain::SweepMode::Single;
+    }
+    throw std::invalid_argument{"unsupported sweep mode"};
+}
+
+application::CommandPayload channelSweepCommandFromJson(
     const std::string& type,
     const Json& payload) {
     if (type == "createChannel") {
@@ -83,6 +94,22 @@ application::CommandPayload commandPayloadFromJson(
         return application::UpdateChannelSweepCommand{
             domain::ChannelId{payload.at("channelId").get<std::uint64_t>()},
             sweepSettingsFromJson(payload)};
+    }
+    if (type == "updateChannelSweepControl") {
+        return application::UpdateChannelSweepControlCommand{
+            domain::ChannelId{payload.at("channelId").get<std::uint64_t>()},
+            sweepModeFromJson(payload),
+            unsignedInteger<std::uint32_t>(payload, "sweepCount")};
+    }
+    throw std::invalid_argument{"unsupported channel command type"};
+}
+
+application::CommandPayload commandPayloadFromJson(
+    const std::string& type,
+    const Json& payload) {
+    if (type == "createChannel" || type == "updateChannelSweep" ||
+        type == "updateChannelSweepControl") {
+        return channelSweepCommandFromJson(type, payload);
     }
     if (type == "createMeasurement") {
         return application::CreateMeasurementCommand{

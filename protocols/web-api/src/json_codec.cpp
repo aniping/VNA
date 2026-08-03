@@ -69,7 +69,56 @@ Json channelToJson(const domain::ChannelSnapshot& channel) {
         {"id", channel.id.value()},
         {"sweep", sweepToJson(channel.sweep)},
         {"sweepMode", sweepModeName(channel.sweepMode)},
+        {"sweepCount", channel.sweepCount},
         {"triggerSource", triggerSourceName(channel.triggerSource)},
+    };
+}
+
+const char* runtimeStateName(application::SweepRuntimeState state) {
+    switch (state) {
+        case application::SweepRuntimeState::Running:
+            return "running";
+        case application::SweepRuntimeState::Stopped:
+            return "stopped";
+        case application::SweepRuntimeState::Retired:
+            return "retired";
+        case application::SweepRuntimeState::Failed:
+            return "failed";
+    }
+    return "unknown";
+}
+
+const char* runtimePhaseName(application::SweepRuntimePhase phase) {
+    switch (phase) {
+        case application::SweepRuntimePhase::Hold:
+            return "hold";
+        case application::SweepRuntimePhase::Preparing:
+            return "preparing";
+        case application::SweepRuntimePhase::Sweeping:
+            return "sweeping";
+        case application::SweepRuntimePhase::Publishing:
+            return "publishing";
+    }
+    return "unknown";
+}
+
+Json runtimeToJson(const application::SweepRuntimeSnapshot& runtime) {
+    return {
+        {"state", runtimeStateName(runtime.state)},
+        {"phase", runtimePhaseName(runtime.phase)},
+        {"configured",
+         {
+             {"stateRevision", runtime.configuredStateRevision},
+             {"mode", sweepModeName(runtime.configuredExecution.mode)},
+             {"sweepCount", runtime.configuredExecution.sweepCount},
+         }},
+        {"applied",
+         {
+             {"stateRevision", runtime.appliedStateRevision},
+             {"generation", runtime.appliedGeneration},
+             {"mode", sweepModeName(runtime.appliedExecution.mode)},
+             {"sweepCount", runtime.appliedExecution.sweepCount},
+         }},
     };
 }
 
@@ -168,6 +217,7 @@ std::string encodeState(const application::StateSnapshot& state) {
     return Json{
         {"stateRevision", state.stateRevision},
         {"instrument", instrumentToJson(state.instrument, state.display)},
+        {"sweepRuntime", runtimeToJson(state.sweepRuntime)},
     }.dump();
 }
 
