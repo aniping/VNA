@@ -1,5 +1,7 @@
-import { decodeTraceDisplayFrameSet } from './traceDisplayFrameSet.ts'
-import type { TraceDisplayFrameSet } from './traceDisplayFrameSet.ts'
+import { decodeSweepPreviewEvent, type SweepPreviewEvent } from './sweepPreview.ts'
+import { decodeTraceDisplayFrameSet, type TraceDisplayFrameSet } from './traceDisplayFrameSet.ts'
+
+export type LiveDisplayStream = 'complete' | 'preview'
 
 export interface DisplayFrameSocketHandlers {
   onOpen(): void
@@ -17,12 +19,13 @@ export interface DisplayFrameSocket {
 }
 
 export interface LiveDisplayEnvironment {
-  openSocket(handlers: DisplayFrameSocketHandlers): DisplayFrameSocket
+  openSocket(stream: LiveDisplayStream, handlers: DisplayFrameSocketHandlers): DisplayFrameSocket
   scheduleReconnect(callback: () => void): () => void
 }
 
 export interface LiveDisplayHandlers {
   onFrameSet(frameSet: TraceDisplayFrameSet): void
+  onPreviewEvent(event: SweepPreviewEvent): void
   onError(error: Error): void
   onConnectionChange(state: LiveDisplayConnection): void
 }
@@ -30,17 +33,21 @@ export interface LiveDisplayHandlers {
 export type LiveDisplayConnection = 'connecting' | 'online' | 'offline' | 'unavailable'
 
 const reconnectDelayMs = 500
+const streamPaths: Record<LiveDisplayStream, string> = {
+  complete: '/api/v1/display-frames',
+  preview: '/api/v1/sweep-previews',
+}
 
-function displayFramesUrl(): string {
-  const url = new URL('/api/v1/display-frames', window.location.href)
+function streamUrl(stream: LiveDisplayStream): string {
+  const url = new URL(streamPaths[stream], window.location.href)
   url.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return url.toString()
 }
 
 function browserEnvironment(): LiveDisplayEnvironment {
   return {
-    openSocket(handlers) {
-      const socket = new WebSocket(displayFramesUrl())
+    openSocket(stream, handlers) {
+      const socket = new WebSocket(streamUrl(stream))
       socket.addEventListener('open', handlers.onOpen, { once: true })
       socket.addEventListener('message', (event) => handlers.onMessage(event.data))
       socket.addEventListener('close', (event) => handlers.onClose({
@@ -56,9 +63,9 @@ function browserEnvironment(): LiveDisplayEnvironment {
   }
 }
 
-function messageFrameSet(data: unknown): TraceDisplayFrameSet {
-  if (typeof data !== 'string') throw new Error('Display frame-set message must be text')
-  return decodeTraceDisplayFrameSet(JSON.parse(data))
+function textJson(data: unknown, stream: LiveDisplayStream): unknown {
+  if (typeof data !== 'string') throw new Error(`${stream} display message must be text`)
+  return JSON.parse(data)
 }
 
 function reportError(handlers: LiveDisplayHandlers, error: unknown): void {
@@ -76,22 +83,16 @@ function frameSetAdvances(
 
 class LiveDisplaySession {
   private stopped = false
-  private generation = 0
-  private socket: DisplayFrameSocket | null = null
+  private connectionGeneration = 0
+  private sockets: DisplayFrameSocket[] = []
+  private opened = new Set<LiveDisplayStream>()
   private cancelReconnect: (() => void) | null = null
-  private readonly refreshState: () => Promise<void>
-  private readonly handlers: LiveDisplayHandlers
-  private readonly environment: LiveDisplayEnvironment
 
   constructor(
-    refreshState: () => Promise<void>,
-    handlers: LiveDisplayHandlers,
-    environment: LiveDisplayEnvironment,
-  ) {
-    this.refreshState = refreshState
-    this.handlers = handlers
-    this.environment = environment
-  }
+    private readonly refreshState: () => Promise<void>,
+    private readonly handlers: LiveDisplayHandlers,
+    private readonly environment: LiveDisplayEnvironment,
+  ) {}
 
   start(): () => void {
     void this.connect()
@@ -99,21 +100,13 @@ class LiveDisplaySession {
   }
 
   private async connect(): Promise<void> {
-    const generation = ++this.generation
+    const generation = ++this.connectionGeneration
+    this.opened = new Set()
     this.handlers.onConnectionChange('connecting')
     try {
       await this.refreshState()
       if (!this.isCurrent(generation)) return
-      // This baseline belongs to one socket only. A server restart can reset both counters,
-      // while an in-place configuration change advances generation and may reset sequence.
-      const baseline = { generation: 0, sequenceNumber: 0 }
-      const socket = this.environment.openSocket({
-        onOpen: () => this.connected(generation),
-        onMessage: (data) => this.receive(generation, baseline, data),
-        onClose: () => this.disconnected(generation),
-      })
-      if (this.isCurrent(generation)) this.socket = socket
-      else socket.close()
+      this.openPair(generation)
     } catch (error) {
       if (!this.isCurrent(generation)) return
       reportError(this.handlers, error)
@@ -122,22 +115,47 @@ class LiveDisplaySession {
     }
   }
 
-  private connected(generation: number): void {
-    if (this.isCurrent(generation)) this.handlers.onConnectionChange('online')
+  private openPair(generation: number): void {
+    const frameBaseline = { generation: 0, sequenceNumber: 0 }
+    const previewBaseline = { eventCursor: 0 }
+    const sockets = (['complete', 'preview'] as const).map((stream) => (
+      this.environment.openSocket(stream, {
+        onOpen: () => this.connected(generation, stream),
+        onMessage: (data) => this.receive(generation, stream, data, frameBaseline, previewBaseline),
+        onClose: () => this.disconnected(generation),
+      })
+    ))
+    if (this.isCurrent(generation)) this.sockets = sockets
+    else sockets.forEach((socket) => socket.close())
+  }
+
+  private connected(generation: number, stream: LiveDisplayStream): void {
+    if (!this.isCurrent(generation)) return
+    this.opened.add(stream)
+    if (this.opened.size === 2) this.handlers.onConnectionChange('online')
   }
 
   private receive(
     generation: number,
-    baseline: { generation: number; sequenceNumber: number },
+    stream: LiveDisplayStream,
     data: unknown,
+    frameBaseline: { generation: number; sequenceNumber: number },
+    previewBaseline: { eventCursor: number },
   ): void {
     if (!this.isCurrent(generation)) return
     try {
-      const frameSet = messageFrameSet(data)
-      if (!frameSetAdvances(frameSet, baseline)) return
-      baseline.generation = frameSet.generation
-      baseline.sequenceNumber = frameSet.sequenceNumber
-      this.handlers.onFrameSet(frameSet)
+      if (stream === 'complete') {
+        const frameSet = decodeTraceDisplayFrameSet(textJson(data, stream))
+        if (!frameSetAdvances(frameSet, frameBaseline)) return
+        frameBaseline.generation = frameSet.generation
+        frameBaseline.sequenceNumber = frameSet.sequenceNumber
+        this.handlers.onFrameSet(frameSet)
+        return
+      }
+      const event = decodeSweepPreviewEvent(textJson(data, stream))
+      if (event.eventCursor <= previewBaseline.eventCursor) return
+      previewBaseline.eventCursor = event.eventCursor
+      this.handlers.onPreviewEvent(event)
     } catch (error) {
       reportError(this.handlers, error)
     }
@@ -145,12 +163,19 @@ class LiveDisplaySession {
 
   private disconnected(generation: number): void {
     if (!this.isCurrent(generation)) return
-    // The session owns transport only: callers keep their last good frame while this
-    // invalidates queued events that could otherwise race a replacement connection.
-    this.generation += 1
-    this.socket = null
+    // Both lanes form one display session. Invalidating the pair prevents a late event from
+    // being combined with a baseline established by only the replacement lane.
+    this.connectionGeneration += 1
+    this.closeSockets()
     this.handlers.onConnectionChange('offline')
     this.scheduleReconnect()
+  }
+
+  private closeSockets(): void {
+    const sockets = this.sockets
+    this.sockets = []
+    this.opened.clear()
+    sockets.forEach((socket) => socket.close())
   }
 
   private scheduleReconnect(): void {
@@ -162,17 +187,16 @@ class LiveDisplaySession {
   }
 
   private isCurrent(generation: number): boolean {
-    return !this.stopped && generation === this.generation
+    return !this.stopped && generation === this.connectionGeneration
   }
 
   private stop(): void {
     if (this.stopped) return
     this.stopped = true
-    this.generation += 1
+    this.connectionGeneration += 1
     this.cancelReconnect?.()
     this.cancelReconnect = null
-    this.socket?.close()
-    this.socket = null
+    this.closeSockets()
   }
 }
 

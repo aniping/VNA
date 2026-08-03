@@ -20,12 +20,12 @@ test('App clears old frames only after one successful ensure command, then refre
     /async function handleEnsureAllSParameters[\s\S]*?\r?\n}\r?\n\r?\nfunction replaceFrameSet/,
   )?.[0] ?? ''
   const command = handler.indexOf('await ensureAllSParameters(')
-  const clear = handler.indexOf('frames.value = new Map()')
+  const clear = handler.indexOf('display.value = clearLiveDisplayData(display.value)')
   const refresh = handler.indexOf('await refreshState()')
 
-  assert.match(handler, /if \(!state\.value \|\| commandBusy\.value\) return/)
-  assert.match(handler, /const previousRevision = state\.value\.stateRevision/)
-  assert.match(handler, /pendingAllSParametersRevision = result\.stateRevision[\s\S]*?frames\.value = new Map\(\)/)
+  assert.match(handler, /runCommand\(async \(snapshot\) =>/)
+  assert.match(handler, /const previousRevision = snapshot\.stateRevision/)
+  assert.match(handler, /pendingAllSParametersRevision = result\.stateRevision[\s\S]*?clearLiveDisplayData/)
   assert.equal(handler.match(/ensureAllSParameters\(/g)?.length, 1)
   assert.equal(handler.match(/refreshState\(\)/g)?.length, 1)
   assert.equal(command >= 0 && command < clear && clear < refresh, true)

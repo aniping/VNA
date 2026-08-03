@@ -10,11 +10,13 @@ const session = source('src/api/liveDisplaySession.ts')
 const curveModel = source('src/components/diagramCurveModel.ts')
 const production = `${app}\n${session}\n${source('src/components/MainScreen.vue')}\n${curveModel}`
 
-test('production display consumes frame sets without sweep or diagnostic polling paths', () => {
+test('production display consumes complete and preview sets without diagnostic polling paths', () => {
   assert.match(session, /decodeTraceDisplayFrameSet/)
+  assert.match(session, /decodeSweepPreviewEvent/)
   assert.match(session, /onFrameSet/)
-  assert.match(app, /replaceDisplayFramesForSnapshot/)
-  assert.doesNotMatch(production, /startSingleSweep|pollOperation|fetchTraceDisplayFrame/)
+  assert.match(session, /onPreviewEvent/)
+  assert.match(app, /acceptCompleteFrameSet/)
+  assert.doesNotMatch(production, /pollOperation|fetchTraceDisplayFrame/)
   assert.doesNotMatch(production, /decodeTraceDisplayFrame\(/)
   assert.doesNotMatch(production, /Math\.log10|Math\.atan2|impedance|admittance/i)
 })
