@@ -109,15 +109,11 @@ if(EXISTS "${backup_dir}" OR IS_SYMLINK "${backup_dir}")
     endif()
 endif()
 
-include("${source_dir}/cmake/find-pnpm.cmake")
-find_pnpm_program(pnpm_program)
 find_program(ninja_program NAMES ninja REQUIRED)
 find_program(cxx_compiler NAMES g++ REQUIRED)
 
 # Frontend dist and the CMake build tree are disposable intermediates. Nothing
 # below touches the final release until install and validation both succeed.
-run_step("frontend build" "${source_dir}/frontend"
-    "${pnpm_program}" run build)
 run_step("release configure" "${source_dir}"
     "${CMAKE_COMMAND}" -S "${source_dir}" -B "${build_dir}"
     -G Ninja
@@ -125,6 +121,8 @@ run_step("release configure" "${source_dir}"
     "-DCMAKE_CXX_COMPILER=${cxx_compiler}"
     -DCMAKE_BUILD_TYPE=Release
     -DBUILD_TESTING=OFF
+    -DVNA_BUILD_BACKEND=ON
+    -DVNA_BUILD_FRONTEND=OFF
     -DVNA_ENABLE_RELEASE_INSTALL=ON)
 run_step("server build" "${source_dir}"
     "${CMAKE_COMMAND}" --build "${build_dir}" --target vna-server)
@@ -133,7 +131,7 @@ file(MAKE_DIRECTORY "${release_parent}")
 validate_release_parent()
 run_step("release install" "${source_dir}"
     "${CMAKE_COMMAND}" --install "${build_dir}"
-    --prefix "${stage_dir}" --component vna-release)
+    --prefix "${stage_dir}")
 run_step("release validation" "${source_dir}"
     "${CMAKE_COMMAND}" "-DRELEASE_ROOT=${stage_dir}"
     -P "${source_dir}/cmake/verify-release-layout.cmake")
@@ -152,9 +150,8 @@ if(EXISTS "${final_dir}" OR IS_SYMLINK "${final_dir}")
         remove_private_tree("${stage_dir}")
         message(FATAL_ERROR "Final release path changed during packaging")
     endif()
-    run_step("existing release validation" "${source_dir}"
-        "${CMAKE_COMMAND}" "-DRELEASE_ROOT=${final_dir}"
-        -P "${source_dir}/cmake/verify-release-layout.cmake")
+    # Frontend-only or backend-only installs may leave a deliberately partial
+    # product tree here. Park it only after the new full stage is valid.
     file(RENAME "${final_dir}" "${backup_dir}" RESULT park_result)
     if(NOT park_result STREQUAL "0")
         remove_private_tree("${stage_dir}")

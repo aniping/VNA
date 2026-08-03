@@ -15,16 +15,26 @@
       }
     },
     {
-      "name": "dev",
-      "displayName": "Fast server development",
-      "description": "Build only vna-server with ccache and reduced debug information",
+      "name": "frontend",
       "inherits": "base",
-      "binaryDir": "${sourceDir}/out/dev",
+      "binaryDir": "${sourceDir}/out/frontend",
       "cacheVariables": {
         "BUILD_TESTING": false,
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_COMPILER_LAUNCHER": "ccache",
-        "CMAKE_CXX_FLAGS_DEBUG": "-O0 -g1"
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/release/VectorNetworkAnalyzer",
+        "VNA_BUILD_BACKEND": false,
+        "VNA_BUILD_FRONTEND": true
+      }
+    },
+    {
+      "name": "backend",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/out/backend",
+      "cacheVariables": {
+        "BUILD_TESTING": false,
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/release/VectorNetworkAnalyzer",
+        "VNA_BUILD_BACKEND": true,
+        "VNA_BUILD_FRONTEND": false
       }
     },
     {
@@ -37,7 +47,9 @@
         "BUILD_TESTING": true,
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_COMPILER_LAUNCHER": "ccache",
-        "CMAKE_CXX_FLAGS_DEBUG": "-O0 -g1"
+        "CMAKE_CXX_FLAGS_DEBUG": "-O0 -g1",
+        "VNA_BUILD_BACKEND": true,
+        "VNA_BUILD_FRONTEND": false
       }
     },
     {
@@ -48,31 +60,40 @@
       "binaryDir": "${sourceDir}/out/release-driver",
       "cacheVariables": {
         "BUILD_TESTING": false,
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "VNA_BUILD_BACKEND": true,
+        "VNA_BUILD_FRONTEND": true
       }
     }
   ],
   "buildPresets": [
     {
-      "name": "dev",
-      "displayName": "Build development server",
-      "configurePreset": "dev",
-      "jobs": 12,
+      "name": "frontend",
+      "configurePreset": "frontend",
+      "jobs": 8,
       "targets": [
-        "vna-server"
+        "install"
+      ]
+    },
+    {
+      "name": "backend",
+      "configurePreset": "backend",
+      "jobs": 8,
+      "targets": [
+        "install"
       ]
     },
     {
       "name": "test",
       "displayName": "Build complete test suite",
       "configurePreset": "test",
-      "jobs": 12
+      "jobs": 8
     },
     {
       "name": "release",
       "displayName": "Build portable release",
       "configurePreset": "release",
-      "jobs": 12,
+      "jobs": 8,
       "targets": [
         "package-release"
       ]
@@ -87,7 +108,7 @@
         "outputOnFailure": true
       },
       "execution": {
-        "jobs": 12,
+        "jobs": 8,
         "noTestsAction": "error"
       }
     }

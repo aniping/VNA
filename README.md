@@ -2,8 +2,7 @@
 
 面向商用级矢量网络分析仪（VNA）的绿地软件项目。项目从统一业务内核出发，同时支持本地与远程访问、真实硬件与仿真后端，以及可按需启用的诊断能力。
 
-当前已完成第一阶段的领域骨架、统一命令入口、最小仪表服务，以及连接真实
-服务状态的 ZNB 单屏前端。
+当前已完成第一阶段的领域骨架、统一命令入口、最小仪表服务，以及连接真实服务状态的 ZNB 单屏前端。
 
 ## 文档
 
@@ -31,8 +30,7 @@
 
 ## 工程目录
 
-所有 C++ 后端代码统一位于 `vna/`，仓库根目录只保留前端、测试、构建和文档等
-工程级内容。当前目录结构如下：
+所有 C++ 后端代码统一位于 `vna/`，仓库根目录只保留前端、测试、构建和文档等工程级内容。当前目录结构如下：
 
 ```text
 VectorNetworkAnalyzer/
@@ -59,14 +57,11 @@ VectorNetworkAnalyzer/
 └── third-part/               # 固定版本的离线三方源码
 ```
 
-`vna/core` 不依赖 Web 或具体硬件实现；`vna/apps` 只负责选择后端并组装进程。
-公开头文件仍使用 `#include <vna/...>`，目录归拢不改变 C++ namespace 或 CMake target。
+`vna/core` 不依赖 Web 或具体硬件实现；`vna/apps` 只负责选择后端并组装进程。公开头文件仍使用 `#include <vna/...>`，目录归拢不改变 C++ namespace 或 CMake target。
 
 ## 三方依赖
 
-C++ 三方源码以固定版本的 `.tar.xz` 归档提交在 `third-part/archives/`。首次
-CMake 配置时会校验 SHA-256，并仅在源码目录不存在时解压到 `third-part/`；
-构建不需要 Git、网络或补丁工具。复制普通源码目录到离线机器即可构建。
+C++ 三方源码以固定版本的 `.tar.xz` 归档提交在 `third-part/archives/`。首次 CMake 配置时会校验 SHA-256，并仅在源码目录不存在时解压到 `third-part/`；构建不需要 Git、网络或补丁工具。复制普通源码目录到离线机器即可构建。
 
 当前固定版本：
 
@@ -75,125 +70,105 @@ CMake 配置时会校验 SHA-256，并仅在源码目录不存在时解压到 `t
 - JSON for Modern C++ `v3.12.0`
 - spdlog `v1.17.0`（以静态库构建，仅用于私有运行日志实现）
 
-前端包通过 `frontend/pnpm-lock.yaml` 固定精确版本，安装产物位于被忽略的
-`frontend/node_modules/`，不提交到仓库。
+前端包通过 `frontend/pnpm-lock.yaml` 固定精确版本，安装产物位于被忽略的 `frontend/node_modules/`，不提交到仓库。
 
-## 构建与测试
+## 构建
 
-需要 CMake、Ninja 和 GCC。Windows 使用 MinGW GCC，Linux 使用系统 GCC；
-项目不支持 MSVC。推荐的开发与测试 preset 还需要 `ccache` 位于 `PATH`。
-首次配置会自动从仓库内归档解压第三方依赖。
+后端需要 CMake 3.25+、Ninja 与 GCC；Windows 使用 MinGW GCC，Linux 使用 GCC 7.3 或更新版本，不支持 MSVC。前端源码构建需要 Node.js 20.19+ 与 pnpm 11.9.0。首次配置会从仓库内归档解压 C++ 三方依赖，不使用 Git 或网络下载。
 
-日常开发只构建 `vna-server`：
+### 构建入口
 
-```powershell
-cmake --preset dev
-cmake --build --preset dev
-```
+| preset | 内容 | 输出 |
+| --- | --- | --- |
+| `frontend` | 仅编译并安装前端 | `release/VectorNetworkAnalyzer/web/` |
+| `backend` | 仅编译并安装 C++ 后端 | `release/VectorNetworkAnalyzer/bin/` 及启动文件 |
+| `test` | C++ 后端与全部 CTest 目标 | `out/test/` |
+| `release` | 原子组装完整便携包 | `release/VectorNetworkAnalyzer/` |
 
-`dev` 使用 `out/dev/`、12 个并行任务、ccache 和 `-O0 -g1`，并关闭测试目标；
-它保留行号级调试信息，但不包含完整的变量调试信息。提交前执行完整测试构建：
+只保留以上四个公开 preset，默认使用 8 路并行；下面显式覆盖为 24 路。`frontend`/`release` 要求 Node.js 和 pnpm，`backend`/`test` 不探测前端。
 
-```powershell
-cmake --preset test
-cmake --build --preset test
-ctest --preset test
-```
-
-如果没有 ccache，或需要完整 `-g` 调试信息，仍可使用原始命令：
-
-```powershell
-cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_COMPILER=g++
-cmake --build build
-ctest --test-dir build --output-on-failure
-```
-
-在 Windows 上执行前，请确认 `g++` 和 `ninja` 来自同一套 MinGW 工具链。
-
-固定的 QEMU Linux/ARM64 编译门禁、环境依赖和完整执行脚本见
-[Linux/ARM64 QEMU 验证](docs/linux-arm64-qemu-validation.md)。它只编译和链接
-`vna-server` 并检查产物架构，不运行功能测试，也不扩大正式平台支持范围。
-
-`build/`、`out/` 和 `frontend/dist/` 只是构建中间产物。组装包含服务端、前端静态文件和
-运行库的便携发布目录前，还需要 Node.js 20.19 或更高版本、pnpm
-11.9.0，并在首次打包或锁文件变化后安装前端依赖：
+首次前端构建或锁文件变化后先安装依赖：
 
 ```powershell
 pnpm --dir frontend install --frozen-lockfile
 ```
 
-随后执行显式发布 preset：
+### 独立构建前端或后端
 
 ```powershell
-cmake --preset release
-cmake --build --preset release
+cmake --preset frontend
+cmake --build --preset frontend --parallel 24
+
+cmake --preset backend
+cmake --build --preset backend --parallel 24
 ```
 
-该显式目标成功后生成 `release/VectorNetworkAnalyzer/`；普通 CMake 构建和
-`pnpm run build` 都不会创建或替换发布目录。Windows/MinGW 从仓库根运行：
+`frontend` 只更新 `web/`；`backend` 只更新 `bin/`、启动脚本、说明和日志，不会触碰前端。完成后从仓库根启动：
 
 ```powershell
 .\release\VectorNetworkAnalyzer\start.cmd
 ```
 
-Linux/GCC 使用相同目录结构，以下命令同样从仓库根运行：
+后端运行时从产品目录寻找 `web/`；缺失时退出并记录到 `logs/vna.log`。
 
-```bash
-./release/VectorNetworkAnalyzer/start.sh
+### 测试
+
+```powershell
+cmake --preset test
+cmake --build --preset test --parallel 24
+ctest --preset test
 ```
 
-也可以在任意工作目录使用 `start.cmd` 或 `start.sh` 的绝对路径。服务从自身
-可执行文件位置定位相邻的 `web/`，不依赖当前工作目录；
-浏览器打开 `http://127.0.0.1:8080/`。服务仅监听 `127.0.0.1:8080`，可通过
-`/api/v1/health`、`/api/v1/state`
-和 `/api/v1/commands` 验证当前 HTTP 切片。
-`/api/v1/state` 的成功响应使用 `Cache-Control: no-store`，客户端不得缓存状态快照。
-启动脚本输出启动状态、Web URL 和 `logs/vna.log` 路径；服务非零退出时额外
-输出一行错误提示并保留原始退出码，不自动打开浏览器。运行日志是同步写入的
-中文人类文本，单文件最大 10 MiB，活动文件加四个归档；不产生 JSONL。日志只记录
-成功解码后的写命令业务结果，不记录 GET、静态资源、WebSocket 或帧推送请求。
-连续采集仅在每个配置代次首个完整帧集发布后记录一条 DEBUG，并在采集终止
-失败时记录一条 ERROR；正常约 10 Hz 帧流不会逐帧写日志。
-`/api/v1/commands` 的失败响应保留 `status` 与 `stateRevision`，并提供稳定的
-`errorCode` 供客户端区分具体错误。
-`commandId`、`sessionId` 和 `instrumentId` 必须为 1..128 bytes，且不得包含
-ASCII 控制字节 `00..1F` 或 `7F`；非法 ID 返回 `400 invalidCommand`。
-对进入幂等窗口且仍被保留的确定性命令结果，相同
-`(instrumentId, sessionId, commandId)` 与相同命令内容会重放首次完整响应；
-同一已保留键复用于不同内容时返回 `409 conflict` 和 `command-id-reuse`。
-幂等窗口在当前进程中默认保留 1024 条确定结果；淘汰后旧键按届时状态重新
-处理，不再承诺重放，应用层统计可观察条目数与淘汰数。
+Windows 上的 `g++` 与 `ninja` 必须来自兼容的 MinGW 工具链。QEMU 门禁见 [Linux/ARM64 QEMU 验证](docs/linux-arm64-qemu-validation.md)。
 
-当前可用 `updateTraceScalePerDivision` 命令更新 Log Magnitude Trace 的
-Scale/Div，payload 为 `{"traceId": <id>, "scalePerDivision": <number>}`。
-`/api/v1/state` 会在每条 Trace 上返回 `scale`；Log Magnitude 包含完整 dB
-显示比例快照，尚未开放该能力的 Phase 与 Smith 返回 `null`。
-当前发布版由唯一 `SweepRuntime` 自动持续采集，并以约 10 Hz 的模拟节奏更新默认
-S21 显示帧。`startSingleSweep` 会在同一 worker 上接受 Restart 请求，返回可查询的
-`operationId`，不会启动第二个采集 source 或增加配置 revision。
-默认开路仿真的 S21 是仪器内部耦合泄漏叠加确定性接收机噪声，不代表 DUT 直通。
-`GET /api/v1/traces/<traceId>/display-frame` 返回最新完整 Log Magnitude dB
-帧；Trace 存在但尚无可用帧时返回空的 `204`，Trace 不存在时返回 `404`。该
-接口用于读取最新完整帧，不作为连续曲线高频轮询通道。
+### 正式发布
 
-`WS /api/v1/display-frames` 是连续显示通道，每条消息原子推送当前 generation 的
-完整 Trace 帧集，包含该次采集产生的全部 Log Magnitude、Phase 与 Smith 数据。
-每次连接（包括重连）都使用新的 generation/sequence cursor；若已有 retained
-latest 集合会立即发送。之后采用 latest-only 语义，慢客户端可以跳过中间集合但
-不会倒退 sequence；无帧的 generation 变化保持连接并等待新代首帧，服务端不保存
-每连接历史队列。客户端消息不作为业务命令；连续曲线必须使用该推送通道，不得轮询
-上面的 REST 单 Trace 诊断接口。
+```powershell
+cmake --preset release
+cmake --build --preset release --parallel 24
+```
 
-`WS /api/v1/sweep-previews` 推送 latest-only 的累计扫频前缀和权威扫频状态。事件中的
-`sweepStatus` 使用 Preparing、Sweeping、Calculation、Hold、Failed 业务阶段及完整
-采集工作量进度；内部发布步骤不会作为用户状态暴露。配置代次变化后的首个完整帧
-发布前，`firstSweepAfterConfiguration` 为 `true`。连接重建后会从 retained 最新
-事件恢复，Preview 仍是暂态数据，不替代上述完整帧集真值。
+`release` 会先在私有暂存目录组装并验证完整 `bin/web/logs`，成功后原子替换 `release/VectorNetworkAnalyzer/`；失败不会暴露半成品。它与可增量组合的 `frontend`、`backend` 入口使用同一最终目录，但拥有更严格的完整包承诺。
+
+Linux 完整包从仓库根运行 `./release/VectorNetworkAnalyzer/start.sh`。
+
+### Linux GCC 7.3
+
+```bash
+export LD_LIBRARY_PATH=/opt/vna-gcc73/usr/lib/x86_64-linux-gnu
+cmake -S . -B out/gcc73-release -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_TESTING=OFF -DVNA_BUILD_FRONTEND=OFF \
+  -DCMAKE_C_COMPILER=/opt/vna-gcc73/usr/bin/gcc-7 \
+  -DCMAKE_CXX_COMPILER=/opt/vna-gcc73/usr/bin/g++-7
+cmake --build out/gcc73-release --target vna-server --parallel "$(nproc)"
+```
+
+全量测试把 `BUILD_TESTING` 改为 `ON`，随后执行：
+
+```bash
+cmake --build out/gcc73-release --parallel "$(nproc)"
+ctest --test-dir out/gcc73-release --parallel "$(nproc)" --output-on-failure
+```
+
+## 运行与接口
+
+服务监听 `0.0.0.0:8080`。本机打开 `http://127.0.0.1:8080/`，局域网设备使用
+服务器实际 IPv4 地址，例如 `http://192.168.1.10:8080/`；`0.0.0.0` 只是绑定地址，
+不能作为浏览器入口。当前为无 TLS、无认证的可信局域网入口，不得直接暴露到公网。
+服务从自身可执行文件位置定位 `web/`，启动脚本输出本机 Web URL 和日志路径。
+
+`/api/v1/health`、`/api/v1/state` 和 `/api/v1/commands` 分别提供健康检查、权威
+快照和统一命令入口。命令保持 revision、结构化错误和 1024 条幂等窗口语义；
+`startSingleSweep` 返回可查询的 `operationId`。完整接口合同见
+[总体软件架构](docs/architecture.md) 和相关协议测试。
+
+`WS /api/v1/display-frames` 推送完整 Trace 帧集，`WS /api/v1/sweep-previews`
+推送 latest-only 累计前缀与权威扫频状态；两者均不反压采集。默认开路仿真的
+S21 是内部耦合泄漏叠加确定性接收机噪声，不代表 DUT 直通。
 
 ## 前端开发
 
-需要 Node.js 20.19 或更高版本和 pnpm 11.9.0。保持 `vna-server` 运行，另开
-一个终端启动单窗口前端：
+保持后端运行，在另一个终端启动 Vite：
 
 ```powershell
 cd frontend
@@ -201,75 +176,13 @@ pnpm install --frozen-lockfile
 pnpm run dev
 ```
 
-浏览器打开 `http://127.0.0.1:5173/`。开发服务器会把 `/api` 请求代理到
-`http://127.0.0.1:8080`，因此页面显示的是本地仪表服务的真实状态。
-
-当前单窗口界面只渲染服务快照中真实存在的 Window：一个 Window 对应一个主图，
-多个 Window 也不会补齐不存在的空白 Diagram。Softtool 默认关闭，点击 `Meas`
-可打开或重新关闭 Measurement Softtool。后端 `setTraceMeasurementType` 命令可将
-活动 Trace 切换到 S11、S12、S21 或 S22；四个 S 参数按钮和 `All S-Params`
-已接入真实命令并建立四个 2×2 Diagram；向导和拓扑入口仍保持禁用，切换时
-不创建本地 Trace 或 Window。
-默认 S21 Trace 的色块和曲线为绿色；活动 Trace 信息条、活动 Channel 和右上角
-真实 WindowId 使用蓝/青蓝色高亮，所有 Diagram 外框保持统一细深灰蓝（手册
-第 112、127–129、935–936 页，ZNA v41 补充）。尚无测量帧时 Diagram 显示空态；后台
-连续采集会自动更新显示帧。采集中保留上一完整曲线，并用同代、同身份和兼容轴的累计
-Preview 分段覆盖已采集部分；两处 `Restart Sweep` 都复用服务端单 worker 命令。
-LogMagnitude、Phase 与 Smith 都直接绘制连续帧集中的后端样本。笛卡尔图使用
-10×10 主网格和同 Trace 色参考线：LogMagnitude 刻度来自权威 Scale 快照；Phase
-样本仍为 `[-180, 180)`，默认显示视口为 `[-225°, 225°]`、45°/div、Ref 0°。
-Smith 直接投影复数平面坐标，并显示 `200 mU/ Ref 1 U` 的标准归一化圆图；前端
-不计算阻抗、导纳或相位。切换 Measurement 或 Format 时保持同一实时连接并等待
-新 generation，网格保留且不显示旧身份曲线。
-`Maximize Diagram` 可切换活动 Diagram 的最大化状态；其余尚未实现的 Toolbar
-项保持禁用。
-底部 `File` 至 `Help` 菜单尚未接通并保持禁用；状态栏按 ZNB 以绿色进度条显示
-权威扫频阶段与进度，并保留活动通道、首扫星号及本地日期时间，不暴露连接、
-revision 或实体计数诊断。
-
-`Start`、`Stop`、`Center` 和 `Span` Hard Key 已连接到真实 Channel 状态。修改
-Center 时保持当前 Span，修改 Span 时保持当前 Center，并通过 revision 冲突检查
-提交完整扫频设置。
-
-`Power / Bw / Avg` 当前提供 Power 与 IF Bandwidth 设置；`Sweep` 按手册同时显示
-Sweep Params、Sweep Type、Trigger In、Trigger Out、Sweep Control 五个页签，提供
-Points、Continuous、Single、Sweeps 和 Restart，底部状态显示权威阶段、总进度及首扫星号。
-Sweep Type 与 Trigger Out 可展开核对原机布局，但尚未接入的内部控件全部保持禁用。
-`Trigger` 的 `Trigger In` 显示 Free Run、External、Multiple、Manual 竖向单列，当前仅
-Free Run 作为快照语义显示，其余入口与 Trigger Manager 原生禁用；当前 wire 没有 averaging
-计数字段，因此 `Avg None` 只表示计数不可用，不伪造计数值。
-
-活动 Trace 的 `scale` 快照非空时，`Scale` Hard Key 会打开 Scale Values
-Softtool。当前仅 Scale/Div 可编辑：输入有限且大于零的数值后按 Enter 提交，
-失焦或按 Escape 只恢复服务快照，不发送命令。其余 Scale 控件保持禁用；笛卡尔
-Diagram 的上下界只显示服务返回的 maximum/minimum，Scale 不可用时显示 `—`。
-
-执行前端 Node 测试、类型检查和生产构建：
+打开 `http://127.0.0.1:5173/`；开发服务器把 `/api` 代理到本地后端。前端检查：
 
 ```powershell
-cd frontend
 pnpm test
 pnpm run build
 ```
 
-## Linux 编译
+### 当前界面
 
-```shell
-export LD_LIBRARY_PATH=/opt/vna-gcc73/usr/lib/x86_64-linux-gnu
-
-cmake -S . -B out/gcc73-release -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_C_COMPILER=/opt/vna-gcc73/usr/bin/gcc-7 -DCMAKE_CXX_COMPILER=/opt/vna-gcc73/usr/bin/g++-7
-  
-cmake --build out/gcc73-release --target vna-server -- -j"$(nproc)"
-```
-
-### 全量测试
-
-```shell
-export LD_LIBRARY_PATH=/opt/vna-gcc73/usr/lib/x86_64-linux-gnu
-
-cmake -S . -B /opt/vna-gcc73-main-full -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON -DCMAKE_C_COMPILER=/opt/vna-gcc73/usr/bin/gcc-7 -DCMAKE_CXX_COMPILER=/opt/vna-gcc73/usr/bin/g++-7
-
-cmake --build /opt/vna-gcc73-main-full --parallel "$(nproc)"
-
-ctest --test-dir /opt/vna-gcc73-main-full --parallel "$(nproc)" --output-on-failure
-```
+当前前端按 ZNB v74 单窗口结构呈现真实 Channel、Measurement、Trace、Window、完整帧与渐进扫频数据；所有可用控件都提交服务端命令，未实现项保持隐藏或禁用。页面布局证据与已知差距见 [ZNB 单屏界面复刻基线](docs/ui-znb-v74-reference.md)，扫频语义见 [ZNB Sweep Runtime 规范](docs/znb-sweep-runtime-spec.md)。

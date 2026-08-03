@@ -25,7 +25,8 @@
 namespace {
 
 constexpr auto instrumentId = "instrument-1";
-constexpr auto webAddress = "127.0.0.1";
+constexpr auto webBindAddress = "0.0.0.0";
+constexpr auto localWebAddress = "127.0.0.1";
 constexpr int webPort = 8080;
 constexpr std::size_t traceCapacity = 1024;
 constexpr std::uint32_t maximumPointsPerChunk = 32;
@@ -91,9 +92,9 @@ void logWebEndpoint(spdlog::level::level_enum level) noexcept {
     try {
         if (const auto logger = spdlog::get("vna")) {
             logger->log(
-                level, "[服务启动] Web 服务{}：http://{}:{}/",
+                level, "[服务启动] Web 服务{}：{}:{}；本机访问：http://{}:{}/",
                 level == spdlog::level::err ? "监听失败" : "准备监听",
-                webAddress, webPort);
+                webBindAddress, webPort, localWebAddress, webPort);
         }
     } catch (...) {}
 }
@@ -168,7 +169,7 @@ int runServer() {
         {publication.repository, previews},
         {.webRoot = webRoot}};
     logWebEndpoint(spdlog::level::info);
-    if (!webApi.listen(webAddress, webPort)) {
+    if (!webApi.listen(webBindAddress, webPort)) {
         logWebEndpoint(spdlog::level::err);
         return EXIT_FAILURE;
     }

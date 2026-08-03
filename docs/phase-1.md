@@ -71,7 +71,7 @@
 - Windows/MinGW GCC 与 Linux/GCC 的持续集成构建矩阵。
 - `cpp-httplib` 在两个平台上的协议适配器集成测试。
 - `cpp-httplib` 的 HTTP、WebSocket 兼容性冒烟测试。
-- 启用 HTTPS、WSS 或非回环地址监听前完成双平台 TLS 冒烟测试。
+- 可信局域网使用同源 HTTP/WebSocket；公网部署前完成 TLS、认证与双平台安全测试。
 - 统一关联标识；运行日志采用 ADR-0010 的单一同步文本合同。
 - 核心领域单元测试。
 - Backend 契约测试。
@@ -111,7 +111,7 @@
 
 ### M1.5：可测试的本地网页壳
 
-交付：仅监听回环地址的最小 `vna-server`、StateSnapshot REST 接口和
+交付：监听所有 IPv4 接口的最小 `vna-server`、StateSnapshot REST 接口和
 Vue 工作台骨架。前端按 [ZNB v74 界面复刻基线](ui-znb-v74-reference.md) 实现，
 首版采用官方 Single Window Mode 的 1280×800 主应用屏，必须读取真实服务端
 状态，不维护静态业务 Mock。
@@ -124,8 +124,7 @@ Vue 工作台骨架。前端按 [ZNB v74 界面复刻基线](ui-znb-v74-referenc
 - 页面发出的最小配置命令经 `POST /api/v1/commands` 进入 CommandBus。
 - Windows/MinGW GCC 与 Linux/GCC 均能启动服务并构建前端。
 
-该切片只用于尽早验证交互和进度，使用本地 HTTP。HTTPS、WSS 和远程监听
-仍由后续 TLS 兼容性与访问安全切片控制。
+该切片只用于本机或可信局域网的 HTTP 交互验证；公网部署仍由后续 TLS、认证与访问安全切片控制。
 
 ### M2：模拟采集
 
@@ -159,7 +158,7 @@ Vue 工作台骨架。前端按 [ZNB v74 界面复刻基线](ui-znb-v74-referenc
 - 慢客户端在连续扫频中只丢弃过时显示帧，不影响服务端完整帧。
 - HTTP/WebSocket Handler 不执行扫频或数据处理，长操作只负责入队并返回 `operationId`。
 - 断线重连恢复一致状态，无需页面重建业务真值。
-- 启用 HTTPS、WSS 或远程监听前，双平台 TLS 冒烟测试通过。
+- 公网或不可信网络部署前，TLS、认证与双平台安全测试通过。
 
 ### M5：操作语义与最小 SCPI
 

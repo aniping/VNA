@@ -71,7 +71,7 @@ try {
         '[服务启动] 矢量网络分析仪服务正在启动',
         '[工厂预置] 已加载：通道 1，S21，Trace 1，频率 10 MHz 至 26.5 GHz，201 点，IFBW 10 kHz，功率 -10 dBm',
         '[连续扫频] 仿真持续测量已启动',
-        '[服务启动] Web 服务准备监听：http://127.0.0.1:8080/'
+        '[服务启动] Web 服务准备监听：0.0.0.0:8080；本机访问：http://127.0.0.1:8080/'
     )
     Require-OrderedText $console $milestones
     $logText = Read-Text $logFile
