@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <utility>
 
 #include <vna/application/command_bus.hpp>
@@ -34,6 +35,21 @@ inline application::SingleSweepCommandHandler& stoppedSingleSweepHandler() {
     return handler;
 }
 
+inline acquisition::ContinuousAcquisitionPlan commandBusTestPlan(
+    const application::CommandBusInitialState& initialState) {
+    auto plan = acquisition::test_support::validPlan();
+    const auto channels = initialState.instrument.snapshot().channels;
+    if (!channels.empty()) {
+        const auto& sweep = channels.front().sweep;
+        plan.frequencyAxis.startFrequencyHz = sweep.startFrequencyHz;
+        plan.frequencyAxis.stopFrequencyHz = sweep.stopFrequencyHz;
+        plan.frequencyAxis.points = sweep.points;
+        plan.ifBandwidthHz = static_cast<std::uint32_t>(sweep.ifBandwidthHz);
+        plan.powerDbm = sweep.powerDbm;
+    }
+    return plan;
+}
+
 // Tests own the same explicit repository/catalog borrowing graph as production.
 // Keeping that graph in a base lets the public CommandBus API stay mandatory
 // without hiding a fallback catalog inside production code.
@@ -53,7 +69,7 @@ public:
                   .display = initialState.displayWorkspace.snapshot(),
               }),
           runtime_(
-              {acquisition::test_support::validPlan(), catalog_.capture(), 2,
+              {commandBusTestPlan(initialState), catalog_.capture(), 2,
                {.mode = domain::SweepMode::Single, .sweepCount = 1}},
               [](const acquisition::RawSweepCaptureRequest&,
                  const acquisition::RawSweepChunkObserver&,
@@ -95,7 +111,7 @@ public:
           CommandBus(
               std::move(instrumentId),
               stoppedSingleSweepHandler(),
-              CommandBusRuntimeOwner::catalog(),
+              CommandBusRuntimeOwner::runtime(),
               idempotencyCapacity) {}
 
     StoppedCommandBus(
@@ -106,7 +122,7 @@ public:
           CommandBus(
               std::move(instrumentId),
               stoppedSingleSweepHandler(),
-              CommandBusRuntimeOwner::catalog(),
+              CommandBusRuntimeOwner::runtime(),
               std::move(initialState),
               idempotencyCapacity) {}
 };

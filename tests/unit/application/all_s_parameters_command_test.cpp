@@ -68,7 +68,7 @@ protected:
     AllSParametersCommandTest()
         : bus_(InstrumentId{"instrument-1"},
                vna::test::stoppedSingleSweepHandler(),
-               runtimeOwner_.catalog(),
+               runtimeOwner_.runtime(),
                std::move(preset_.commandBusState)) {}
 
     CommandEnvelope command(

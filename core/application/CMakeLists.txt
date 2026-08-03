@@ -3,6 +3,7 @@ find_package(Threads REQUIRED)
 add_library(
     vna_application
     src/command_bus.cpp
+    src/command_configuration_transaction.cpp
     src/command_idempotency.cpp
     src/all_s_parameters_command.cpp
     src/control_authority.cpp
@@ -27,6 +28,7 @@ add_library(
     src/sweep_runtime_control.cpp
     src/sweep_runtime_configuration.cpp
     src/sweep_generation_transaction.cpp
+    src/sweep_configuration_command.cpp
     src/sweep_runtime_operation.cpp
     src/sweep_runtime_worker.cpp
     src/trace_display_frame_query.cpp

@@ -51,19 +51,22 @@ SweepRuntimeImpl::prepareConfiguration(const StateSnapshot& candidate) {
         candidate.instrument.channels.cbegin(),
         candidate.instrument.channels.cend(),
         [channelId](const auto& item) { return item.id == channelId; });
-    if (channel == candidate.instrument.channels.cend()) {
+    if (channel == candidate.instrument.channels.cend() &&
+        !candidate.instrument.channels.empty()) {
         return SweepRuntimeConfigurationError{
             SweepRuntimeConfigurationErrorCode::UnsupportedSweepConfiguration};
     }
     auto acquisition = plan_.acquisition;
-    acquisition.frequencyAxis.startFrequencyHz =
-        channel->sweep.startFrequencyHz;
-    acquisition.frequencyAxis.stopFrequencyHz =
-        channel->sweep.stopFrequencyHz;
-    acquisition.frequencyAxis.points = channel->sweep.points;
-    acquisition.ifBandwidthHz =
-        static_cast<std::uint32_t>(channel->sweep.ifBandwidthHz);
-    acquisition.powerDbm = channel->sweep.powerDbm;
+    if (channel != candidate.instrument.channels.cend()) {
+        acquisition.frequencyAxis.startFrequencyHz =
+            channel->sweep.startFrequencyHz;
+        acquisition.frequencyAxis.stopFrequencyHz =
+            channel->sweep.stopFrequencyHz;
+        acquisition.frequencyAxis.points = channel->sweep.points;
+        acquisition.ifBandwidthHz =
+            static_cast<std::uint32_t>(channel->sweep.ifBandwidthHz);
+        acquisition.powerDbm = channel->sweep.powerDbm;
+    }
     const auto acquisitionChanged = !sameAcquisitionPlan(
         acquisition, plan_.acquisition);
     auto publication = catalog_.prepare(
@@ -94,6 +97,14 @@ void SweepRuntimeImpl::commitConfiguration(
     static_assert(std::is_nothrow_move_assignable_v<
         decltype(pendingConfiguration_)>);
     pendingConfiguration_ = std::move(state->pending);
+    snapshot_.configuredStateRevision =
+        pendingConfiguration_->plan.publication->stateRevision;
+    if (snapshot_.phase == SweepRuntimePhase::Hold &&
+        !pendingOperation_.has_value() && !activeRequest_.has_value()) {
+        // Hold is already a safe Sweep boundary; applying here prevents a
+        // configuration from remaining pending until a future Restart.
+        applyPendingConfiguration();
+    }
     static_assert(std::is_nothrow_destructible_v<
         detail::PreparedSweepRuntimeConfigurationState>);
     static_assert(noexcept(state.reset()));

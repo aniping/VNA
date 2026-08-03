@@ -122,6 +122,7 @@ struct SweepRuntimeFailure {
 struct SweepRuntimeSnapshot {
     SweepRuntimeState state{SweepRuntimeState::Running};
     SweepRuntimePhase phase{SweepRuntimePhase::Preparing};
+    std::uint64_t configuredStateRevision{};
     // These identify the immutable plan used at the last Sweep boundary.
     // CommandBus stateRevision remains the separately observable configured
     // revision and may be newer while a Sweep is still in flight.

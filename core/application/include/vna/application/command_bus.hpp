@@ -95,7 +95,7 @@ struct CommandBusStats {
 };
 
 class SingleSweepCommandHandler;
-class TracePublicationCatalog;
+class SweepRuntime;
 struct CommandBusInitialState;
 
 class CommandBus {
@@ -105,12 +105,12 @@ public:
     explicit CommandBus(
         InstrumentId instrumentId,
         SingleSweepCommandHandler& singleSweepHandler,
-        TracePublicationCatalog& tracePublicationCatalog,
+        SweepRuntime& sweepRuntime,
         std::size_t idempotencyCapacity = 1024);
     explicit CommandBus(
         InstrumentId instrumentId,
         SingleSweepCommandHandler& singleSweepHandler,
-        TracePublicationCatalog& tracePublicationCatalog,
+        SweepRuntime& sweepRuntime,
         CommandBusInitialState initialState,
         std::size_t idempotencyCapacity = 1024);
     ~CommandBus();
@@ -154,11 +154,10 @@ private:
     [[nodiscard]] CommandResult execute(
         const StartSingleSweepCommand& command,
         const CommandEnvelope& envelope);
-    [[nodiscard]] CommandResult commitTraceConfiguration(
+    [[nodiscard]] CommandResult commitConfiguration(
         domain::Instrument candidateInstrument,
         display_model::DisplayWorkspace candidateDisplay,
         CommandValue value);
-    [[nodiscard]] CommandResult succeeded(CommandValue value);
     [[nodiscard]] CommandResult succeededWithoutRevision(
         CommandValue value) const;
     [[nodiscard]] CommandResult domainError(domain::DomainError error) const;
@@ -170,9 +169,9 @@ private:
     InstrumentId instrumentId_;
     // Non-owning; the composition root keeps the handler alive past this bus.
     SingleSweepCommandHandler& singleSweepHandler_;
-    // The repository-backed catalog is the single publication identity owner.
-    // Composition keeps it alive past both CommandBus and every publisher.
-    TracePublicationCatalog& tracePublicationCatalog_;
+    // The sole runtime owns staging and safe-boundary application. It outlives
+    // the bus; calls made here are bounded and never wait for the worker.
+    SweepRuntime& sweepRuntime_;
     mutable std::mutex mutex_;
     domain::Instrument instrument_;
     display_model::DisplayWorkspace displayWorkspace_;

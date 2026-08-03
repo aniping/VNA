@@ -64,7 +64,7 @@ protected:
           handler_(executor_),
           commandBus_(
               application::InstrumentId{"instrument-1"}, handler_,
-              runtimeOwner_.catalog()),
+              runtimeOwner_.runtime()),
           query_(commandBus_, repository_),
           webApi_(
               commandBus_,

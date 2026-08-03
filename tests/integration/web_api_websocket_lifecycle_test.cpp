@@ -39,7 +39,7 @@ protected:
           commandBus_(
               application::InstrumentId{"instrument-1"},
               sweepHandler_,
-              runtimeOwner_.catalog(),
+              runtimeOwner_.runtime(),
               std::move(preset_.commandBusState)),
           query_(commandBus_, repository_),
           webApi_(commandBus_, operations_, query_, repository_) {}

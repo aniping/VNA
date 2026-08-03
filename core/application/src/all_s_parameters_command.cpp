@@ -206,7 +206,7 @@ CommandResult CommandBus::execute(const EnsureAllSParametersCommand& command) {
         return applicationError(
             ApplicationErrorCode::TraceConfigurationRejected);
     }
-    return commitTraceConfiguration(
+    return commitConfiguration(
         std::move(candidateInstrument),
         std::move(candidateDisplay),
         CommandValue{anchor->id});

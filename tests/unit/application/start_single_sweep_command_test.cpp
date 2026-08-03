@@ -38,7 +38,7 @@ public:
         : handler_(*this),
           bus_(InstrumentId{"instrument-1"},
                handler_,
-               runtimeOwner_.catalog(),
+               runtimeOwner_.runtime(),
                idempotencyCapacity) {}
 
     CommandResult createChannel() {

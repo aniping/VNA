@@ -30,7 +30,7 @@ TEST(AllSParametersCommandValidationTest, ReusesExistingMeasurements) {
     vna::test::CommandBusRuntimeOwner runtimeOwner{
         preset.commandBusState, 8};
     CommandBus bus{InstrumentId{"instrument-1"},
-        vna::test::stoppedSingleSweepHandler(), runtimeOwner.catalog(),
+        vna::test::stoppedSingleSweepHandler(), runtimeOwner.runtime(),
         std::move(preset.commandBusState)};
 
     const auto result = bus.dispatch(ensureCommand());
@@ -55,7 +55,7 @@ TEST(AllSParametersCommandValidationTest, RejectsPartialDisplayAtomically) {
         preset.commandBusState, 8};
     const auto initialPlan = runtimeOwner.catalog().capture();
     CommandBus bus{InstrumentId{"instrument-1"},
-        vna::test::stoppedSingleSweepHandler(), runtimeOwner.catalog(),
+        vna::test::stoppedSingleSweepHandler(), runtimeOwner.runtime(),
         std::move(preset.commandBusState)};
 
     const auto rejected = bus.dispatch(ensureCommand());

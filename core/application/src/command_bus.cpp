@@ -8,7 +8,7 @@
 #include <type_traits>
 
 #include <vna/application/single_sweep_command_handler.hpp>
-#include <vna/application/trace_publication_catalog.hpp>
+#include <vna/application/sweep_runtime.hpp>
 
 namespace vna::application {
 
@@ -64,23 +64,23 @@ CommandErrorCode commandErrorCode(const ApplicationError& error) noexcept {
 CommandBus::CommandBus(
     InstrumentId instrumentId,
     SingleSweepCommandHandler& singleSweepHandler,
-    TracePublicationCatalog& tracePublicationCatalog,
+    SweepRuntime& sweepRuntime,
     std::size_t idempotencyCapacity)
     : CommandBus(std::move(instrumentId),
           singleSweepHandler,
-          tracePublicationCatalog,
+          sweepRuntime,
           CommandBusInitialState{},
           idempotencyCapacity) {}
 
 CommandBus::CommandBus(
     InstrumentId instrumentId,
     SingleSweepCommandHandler& singleSweepHandler,
-    TracePublicationCatalog& tracePublicationCatalog,
+    SweepRuntime& sweepRuntime,
     CommandBusInitialState initialState,
     std::size_t idempotencyCapacity)
     : instrumentId_(std::move(instrumentId)),
       singleSweepHandler_(singleSweepHandler),
-      tracePublicationCatalog_(tracePublicationCatalog),
+      sweepRuntime_(sweepRuntime),
       instrument_(std::move(initialState.instrument)),
       displayWorkspace_(std::move(initialState.displayWorkspace)),
       idempotency_(
@@ -133,44 +133,6 @@ CommandResult CommandBus::dispatch(const CommandEnvelope& command) {
         idempotency_->commit(std::move(prepared), result);
     }
     return result;
-}
-
-CommandResult CommandBus::execute(const CreateChannelCommand& command) {
-    const auto channel = instrument_.createChannel(command.sweep);
-    if (!channel.hasValue()) {
-        return domainError(channel.error());
-    }
-    return succeeded(CommandValue{channel.value()});
-}
-
-CommandResult CommandBus::execute(const UpdateChannelSweepCommand& command) {
-    const auto channel =
-        instrument_.updateChannelSweep(command.channelId, command.sweep);
-    if (!channel.hasValue()) {
-        return domainError(channel.error());
-    }
-    return succeeded(CommandValue{channel.value()});
-}
-
-CommandResult CommandBus::execute(const CreateMeasurementCommand& command) {
-    const auto measurement =
-        instrument_.createMeasurement(command.channelId, command.type);
-    if (!measurement.hasValue()) {
-        return domainError(measurement.error());
-    }
-    return succeeded(CommandValue{measurement.value()});
-}
-
-CommandResult CommandBus::execute(const CreateWindowCommand&) {
-    return succeeded(CommandValue{displayWorkspace_.createWindow()});
-}
-
-CommandResult CommandBus::succeeded(CommandValue value) {
-    ++stateRevision_;
-    return CommandResult{
-        .stateRevision = stateRevision_,
-        .outcome = CommandSuccess{.value = std::move(value)},
-    };
 }
 
 CommandResult CommandBus::domainError(domain::DomainError error) const {

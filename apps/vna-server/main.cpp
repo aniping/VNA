@@ -4,17 +4,16 @@
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
-#include <stop_token>
 #include <string_view>
 #include <utility>
 
-#include <vna/acquisition/continuous_acquisition.hpp>
 #include <vna/application/command_bus.hpp>
-#include <vna/application/continuous_trace_publisher.hpp>
 #include <vna/application/disabled_single_sweep_execution.hpp>
 #include <vna/application/factory_preset.hpp>
 #include <vna/application/operation_manager.hpp>
 #include <vna/application/single_sweep_command_handler.hpp>
+#include <vna/application/sweep_preview_exchange.hpp>
+#include <vna/application/sweep_runtime.hpp>
 #include <vna/application/trace_display_frame_query.hpp>
 #include <vna/application/trace_display_frame_repository.hpp>
 #include <vna/application/trace_publication_catalog.hpp>
@@ -32,6 +31,7 @@ constexpr auto instrumentId = "instrument-1";
 constexpr auto webAddress = "127.0.0.1";
 constexpr int webPort = 8080;
 constexpr std::size_t traceCapacity = 1024;
+constexpr std::uint32_t maximumPointsPerChunk = 32;
 // A stable product seed makes the simulated frame sequence reproducible across
 // restarts without leaking simulation concerns into the acquisition plan.
 constexpr std::uint64_t simulationSeed = 0x564E4101ULL;
@@ -109,21 +109,8 @@ void logStartupFailure(std::string_view reason) noexcept {
     } catch (...) {}
 }
 
-vna::acquisition::RawSweepSource makeSimulationSource() {
-    return [](const vna::acquisition::ContinuousAcquisitionPlan& plan,
-              std::uint64_t sequence,
-              std::stop_token) {
-        // ContinuousAcquisition is the sole source owner and supplies every
-        // authoritative hardware input plus the monotonic engine sequence.
-        return vna::simulation::simulateOpenPorts({
-            .frequencyAxis = plan.frequencyAxis,
-            .portCount = plan.portCount,
-            .ifBandwidthHz = plan.ifBandwidthHz,
-            .powerDbm = plan.powerDbm,
-            .seed = simulationSeed,
-            .sequenceNumber = sequence,
-        });
-    };
+vna::acquisition::RawSweepCaptureSource makeSimulationSource() {
+    return vna::simulation::makeOpenPortSweepSource({.seed = simulationSeed});
 }
 
 vna::application::StateSnapshot presetSnapshot(
@@ -157,21 +144,25 @@ int runServer() {
     auto preset = vna::application::makeFactoryPreset();
     logFactoryPreset(preset);
     // Declaration order is the borrowing graph. Reverse destruction stops Web
-    // access first, then CommandBus and publisher, before acquisition and repos.
+    // access and CommandBus before the sole source-owning runtime and repos.
     vna::application::OperationManager operationManager;
     PublicationState publication{preset};
-    vna::acquisition::ContinuousAcquisition acquisition{
-        std::move(preset.acquisitionPlan), makeSimulationSource()};
+    vna::application::SweepPreviewExchange previews;
+    vna::application::SweepRuntime sweepRuntime{
+        {std::move(preset.acquisitionPlan), publication.catalog.capture(),
+         maximumPointsPerChunk},
+        makeSimulationSource(), previews, publication.catalog,
+        operationManager};
     logInfo("[连续扫频] 仿真持续测量已启动");
-    vna::application::ContinuousTracePublisher tracePublisher{
-        acquisition, publication.catalog};
+    // Until R4d routes Restart to SweepRuntime, the legacy command remains an
+    // explicit stopped adapter. It owns no source and cannot start a worker.
     vna::application::DisabledSingleSweepExecution disabledSingleSweep;
     vna::application::SingleSweepCommandHandler sweepHandler{
         disabledSingleSweep};
     vna::application::CommandBus commandBus{
         vna::application::InstrumentId{instrumentId},
         sweepHandler,
-        publication.catalog,
+        sweepRuntime,
         std::move(preset.commandBusState)};
     vna::application::TraceDisplayFrameQuery displayFrameQuery{
         commandBus, publication.repository};

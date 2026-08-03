@@ -34,7 +34,7 @@ class TraceFrameDiscardCommandTest
 protected:
     TraceFrameDiscardCommandTest()
         : handler_(*this),
-          bus_(InstrumentId{"instrument-1"}, handler_, runtimeOwner_.catalog()) {
+          bus_(InstrumentId{"instrument-1"}, handler_, runtimeOwner_.runtime()) {
         const auto channel = successValue<domain::ChannelId>(dispatch(
             CreateChannelCommand{.sweep = validSweep()}));
         measurementId_ = successValue<domain::MeasurementId>(dispatch(

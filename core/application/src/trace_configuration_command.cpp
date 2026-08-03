@@ -3,11 +3,7 @@
 #include "control_authority_internal.hpp"
 
 #include <algorithm>
-#include <exception>
-#include <type_traits>
 #include <utility>
-
-#include <vna/application/trace_publication_catalog.hpp>
 
 namespace vna::application {
 namespace {
@@ -55,43 +51,6 @@ const domain::MeasurementSnapshot* findTypeInChannel(
 
 }  // namespace
 
-CommandResult CommandBus::commitTraceConfiguration(
-    domain::Instrument candidateInstrument,
-    display_model::DisplayWorkspace candidateDisplay,
-    CommandValue value) {
-    const auto nextRevision = stateRevision_ + 1;
-    const StateSnapshot candidate{
-        .stateRevision = nextRevision,
-        .control = controlAuthority_->snapshot(),
-        .instrument = candidateInstrument.snapshot(),
-        .display = candidateDisplay.snapshot(),
-    };
-    auto prepared = tracePublicationCatalog_.prepare(candidate, nextRevision);
-    if (std::holds_alternative<TracePublicationCatalogError>(prepared)) {
-        return applicationError(
-            ApplicationErrorCode::TraceConfigurationRejected);
-    }
-    CommandResult result{
-        .stateRevision = nextRevision,
-        .outcome = CommandSuccess{.value = std::move(value)},
-    };
-    auto committed = tracePublicationCatalog_.commit(
-        std::get<PreparedTracePublicationPlan>(std::move(prepared)));
-    if (std::holds_alternative<TracePublicationCatalogError>(committed)) {
-        // CommandBus is the sole plan committer and serializes every candidate.
-        // A stale/repository error here means that invariant is broken; do not
-        // publish a success or attempt a partial rollback after generation moved.
-        std::terminate();
-    }
-    static_assert(std::is_nothrow_move_assignable_v<domain::Instrument>);
-    static_assert(std::is_nothrow_move_assignable_v<
-        display_model::DisplayWorkspace>);
-    instrument_ = std::move(candidateInstrument);
-    displayWorkspace_ = std::move(candidateDisplay);
-    stateRevision_ = nextRevision;
-    return result;
-}
-
 CommandResult CommandBus::succeededWithoutRevision(CommandValue value) const {
     return {
         .stateRevision = stateRevision_,
@@ -111,7 +70,7 @@ CommandResult CommandBus::execute(const CreateTraceCommand& command) {
     if (!trace.hasValue()) {
         return displayError(trace.error());
     }
-    return commitTraceConfiguration(
+    return commitConfiguration(
         std::move(candidateInstrument),
         std::move(candidateDisplay),
         CommandValue{trace.value()});
@@ -131,7 +90,7 @@ CommandResult CommandBus::execute(const UpdateTraceFormatCommand& command) {
     auto candidateDisplay = displayWorkspace_;
     const auto trace =
         candidateDisplay.updateTraceFormat(command.traceId, command.format);
-    return commitTraceConfiguration(
+    return commitConfiguration(
         std::move(candidateInstrument),
         std::move(candidateDisplay),
         CommandValue{trace.value()});
@@ -175,7 +134,7 @@ CommandResult CommandBus::execute(
     if (!rebound.hasValue()) {
         return displayError(rebound.error());
     }
-    return commitTraceConfiguration(
+    return commitConfiguration(
         std::move(candidateInstrument),
         std::move(candidateDisplay),
         CommandValue{command.traceId});
@@ -190,7 +149,7 @@ CommandResult CommandBus::execute(
     if (!trace.hasValue()) {
         return displayError(trace.error());
     }
-    return commitTraceConfiguration(
+    return commitConfiguration(
         std::move(candidateInstrument),
         std::move(candidateDisplay),
         CommandValue{trace.value()});
@@ -203,7 +162,7 @@ CommandResult CommandBus::execute(const RemoveTraceCommand& command) {
     if (!trace.hasValue()) {
         return displayError(trace.error());
     }
-    return commitTraceConfiguration(
+    return commitConfiguration(
         std::move(candidateInstrument),
         std::move(candidateDisplay),
         CommandValue{std::monostate{}});

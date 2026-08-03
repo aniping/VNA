@@ -78,7 +78,7 @@ class TraceDisplayFrameQueryWaitTest
 protected:
     TraceDisplayFrameQueryWaitTest()
         : handler_(*this),
-          bus_(InstrumentId{"instrument-1"}, handler_, runtimeOwner_.catalog()),
+          bus_(InstrumentId{"instrument-1"}, handler_, runtimeOwner_.runtime()),
           query_(bus_, repository_) {}
 
     void SetUp() override {

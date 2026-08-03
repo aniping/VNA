@@ -27,6 +27,7 @@ SweepRuntimeImpl::SweepRuntimeImpl(
     snapshot_.phase = plan_.execution.mode == domain::SweepMode::Single
         ? SweepRuntimePhase::Hold
         : SweepRuntimePhase::Preparing;
+    snapshot_.configuredStateRevision = plan_.publication->stateRevision;
     snapshot_.appliedStateRevision = plan_.publication->stateRevision;
     snapshot_.appliedGeneration = plan_.publication->generation;
     worker_ = std::jthread{[this](std::stop_token token) { run(token); }};
