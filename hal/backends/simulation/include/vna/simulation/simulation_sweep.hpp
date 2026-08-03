@@ -22,7 +22,7 @@ struct OpenPortSweepPlan {
 struct OpenPortSweepSourceOptions {
     std::uint64_t seed;
     std::chrono::steady_clock::duration sweepDuration{
-        std::chrono::milliseconds{100}};
+        std::chrono::seconds{1}};
 };
 
 // A pacer is a simulation-time adapter, not a second worker. Production uses

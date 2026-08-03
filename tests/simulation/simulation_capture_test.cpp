@@ -82,6 +82,26 @@ TEST(SimulationCaptureTest, PacesOrderedChunksAndMatchesCompleteSweep) {
     }
 }
 
+TEST(SimulationCaptureTest, DefaultsToOneSecondSweepPacing) {
+    std::vector<std::chrono::steady_clock::duration> delays;
+    auto source = makeOpenPortSweepSource(
+        {.seed = 7},
+        [&delays](auto delay, std::stop_token token) {
+            delays.push_back(delay);
+            return !token.stop_requested();
+        });
+
+    const auto result = source(captureRequest(), {}, {});
+
+    EXPECT_TRUE(std::holds_alternative<frames::RawReceiverPayload>(result));
+    ASSERT_EQ(delays.size(), 6U);
+    const auto expectedDelay =
+        std::chrono::duration_cast<std::chrono::steady_clock::duration>(1s) / 6;
+    for (const auto delay : delays) {
+        EXPECT_EQ(delay, expectedDelay);
+    }
+}
+
 TEST(SimulationCaptureTest, ControlledPacerCancelsWithoutCompletePayload) {
     std::stop_source stop;
     int paceCalls = 0;
