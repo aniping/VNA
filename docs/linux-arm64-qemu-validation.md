@@ -173,7 +173,7 @@ assert_aarch64_elf() {
   printf '%s\n' "`$header" | grep -Eq "Data:[[:space:]]+2's complement, little endian"
   printf '%s\n' "`$header" | grep -Eq 'Machine:[[:space:]]+AArch64'
 }
-assert_aarch64_elf build-arm64/apps/vna-server/vna-server
+assert_aarch64_elf build-arm64/vna/apps/vna-server/vna-server
 "@
 }
 finally {

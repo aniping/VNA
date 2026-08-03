@@ -82,7 +82,7 @@ Driver Host 遵守相同的 IPC 和 Measurement Backend 契约，但允许 Windo
 平台依赖只能存在于明确的适配器边界：
 
 ```text
-infrastructure/platform/
+vna/infrastructure/platform/
 ├── windows/
 └── linux/
 
@@ -158,7 +158,7 @@ drivers/platform/
 | 本地 IPC | VNA Core 与 Driver Host 的控制消息 |
 | 共享内存 | 可选的大体量原始数据跨进程通道 |
 
-第一阶段采用 [`yhirose/cpp-httplib`](https://github.com/yhirose/cpp-httplib) 实现 HTTP/HTTPS、REST、文件流和 WebSocket/WSS。依赖版本必须由工程清单固定，且只允许出现在 `interfaces/web` 等交互层适配器中，内部 Command、Query、Event 和 Frame 契约不得暴露 `httplib` 类型。
+第一阶段采用 [`yhirose/cpp-httplib`](https://github.com/yhirose/cpp-httplib) 实现 HTTP/HTTPS、REST、文件流和 WebSocket/WSS。依赖版本必须由工程清单固定，且只允许出现在 `vna/interfaces/web` 等交互层适配器中，内部 Command、Query、Event 和 Frame 契约不得暴露 `httplib` 类型。
 
 `cpp-httplib` 官方当前未支持或测试 MinGW，因此该组合必须通过 Windows/MinGW 与 Linux/GCC 的兼容性测试。早期本地 UI 先验证 HTTP 与 WebSocket；启用 HTTPS、WSS 或非回环地址监听前，TLS 必须在两个平台通过冒烟测试。验证通过的版本必须固定；若无法满足要求，则只替换协议适配器，不改变内部契约。
 
@@ -179,7 +179,7 @@ drivers/platform/
 建议模块：
 
 ```text
-core/
+vna/core/
 ├── instrument/         # Instrument、Channel、Preset 与能力状态
 ├── control/            # Command、Query、Operation、权限与状态事务
 ├── sweep/              # 扫频规划、触发、运行时和资源调度
@@ -587,45 +587,48 @@ stateDiagram-v2
 
 ```text
 VectorNetworkAnalyzer/
-├── core/
-│   ├── instrument/
-│   ├── control/
-│   ├── sweep/
-│   ├── acquisition/
-│   ├── measurement/
-│   ├── calibration/
-│   ├── display/
-│   └── project/
-├── interfaces/
-│   ├── web/
-│   ├── scpi/
-│   ├── front-panel/
-│   ├── file-transfer/
-│   └── driver-ipc/
-├── hardware/
-│   ├── interface/
-│   ├── backends/
-│   │   ├── physical/
-│   │   ├── simulation/
-│   │   ├── replay/
-│   │   └── proxy/
-│   └── drivers/
-├── diagnostics/
-├── contracts/
-│   ├── frames/
-│   ├── driver-ipc/
-│   └── schemas/
-├── infrastructure/
-│   ├── platform/
-│   ├── storage/
-│   ├── logging/
-│   ├── configuration/
-│   └── security/
-├── apps/
-│   ├── vna-server/
-│   ├── vna-driver-host/
-│   ├── vna-cli/
-│   └── vna-service-tool/
+├── vna/
+│   ├── core/
+│   │   ├── instrument/
+│   │   ├── control/
+│   │   ├── sweep/
+│   │   ├── acquisition/
+│   │   ├── measurement/
+│   │   ├── calibration/
+│   │   ├── display/
+│   │   └── project/
+│   ├── interfaces/
+│   │   ├── web/
+│   │   ├── scpi/
+│   │   ├── front-panel/
+│   │   ├── file-transfer/
+│   │   └── driver-ipc/
+│   ├── hardware/
+│   │   ├── interface/
+│   │   ├── backends/
+│   │   │   ├── physical/
+│   │   │   ├── simulation/
+│   │   │   ├── replay/
+│   │   │   └── proxy/
+│   │   └── drivers/
+│   ├── diagnostics/
+│   ├── contracts/
+│   │   ├── frames/
+│   │   ├── driver-ipc/
+│   │   └── schemas/
+│   ├── infrastructure/
+│   │   ├── platform/
+│   │   ├── storage/
+│   │   ├── logging/
+│   │   ├── configuration/
+│   │   └── security/
+│   ├── apps/
+│   │   ├── vna-server/
+│   │   ├── vna-driver-host/
+│   │   ├── vna-cli/
+│   │   └── vna-service-tool/
+│   └── foundation/
+│       └── cpp-compat/
 ├── frontend/
 ├── tests/
 │   ├── unit/
@@ -637,8 +640,6 @@ VectorNetworkAnalyzer/
 │   ├── fault-injection/
 │   ├── performance/
 │   └── end-to-end/
-├── foundation/
-│   └── cpp-compat/
 └── third-part/
 ```
 

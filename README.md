@@ -28,6 +28,38 @@
 
 第一阶段先完成基于仿真后端的端到端闭环，真实硬件在业务内核稳定后接入。
 
+## 工程目录
+
+所有 C++ 后端代码统一位于 `vna/`，仓库根目录只保留前端、测试、构建和文档等
+工程级内容。当前目录结构如下：
+
+```text
+VectorNetworkAnalyzer/
+├── vna/
+│   ├── apps/vna-server/                    # 当前服务端入口
+│   ├── core/
+│   │   ├── instrument/                     # Instrument 与 Channel 领域状态
+│   │   ├── control/                        # 命令、权限与 Operation
+│   │   ├── sweep/                          # 扫频运行时、Preview 与发布管线
+│   │   ├── acquisition/                    # 原始数据采集
+│   │   ├── measurement/                    # S 参数合成
+│   │   └── display/{model,projection,publication}/
+│   ├── interfaces/web/                     # REST、WebSocket 与静态文件
+│   ├── hardware/backends/simulation/       # 当前仿真采集后端
+│   ├── infrastructure/platform/            # Windows/Linux 平台适配
+│   ├── contracts/frames/                   # 帧与原始接收机数据合同
+│   └── foundation/cpp-compat/              # C++17 与 GCC 7.3 兼容设施
+├── frontend/                 # ZNB 风格本地 Web 前端
+├── tests/                    # 单元、集成、契约和仿真测试
+├── docs/                     # 产品、架构、规范和 ADR
+├── cmake/                    # 构建辅助模块
+├── packaging/                # 发布组装脚本
+└── third-part/               # 固定版本的离线三方源码
+```
+
+`vna/core` 不依赖 Web 或具体硬件实现；`vna/apps` 只负责选择后端并组装进程。
+公开头文件仍使用 `#include <vna/...>`，目录归拢不改变 C++ namespace 或 CMake target。
+
 ## 三方依赖
 
 C++ 三方源码以固定版本的 `.tar.xz` 归档提交在 `third-part/archives/`。首次

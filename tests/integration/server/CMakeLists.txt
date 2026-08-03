@@ -5,7 +5,7 @@ add_executable(
 target_compile_features(vna_runtime_log_probe PRIVATE cxx_std_17)
 target_include_directories(
     vna_runtime_log_probe
-    PRIVATE ${PROJECT_SOURCE_DIR}/apps/vna-server
+    PRIVATE ${PROJECT_SOURCE_DIR}/vna/apps/vna-server
 )
 target_link_libraries(
     vna_runtime_log_probe

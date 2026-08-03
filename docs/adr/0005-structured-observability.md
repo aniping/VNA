@@ -14,7 +14,7 @@ Web 命令审计、启动里程碑、发布目录合同和测试均在该阶段�
 ## 决策
 
 建立独立的可观测性接口，由应用层和协议适配器提交结构化事件，
-由 `infrastructure/logging` 提供实现。领域模型不依赖日志接口，也不直接
+由 `vna/infrastructure/logging` 提供实现。领域模型不依赖日志接口，也不直接
 产生日志副作用。
 
 首个实现同时输出：
@@ -73,7 +73,7 @@ false。sink 一旦失败，后续写入继续返回 false，避免把已失去�
 用户态清理；Ctrl+C 也只有在信号适配和退出编排完成实现与验证后，才能声明
 遵守上述可靠退出协议。
 
-spdlog 作为 compiled static 库只存在于 `infrastructure/logging` 实现中，
+spdlog 作为 compiled static 库只存在于 `vna/infrastructure/logging` 实现中，
 其类型、宏和格式化接口不得泄漏到可观测性接口或业务模块。结构化 JSON 仍由
 项目的强类型事件序列化器产生，sink 只负责线程安全输出与文件轮转。
 
