@@ -14,6 +14,7 @@ const validSnapshot = {
         ifBandwidthHz: 1e3, powerDbm: -10,
       },
       sweepMode: 'continuous',
+      sweepCount: 1,
       triggerSource: 'none',
     }],
     measurements: [{ id: 1, channelId: 1, type: 'S21' }],
@@ -30,12 +31,26 @@ const validSnapshot = {
       },
     }],
   },
+  sweepRuntime: {
+    state: 'running', phase: 'sweeping',
+    configured: { stateRevision: 0, mode: 'continuous', sweepCount: 1 },
+    applied: { stateRevision: 0, generation: 1, mode: 'continuous', sweepCount: 1 },
+  },
 }
 
 test('decodes authoritative Continuous sweep and None trigger state', () => {
   const snapshot = decodeStateSnapshot(validSnapshot)
   assert.equal(snapshot.instrument.channels[0].sweepMode, 'continuous')
+  assert.equal(snapshot.instrument.channels[0].sweepCount, 1)
   assert.equal(snapshot.instrument.channels[0].triggerSource, 'none')
+  assert.equal(snapshot.sweepRuntime.applied.generation, 1)
+  const single = decodeStateSnapshot({
+    ...validSnapshot,
+    instrument: { ...validSnapshot.instrument, channels: [{
+      ...validSnapshot.instrument.channels[0], sweepMode: 'single', sweepCount: 7,
+    }] },
+  })
+  assert.equal(single.instrument.channels[0].sweepMode, 'single')
 })
 
 test('decodes all frozen two-port S-parameter measurement identities', () => {
@@ -57,7 +72,7 @@ test('rejects state outside the frozen channel and display contract', () => {
     { ...validSnapshot, stateRevision: -1 },
     { ...validSnapshot, instrument: { ...validSnapshot.instrument, channels: 'invalid' } },
     { ...validSnapshot, instrument: { ...validSnapshot.instrument,
-      channels: [{ ...channel, sweepMode: 'single' }] } },
+      channels: [{ ...channel, sweepCount: 0 }] } },
     { ...validSnapshot, instrument: { ...validSnapshot.instrument,
       channels: [{ ...channel, triggerSource: 'external' }] } },
     { ...validSnapshot, instrument: { ...validSnapshot.instrument,
@@ -72,6 +87,9 @@ test('rejects state outside the frozen channel and display contract', () => {
       traces: [{ ...trace, format: 'polar' }] } },
     { ...validSnapshot, instrument: { ...validSnapshot.instrument,
       traces: [{ ...trace, scale: { ...trace.scale, unit: 'degree' } }] } },
+    { ...validSnapshot, sweepRuntime: { ...validSnapshot.sweepRuntime, phase: 'publishing' } },
+    { ...validSnapshot, sweepRuntime: { ...validSnapshot.sweepRuntime,
+      applied: { ...validSnapshot.sweepRuntime.applied, generation: 0 } } },
   ]
   for (const value of invalidSnapshots) {
     assert.throws(() => decodeStateSnapshot(value), /Invalid state response/)
@@ -82,9 +100,7 @@ test('fetchState exposes only a decoded authoritative snapshot', async () => {
   const originalFetch = globalThis.fetch
   globalThis.fetch = async () => new Response(JSON.stringify({
     ...validSnapshot,
-    instrument: { ...validSnapshot.instrument, channels: [{
-      ...validSnapshot.instrument.channels[0], sweepMode: 'single',
-    }] },
+    sweepRuntime: { ...validSnapshot.sweepRuntime, phase: 'publishing' },
   }))
   try {
     await assert.rejects(fetchState(), /Invalid state response/)

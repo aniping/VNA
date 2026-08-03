@@ -1,6 +1,7 @@
 import type {
-  CartesianScaleSnapshot, ChannelSnapshot, MeasurementSnapshot, StateSnapshot,
-  SweepSettings, TraceSnapshot, WindowSnapshot,
+  AppliedSweepExecutionSnapshot, CartesianScaleSnapshot, ChannelSnapshot, MeasurementSnapshot,
+  StateSnapshot, SweepExecutionSnapshot, SweepRuntimeSnapshot, SweepSettings, TraceSnapshot,
+  WindowSnapshot,
 } from './vnaApi.ts'
 
 type JsonObject = Record<string, unknown>
@@ -49,14 +50,47 @@ function decodeSweep(value: unknown): SweepSettings {
 
 function decodeChannel(value: unknown): ChannelSnapshot {
   const body = object(value, 'channel')
-  if (body.sweepMode !== 'continuous' || body.triggerSource !== 'none') {
+  if ((body.sweepMode !== 'continuous' && body.sweepMode !== 'single')
+    || body.triggerSource !== 'none') {
     invalidState('unsupported sweep mode or trigger source')
   }
   return {
     id: integer(body.id, 1, 'channel id'),
     sweep: decodeSweep(body.sweep),
     sweepMode: body.sweepMode,
+    sweepCount: integer(body.sweepCount, 1, 'sweep count', 100_000),
     triggerSource: body.triggerSource,
+  }
+}
+
+function decodeExecution(value: unknown, name: string): [JsonObject, SweepExecutionSnapshot] {
+  const body = object(value, name)
+  if (body.mode !== 'continuous' && body.mode !== 'single') invalidState('unsupported sweep mode')
+  const execution = {
+    stateRevision: integer(body.stateRevision, 0, 'execution state revision'),
+    mode: body.mode === 'single' ? 'single' as const : 'continuous' as const,
+    sweepCount: integer(body.sweepCount, 1, 'execution sweep count', 100_000),
+  }
+  return [body, execution]
+}
+
+function decodeAppliedExecution(value: unknown): AppliedSweepExecutionSnapshot {
+  const [body, execution] = decodeExecution(value, 'applied sweep')
+  return { ...execution, generation: integer(body.generation, 1, 'applied generation') }
+}
+
+function decodeSweepRuntime(value: unknown): SweepRuntimeSnapshot {
+  const body = object(value, 'sweep runtime')
+  const states = ['running', 'stopped', 'retired', 'failed']
+  const phases = ['hold', 'preparing', 'sweeping', 'calculation', 'failed']
+  if (!states.includes(String(body.state)) || !phases.includes(String(body.phase))) {
+    invalidState('unsupported sweep runtime state or phase')
+  }
+  return {
+    state: body.state as SweepRuntimeSnapshot['state'],
+    phase: body.phase as SweepRuntimeSnapshot['phase'],
+    configured: decodeExecution(body.configured, 'configured sweep')[1],
+    applied: decodeAppliedExecution(body.applied),
   }
 }
 
@@ -111,6 +145,7 @@ export function decodeStateSnapshot(value: unknown): StateSnapshot {
   const instrument = object(body.instrument, 'instrument')
   return {
     stateRevision: integer(body.stateRevision, 0, 'state revision'),
+    sweepRuntime: decodeSweepRuntime(body.sweepRuntime),
     instrument: {
       channels: array(instrument.channels, 'channels').map(decodeChannel),
       measurements: array(instrument.measurements, 'measurements').map(decodeMeasurement),

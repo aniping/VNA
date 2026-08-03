@@ -9,6 +9,9 @@ import type { StateSnapshot } from '../src/api/vnaApi.ts'
 
 const snapshot: StateSnapshot = {
   stateRevision: 7,
+  sweepRuntime: { state: 'running', phase: 'sweeping',
+    configured: { stateRevision: 7, mode: 'continuous', sweepCount: 1 },
+    applied: { stateRevision: 7, generation: 1, mode: 'continuous', sweepCount: 1 } },
   instrument: {
     channels: [{
       id: 11,
@@ -20,6 +23,7 @@ const snapshot: StateSnapshot = {
         powerDbm: -10,
       },
       sweepMode: 'continuous',
+      sweepCount: 1,
       triggerSource: 'none',
     }],
     measurements: [{ id: 21, channelId: 11, type: 'S21' }],

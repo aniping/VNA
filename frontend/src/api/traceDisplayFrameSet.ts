@@ -2,39 +2,44 @@ import type { MeasurementType } from './vnaApi.ts'
 
 export type SParameter = MeasurementType
 
-interface DisplayFrameCommon {
-  readonly frameId: number
+interface TraceSampleCommon {
   readonly traceId: number
   readonly measurementId: number
   readonly measurementType: SParameter
-  readonly generation: number
-  readonly stateRevision: number
-  readonly sequenceNumber: number
   readonly frequenciesHz: readonly number[]
 }
 
-export interface LogMagnitudeDisplayFrame extends DisplayFrameCommon {
+export interface LogMagnitudeTraceSamples extends TraceSampleCommon {
   readonly format: 'logMagnitude'
   readonly valueUnit: 'dB'
   readonly values: readonly number[]
 }
 
-export interface PhaseDisplayFrame extends DisplayFrameCommon {
+export interface PhaseTraceSamples extends TraceSampleCommon {
   readonly format: 'phase'
   readonly valueUnit: 'degree'
   readonly values: readonly number[]
 }
 
-export interface SmithDisplayFrame extends DisplayFrameCommon {
+export interface SmithTraceSamples extends TraceSampleCommon {
   readonly format: 'smith'
   readonly valueUnit: 'U'
   readonly values: readonly (readonly [number, number])[]
 }
 
-export type MultiFormatTraceDisplayFrame =
-  | LogMagnitudeDisplayFrame
-  | PhaseDisplayFrame
-  | SmithDisplayFrame
+export type TraceDisplaySamples =
+  | LogMagnitudeTraceSamples
+  | PhaseTraceSamples
+  | SmithTraceSamples
+
+interface DisplayFrameIdentity {
+  readonly frameId: number
+  readonly generation: number
+  readonly stateRevision: number
+  readonly sequenceNumber: number
+}
+
+export type MultiFormatTraceDisplayFrame = TraceDisplaySamples & DisplayFrameIdentity
 
 export interface TraceDisplayFrameSet {
   readonly generation: number
@@ -71,15 +76,18 @@ function numbers(value: unknown, name: string): number[] {
   return value
 }
 
-function alignedPointCount(frequencies: readonly number[], values: readonly unknown[]): void {
-  if (frequencies.length < 2 || frequencies.length > 2048 || values.length !== frequencies.length) {
-    invalidSet('sample count must be aligned and between 2 and 2048')
+function alignedPointCount(
+  frequencies: readonly number[], values: readonly unknown[], minimumPoints: number,
+): void {
+  if (frequencies.length < minimumPoints
+    || frequencies.length > 2048 || values.length !== frequencies.length) {
+    invalidSet(`sample count must be aligned and between ${minimumPoints} and 2048`)
   }
 }
 
-function frequencies(value: unknown): number[] {
+function frequencies(value: unknown, minimumPoints: number): number[] {
   const result = numbers(value, 'frequencies')
-  alignedPointCount(result, result)
+  alignedPointCount(result, result, minimumPoints)
   if (!result.every((item, index) => index === 0 || item > result[index - 1])) {
     invalidSet('frequencies must be strictly increasing')
   }
@@ -93,16 +101,12 @@ function parameter(value: unknown): SParameter {
   return value
 }
 
-function common(body: JsonObject): DisplayFrameCommon {
+function sampleCommon(body: JsonObject, minimumPoints: number): TraceSampleCommon {
   return {
-    frameId: integer(body.frameId, 1, 'frame id'),
     traceId: integer(body.traceId, 1, 'trace id'),
     measurementId: integer(body.measurementId, 1, 'measurement id'),
     measurementType: parameter(body.measurementType),
-    generation: integer(body.generation, 1, 'generation'),
-    stateRevision: integer(body.stateRevision, 0, 'state revision'),
-    sequenceNumber: integer(body.sequenceNumber, 1, 'sequence number'),
-    frequenciesHz: [...frequencies(body.frequenciesHz)],
+    frequenciesHz: [...frequencies(body.frequenciesHz, minimumPoints)],
   }
 }
 
@@ -114,34 +118,52 @@ function pairs(value: unknown): [number, number][] {
   return value.map((item) => [item[0], item[1]])
 }
 
-function scalarValues(value: unknown, frequenciesHz: readonly number[]): number[] {
+function scalarValues(
+  value: unknown, frequenciesHz: readonly number[], minimumPoints: number,
+): number[] {
   const result = numbers(value, 'values')
-  alignedPointCount(frequenciesHz, result)
+  alignedPointCount(frequenciesHz, result, minimumPoints)
   return result
 }
 
-function smithValues(value: unknown, frequenciesHz: readonly number[]): [number, number][] {
+function smithValues(
+  value: unknown, frequenciesHz: readonly number[], minimumPoints: number,
+): [number, number][] {
   const result = pairs(value)
-  alignedPointCount(frequenciesHz, result)
+  alignedPointCount(frequenciesHz, result, minimumPoints)
   return result
+}
+
+export function decodeTraceDisplaySamples(
+  value: unknown,
+  minimumPoints = 2,
+): TraceDisplaySamples {
+  const body = object(value, 'trace samples')
+  const shared = sampleCommon(body, minimumPoints)
+  if (body.format === 'logMagnitude' && body.valueUnit === 'dB') {
+    return { ...shared, format: body.format, valueUnit: body.valueUnit,
+      values: [...scalarValues(body.values, shared.frequenciesHz, minimumPoints)] }
+  }
+  if (body.format === 'phase' && body.valueUnit === 'degree') {
+    return { ...shared, format: body.format, valueUnit: body.valueUnit,
+      values: [...scalarValues(body.values, shared.frequenciesHz, minimumPoints)] }
+  }
+  if (body.format === 'smith' && body.valueUnit === 'U') {
+    return { ...shared, format: body.format, valueUnit: body.valueUnit,
+      values: smithValues(body.values, shared.frequenciesHz, minimumPoints) }
+  }
+  return invalidSet('unsupported format or unit')
 }
 
 function decodeFrame(value: unknown): MultiFormatTraceDisplayFrame {
   const body = object(value, 'frame')
-  const shared = common(body)
-  if (body.format === 'logMagnitude' && body.valueUnit === 'dB') {
-    return { ...shared, format: body.format, valueUnit: body.valueUnit,
-      values: [...scalarValues(body.values, shared.frequenciesHz)] }
+  return {
+    ...decodeTraceDisplaySamples(body),
+    frameId: integer(body.frameId, 1, 'frame id'),
+    generation: integer(body.generation, 1, 'generation'),
+    stateRevision: integer(body.stateRevision, 0, 'state revision'),
+    sequenceNumber: integer(body.sequenceNumber, 1, 'sequence number'),
   }
-  if (body.format === 'phase' && body.valueUnit === 'degree') {
-    return { ...shared, format: body.format, valueUnit: body.valueUnit,
-      values: [...scalarValues(body.values, shared.frequenciesHz)] }
-  }
-  if (body.format === 'smith' && body.valueUnit === 'U') {
-    return { ...shared, format: body.format, valueUnit: body.valueUnit,
-      values: smithValues(body.values, shared.frequenciesHz) }
-  }
-  return invalidSet('unsupported format or unit')
 }
 
 function sameNumbers(left: readonly number[], right: readonly number[]): boolean {

@@ -9,8 +9,28 @@ export interface SweepSettings {
 export interface ChannelSnapshot {
   id: number
   sweep: SweepSettings
-  sweepMode: 'continuous'
+  sweepMode: SweepMode
+  sweepCount: number
   triggerSource: 'none'
+}
+
+export type SweepMode = 'continuous' | 'single'
+
+export interface SweepExecutionSnapshot {
+  stateRevision: number
+  mode: SweepMode
+  sweepCount: number
+}
+
+export interface AppliedSweepExecutionSnapshot extends SweepExecutionSnapshot {
+  generation: number
+}
+
+export interface SweepRuntimeSnapshot {
+  state: 'running' | 'stopped' | 'retired' | 'failed'
+  phase: 'hold' | 'preparing' | 'sweeping' | 'calculation' | 'failed'
+  configured: SweepExecutionSnapshot
+  applied: AppliedSweepExecutionSnapshot
 }
 
 export interface MeasurementSnapshot {
@@ -51,6 +71,7 @@ export interface TraceSetup {
 
 export interface StateSnapshot {
   stateRevision: number
+  sweepRuntime: SweepRuntimeSnapshot
   instrument: {
     channels: ChannelSnapshot[]
     measurements: MeasurementSnapshot[]
@@ -133,6 +154,15 @@ export async function updateTraceFormat(
   return sendCommand(stateRevision, 'updateTraceFormat', { traceId, format })
 }
 
+export async function updateChannelSweepControl(
+  stateRevision: number,
+  channelId: number,
+  mode: SweepMode,
+  sweepCount: number,
+): Promise<CommandResult<{ channelId: number }>> {
+  return sendCommand(stateRevision, 'updateChannelSweepControl', { channelId, mode, sweepCount })
+}
+
 export async function setTraceMeasurementType(
   stateRevision: number,
   traceId: number,
@@ -162,7 +192,7 @@ export async function updateTraceScalePerDivision(
 export async function startSingleSweep(
   stateRevision: number,
   channelId: number,
-  signal: AbortSignal,
+  signal?: AbortSignal,
 ): Promise<CommandResult<{ operationId: number }>> {
   const result = await sendCommand<{ operationId: number }>(
     stateRevision,

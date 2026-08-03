@@ -8,6 +8,10 @@ import { useActiveTrace } from '../src/components/useActiveTrace.ts'
 function snapshot(type: 'S21' | 'S11', measurementId: number): StateSnapshot {
   return {
     stateRevision: measurementId,
+    sweepRuntime: { state: 'running', phase: 'hold',
+      configured: { stateRevision: measurementId, mode: 'continuous', sweepCount: 1 },
+      applied: { stateRevision: measurementId, generation: 1,
+        mode: 'continuous', sweepCount: 1 } },
     instrument: {
       channels: [],
       measurements: [{ id: measurementId, channelId: 1, type }],

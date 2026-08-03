@@ -18,7 +18,7 @@ const snapshot = decodeStateSnapshot({
       id: 1,
       sweep: { startFrequencyHz: 1e6, stopFrequencyHz: 3e6, points: 3,
         ifBandwidthHz: 1e3, powerDbm: -10 },
-      sweepMode: 'continuous', triggerSource: 'none',
+      sweepMode: 'continuous', sweepCount: 1, triggerSource: 'none',
     }],
     measurements: measurementTypes.map((type, index) => ({
       id: index + 21, channelId: 1, type,
@@ -30,6 +30,11 @@ const snapshot = decodeStateSnapshot({
       { id: 13, windowId: 1, measurementId: 23, format: 'smith', scale: null },
       { id: 14, windowId: 1, measurementId: 24, format: 'phase', scale: null },
     ],
+  },
+  sweepRuntime: {
+    state: 'running', phase: 'sweeping',
+    configured: { stateRevision: 99, mode: 'continuous', sweepCount: 1 },
+    applied: { stateRevision: 99, generation: 3, mode: 'continuous', sweepCount: 1 },
   },
 })
 
@@ -94,6 +99,7 @@ test('retains old frames only while their complete identity still matches state'
   const current = replaceDisplayFramesForSnapshot(set, snapshot)
   const changed = decodeStateSnapshot({
     stateRevision: 100,
+    sweepRuntime: snapshot.sweepRuntime,
     instrument: {
       ...snapshot.instrument,
       measurements: snapshot.instrument.measurements.map((item) => (
