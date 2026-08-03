@@ -195,8 +195,8 @@ Smith 直接投影复数平面坐标，并显示 `200 mU/ Ref 1 U` 的标准归�
 新 generation，网格保留且不显示旧身份曲线。
 `Maximize Diagram` 可切换活动 Diagram 的最大化状态；其余尚未实现的 Toolbar
 项保持禁用。
-底部 `File` 至 `Help` 菜单尚未接通并保持禁用；连接、revision 和实体计数仍
-显示本地仪表服务的真实状态。
+底部 `File` 至 `Help` 菜单尚未接通并保持禁用；状态栏仅显示活动通道、权威扫频阶段
+与进度、首扫星号及本地日期时间，不暴露连接、revision 或实体计数诊断。
 
 `Start`、`Stop`、`Center` 和 `Span` Hard Key 已连接到真实 Channel 状态。修改
 Center 时保持当前 Span，修改 Span 时保持当前 Center，并通过 revision 冲突检查
@@ -204,7 +204,9 @@ Center 时保持当前 Span，修改 Span 时保持当前 Center，并通过 rev
 
 `Power / Bw / Avg` 当前提供 Power 与 IF Bandwidth 设置；`Sweep` 提供 Points、
 Continuous、Single、Sweeps 和 Restart，底部状态显示权威阶段、总进度及首扫星号。
-`Trigger` 显示当前 None，尚未支持的触发源保持禁用。Averaging 不显示伪造状态。
+`Trigger` 的 `Trigger In` 显示 Free Run、External、Multiple、Manual 竖向单列，当前仅
+Free Run 作为快照语义显示，其余入口与 Trigger Manager 原生禁用；当前 wire 没有 averaging
+计数字段，因此 `Avg None` 只表示计数不可用，不伪造计数值。
 
 活动 Trace 的 `scale` 快照非空时，`Scale` Hard Key 会打开 Scale Values
 Softtool。当前仅 Scale/Div 可编辑：输入有限且大于零的数值后按 Enter 提交，

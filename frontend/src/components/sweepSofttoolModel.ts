@@ -1,11 +1,16 @@
-import type { SweepMode, SweepRuntimeSnapshot } from '../api/vnaApi.ts'
+import type { SweepRuntimeSnapshot } from '../api/vnaApi.ts'
 import type { SweepStreamStatus, SweepUserPhase } from '../api/sweepPreview.ts'
-export type SweepSofttoolPage = 'parameters' | 'trigger' | 'control'
+export type SweepSofttoolPage = 'control' | 'trigger' | 'parameters'
 export const sweepSofttoolPages = [
-  { id: 'parameters', label: 'Sweep Params' },
-  { id: 'trigger', label: 'Trigger In' },
   { id: 'control', label: 'Sweep Control' },
+  { id: 'trigger', label: 'Trigger In' },
+  { id: 'parameters', label: 'Sweep Params' },
 ] as const
+export const sweepControlUnavailableItems = [
+  'Restart Manager', 'All Channels Continuous', 'All Channels on Hold',
+  'Sweep Controller', 'Pipelining',
+] as const
+export const triggerSourceItems = ['Free Run', 'External', 'Multiple', 'Manual'] as const
 export function parseSweepCount(value: string): number | null {
   const parsed = Number(value.trim())
   return Number.isSafeInteger(parsed) && parsed >= 1 && parsed <= 100_000 ? parsed : null
@@ -13,9 +18,6 @@ export function parseSweepCount(value: string): number | null {
 export function parseSweepPoints(value: string): number | null {
   const parsed = Number(value.trim())
   return Number.isSafeInteger(parsed) && parsed >= 2 && parsed <= 0xffff_ffff ? parsed : null
-}
-export function sweepModeLabel(mode: SweepMode): string {
-  return mode === 'continuous' ? 'Continuous' : 'Single'
 }
 export function sweepPhaseLabel(phase: SweepUserPhase): string {
   const labels: Record<SweepUserPhase, string> = {
@@ -34,9 +36,19 @@ export function sweepProgressLabel(status: SweepStreamStatus | null): string {
   const firstSweep = status.firstSweepAfterConfiguration ? ' *' : ''
   return `${sweepPhaseLabel(status.userPhase)}${progress}${firstSweep}`
 }
-export function sweepExecutionLabel(
-  kind: 'Configured' | 'Applied',
-  execution: SweepRuntimeSnapshot['configured'] | SweepRuntimeSnapshot['applied'],
+export function statusBarChannelLabel(channel: { readonly id: number } | undefined): string {
+  // The current state contract has no averaging counter. ZNB p49 and the user-locked
+  // baseline define `Avg None` as the honest unavailable-counter label.
+  return channel ? `Ch${channel.id}: Avg None` : 'Ch—: Avg None'
+}
+export function statusBarSweepLabel(
+  status: SweepStreamStatus | null,
+  phase: SweepRuntimeSnapshot['phase'] | undefined,
 ): string {
-  return `${kind} ${sweepModeLabel(execution.mode)} ×${execution.sweepCount}`
+  if (status) return sweepProgressLabel(status)
+  return phase ? sweepPhaseLabel(phase) : 'Sweep —'
+}
+export function sweepBoundaryKey(status: SweepStreamStatus): string | null {
+  if (status.userPhase !== 'hold') return null
+  return `${status.generation}:${status.sweepId ?? 'none'}:${status.stateRevision}`
 }

@@ -24,6 +24,7 @@ import {
   replaceCompleteDisplayFramesForSnapshot,
   retainLiveDisplayForSnapshot,
 } from './api/displayFrameSetState'
+import { sweepBoundaryKey } from './components/sweepSofttoolModel'
 import {
   startLiveDisplaySession,
   type LiveDisplayConnection,
@@ -41,6 +42,7 @@ const commandBusy = ref(false)
 const display = shallowRef(emptyLiveDisplayState())
 let pendingFrameTraceId: number | null = null
 let pendingAllSParametersRevision: number | null = null
+let refreshedSweepBoundaryKey: string | null = null
 let stopLiveDisplay: (() => void) | null = null
 
 function resizeInstrument(): void {
@@ -150,8 +152,17 @@ function replaceFrameSet(frameSet: TraceDisplayFrameSet): void {
 
 function replacePreview(event: SweepPreviewEvent): void {
   if (!state.value) return
+  const previousPhase = display.value.sweepStatus?.userPhase
   display.value = acceptSweepPreviewEvent(display.value, event, state.value)
   if (event.type === 'available') displayError.value = ''
+  const key = sweepBoundaryKey(event.sweepStatus)
+  if (state.value.sweepRuntime.configured.mode === 'single'
+    && key && event.sweepStatus.generation === display.value.generation
+    && previousPhase !== null && previousPhase !== 'hold'
+    && refreshedSweepBoundaryKey !== key) {
+    refreshedSweepBoundaryKey = key
+    void refreshState().catch(handleDisplayError)
+  }
 }
 
 function handleConnectionChange(next: LiveDisplayConnection): void {

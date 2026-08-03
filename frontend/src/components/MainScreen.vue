@@ -66,7 +66,7 @@ const activeSofttool = ref<'measurement' | 'format' | 'scale' | 'stimulus' | 'ch
 )
 const stimulusKey = ref<StimulusKey>('Start')
 const channelKey = ref<ChannelKey>('Power / Bw / Avg')
-const sweepPage = ref<SweepSofttoolPage>('parameters')
+const sweepPage = ref<SweepSofttoolPage>('control')
 const activeKey = computed(() => {
   if (activeSofttool.value === 'measurement') return 'Meas'
   if (activeSofttool.value === 'format') return 'Format'
@@ -108,7 +108,7 @@ function selectHardkey(key: HardkeyName): void {
     activeSofttool.value = 'stimulus'
   }
   if ((key === 'Sweep' || key === 'Trigger') && channel.value) {
-    sweepPage.value = key === 'Trigger' ? 'trigger' : 'parameters'
+    sweepPage.value = key === 'Trigger' ? 'trigger' : 'control'
     activeSofttool.value = 'sweep'
     return
   }
@@ -174,6 +174,9 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
         <div v-if="workspace.mode === 'stale'" class="workspace-stale" role="status">
           {{ workspace.statusLabel }}
         </div>
+        <div v-if="serviceError" class="workspace-stale command-error" role="alert">
+          {{ serviceError }}
+        </div>
       </div>
 
       <MeasurementSofttool
@@ -219,10 +222,10 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
       <SweepSofttool
         v-else-if="activeSofttool === 'sweep' && channel && state"
         :channel="channel"
-        :runtime="state.sweepRuntime"
         :page="sweepPage"
         :disabled="workspace.controlsDisabled"
         :busy="busy"
+        @close="activeSofttool = null"
         @select-page="sweepPage = $event"
         @update-sweep="forwardSweepUpdate"
         @update-control="forwardSweepControl"
@@ -240,9 +243,6 @@ function forwardScalePerDivisionUpdate(traceId: number, value: number): void {
 
     <InstrumentStatusBar
       :state="state"
-      :workspace="workspace"
-      :service-error="serviceError"
-      :display-error="displayError"
       :sweep-status="display.sweepStatus"
     />
   </section>

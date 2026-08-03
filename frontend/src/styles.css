@@ -74,9 +74,6 @@ button:focus-visible { outline: 3px solid #ffd33d; outline-offset: -3px; }
 .menu-bar button { min-width: 0; font-size: 12px; }
 .menu-bar button:disabled { color: #c5d0d4; cursor: default; }
 .menu-bar > span, .menu-bar time { align-self: center; margin: 0 7px; font-size: 12px; }
-.menu-bar .entity-counts { color: #c5d0d4; }
-.status-pill { padding: 3px 7px; border-radius: 2px; font-weight: 700; }
-.status-pill.offline { color: #ffd9d9; background: #8b2424; }
-.status-pill.connecting { color: #16130a; background: #dfa81f; }
-.status-pill.online { color: #07170f; background: #31b86d; }
-.status-pill.unavailable { color: #dce5e8; background: #49616c; }
+.status-channel { color: #eef4f6; font-weight: 600; white-space: nowrap; }
+.status-sweep { min-width: 170px; color: #c5d0d4; white-space: nowrap; }
+.status-time { min-width: 150px; color: #c5d0d4; text-align: right; white-space: nowrap; }

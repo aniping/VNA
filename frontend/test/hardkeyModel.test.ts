@@ -39,8 +39,10 @@ test('unsupported hard keys stay unavailable in the product UI', () => {
 test('Sweep and Restart entries route to semantic controls with honest disabled boundaries', () => {
   const source = readFileSync(new URL('../../../../src/components/SweepSofttool.vue', import.meta.url), 'utf8')
     + readFileSync(new URL('../../../../src/components/InstrumentToolbar.vue', import.meta.url), 'utf8')
-  assert.equal(source.match(/<form @submit\.prevent=/g)?.length, 2)
-  assert.match(source, /disabled>External<\/button>[\s\S]*data-toolbar-item="restart-sweep"/)
+  assert.equal(source.match(/<form @submit\.prevent=/g)?.length, 1)
+  assert.match(source, /Start Sweep[\s\S]*Restart Sweep/)
+  assert.match(source, /name="trigger-source"[\s\S]*disabled/)
+  assert.doesNotMatch(source, /Apply Sweeps|Configured|Applied/)
 })
 
 test('Sweep drafts and status labels use frozen authority ranges and progress', () => {

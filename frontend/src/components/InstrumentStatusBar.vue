@@ -1,34 +1,33 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import type { SweepStreamStatus } from '../api/sweepPreview'
 import type { StateSnapshot } from '../api/vnaApi'
-import type { WorkspacePresentation } from './workspacePresentation'
-import { sweepModeLabel, sweepPhaseLabel, sweepProgressLabel } from './sweepSofttoolModel'
+import { statusBarChannelLabel, statusBarSweepLabel } from './sweepSofttoolModel'
+
 const props = defineProps<{
   state: StateSnapshot | null
-  workspace: WorkspacePresentation
-  serviceError: string
-  displayError: string
   sweepStatus: SweepStreamStatus | null
 }>()
 const menus = ['File', 'Trace', 'Channel', 'Display', 'Tools', 'System', 'Help']
 const channel = computed(() => props.state?.instrument.channels[0])
-const entityCounts = computed(() => {
-  const instrument = props.state?.instrument
-  if (!instrument) return 'Ch — · Meas — · Trc — · Win —'
-  return `Ch ${instrument.channels.length} · Meas ${instrument.measurements.length}`
-    + ` · Trc ${instrument.traces.length} · Win ${instrument.windows.length}`
+const channelLabel = computed(() => statusBarChannelLabel(channel.value))
+const sweepLabel = computed(() => statusBarSweepLabel(
+  props.sweepStatus, props.state?.sweepRuntime.phase,
+))
+const dateFormatter = new Intl.DateTimeFormat(undefined, {
+  year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
 })
-const acquisitionStatus = computed(() => {
-  if (!channel.value) return 'Sweep — · Trigger —'
-  const mode = sweepModeLabel(channel.value.sweepMode)
-  const progress = props.sweepStatus ? sweepProgressLabel(props.sweepStatus)
-    : props.state ? sweepPhaseLabel(props.state.sweepRuntime.phase) : ''
-  return `${mode} · None${progress ? ` · ${progress}` : ''}`
-})
+const now = ref(new Date())
+const localDateTime = computed(() => dateFormatter.format(now.value))
+const localDateTimeIso = computed(() => now.value.toISOString())
+let clock: number | undefined
+// This timer only keeps the local clock current; sweep phase/progress always comes from the wire.
+onMounted(() => { clock = window.setInterval(() => { now.value = new Date() }, 1000) })
+onBeforeUnmount(() => { if (clock !== undefined) window.clearInterval(clock) })
 </script>
 <template>
-  <nav class="menu-bar" aria-label="Application menu">
+  <nav class="menu-bar" aria-label="Application menu and instrument status">
     <button
       v-for="item in menus"
       :key="item"
@@ -38,14 +37,8 @@ const acquisitionStatus = computed(() => {
       disabled
     >{{ item }}</button>
     <span class="menu-spacer" />
-    <span
-      class="status-pill"
-      :class="workspace.statusTone"
-      :title="displayError || serviceError"
-    >{{ workspace.statusLabel }}</span>
-    <span title="Sweep mode · Trigger source · authoritative progress">{{ acquisitionStatus }}</span>
-    <span>Revision {{ state?.stateRevision ?? '—' }}</span>
-    <span class="entity-counts">{{ entityCounts }}</span>
-    <time>{{ serviceError || 'Local session' }}</time>
+    <span class="status-channel">{{ channelLabel }}</span>
+    <span class="status-sweep">{{ sweepLabel }}</span>
+    <time class="status-time" :datetime="localDateTimeIso">{{ localDateTime }}</time>
   </nav>
 </template>
