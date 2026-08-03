@@ -37,6 +37,10 @@ FrameSet 发布全部完成后才结束。Single 或 Restart 的 Operation 也�
 完成都不是 Operation 成功条件。同一 generation 的失败与取消保留上一完整结果；
 generation 变化仍按 ADR-0009 原子失效旧完整 FrameSet 和当前 Preview。
 
+多轮 Single Operation 可以在 Sweep 边界采用更新后的配置。其
+`submittedAtStateRevision` 只记录请求准入时的 revision；每轮 FrameSet 自身的
+`stateRevision` 与 generation 才描述实际数据配置，不能由 Operation 字段代替。
+
 ## 仿真与因果边界
 
 Simulation 仍按 ADR-0003 只生成 Raw Receiver 数据。仿真总 Sweep 时长和 chunk

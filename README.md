@@ -140,9 +140,9 @@ ASCII 控制字节 `00..1F` 或 `7F`；非法 ID 返回 `400 invalidCommand`。
 Scale/Div，payload 为 `{"traceId": <id>, "scalePerDivision": <number>}`。
 `/api/v1/state` 会在每条 Trace 上返回 `scale`；Log Magnitude 包含完整 dB
 显示比例快照，尚未开放该能力的 Phase 与 Smith 返回 `null`。
-当前发布版启动后由后台 `ContinuousAcquisition` 自动、持续采集，并以约 10 Hz
-的模拟节奏更新默认 S21 显示帧。生产组合不再启动第二个单扫 worker；遗留的
-`startSingleSweep` 当前返回 `409 conflict` 和 `resource-busy`。
+当前发布版由唯一 `SweepRuntime` 自动持续采集，并以约 10 Hz 的模拟节奏更新默认
+S21 显示帧。`startSingleSweep` 会在同一 worker 上接受 Restart 请求，返回可查询的
+`operationId`，不会启动第二个采集 source 或增加配置 revision。
 默认开路仿真的 S21 是仪器内部耦合泄漏叠加确定性接收机噪声，不代表 DUT 直通。
 `GET /api/v1/traces/<traceId>/display-frame` 返回最新完整 Log Magnitude dB
 帧；Trace 存在但尚无可用帧时返回空的 `204`，Trace 不存在时返回 `404`。该
@@ -179,8 +179,8 @@ pnpm run dev
 默认 S21 Trace 的色块和曲线为绿色；活动 Trace 信息条、活动 Channel 和右上角
 真实 WindowId 使用蓝/青蓝色高亮，所有 Diagram 外框保持统一细深灰蓝（手册
 第 112、127–129、935–936 页，ZNA v41 补充）。尚无测量帧时 Diagram 显示空态；后台连续采集
-会自动更新显示帧，Toolbar 的
-`Restart Sweep` 在当前发布版中暂不可用并按禁用处理。
+会自动更新显示帧。Toolbar 的 `Restart Sweep` 尚未接入该服务端命令，当前仍按
+禁用处理。
 LogMagnitude、Phase 与 Smith 都直接绘制连续帧集中的后端样本。笛卡尔图使用
 10×10 主网格和同 Trace 色参考线：LogMagnitude 刻度来自权威 Scale 快照；Phase
 样本仍为 `[-180, 180)`，默认显示视口为 `[-225°, 225°]`、45°/div、Ref 0°。
