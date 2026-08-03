@@ -4,6 +4,7 @@ import type { TraceDisplaySamples } from '../api/traceDisplayFrameSet.ts'
 import type { MeasurementSnapshot, TraceSnapshot } from '../api/vnaApi.ts'
 import type {
   CartesianAxisRange,
+  CartesianSamples,
   CartesianSegmentedSamples,
 } from '../plot/cartesianProjection.ts'
 import type { SmithComplexPoint } from '../plot/smithProjection.ts'
@@ -39,7 +40,7 @@ function identityMatches(
 }
 
 function segmentedCartesianSamples(
-  series: readonly Extract<TraceDisplaySamples, { format: 'logMagnitude' | 'phase' }>[],
+  series: readonly CartesianSamples[],
   frequencyMinimumHz: number,
   frequencyMaximumHz: number,
 ): CartesianSegmentedSamples {
@@ -76,7 +77,12 @@ function cartesianSeries(
   const compatible = complete && preview && partial?.generation === complete.generation
     && prefixMatches(complete, preview, partial.totalPointCount)
   if (compatible) {
-    return segmentedCartesianSamples([complete, preview], complete.frequenciesHz[0],
+    const retained = {
+      frequenciesHz: complete.frequenciesHz.slice(preview.frequenciesHz.length),
+      values: complete.values.slice(preview.values.length),
+    }
+    const segments = retained.values.length ? [preview, retained] : [preview]
+    return segmentedCartesianSamples(segments, complete.frequenciesHz[0],
       complete.frequenciesHz[complete.frequenciesHz.length - 1])
   }
   if (preview && partial?.axis) {
@@ -85,6 +91,21 @@ function cartesianSeries(
   }
   return complete ? segmentedCartesianSamples([complete], complete.frequenciesHz[0],
     complete.frequenciesHz[complete.frequenciesHz.length - 1]) : null
+}
+
+function smithSegments(
+  complete: Extract<MultiFormatTraceDisplayFrame, { format: 'smith' }> | undefined,
+  preview: Extract<TraceDisplaySamples, { format: 'smith' }> | undefined,
+  partial: CurrentSweepPartial | undefined,
+): readonly (readonly SmithComplexPoint[])[] {
+  const compatible = complete && preview && partial?.generation === complete.generation
+    && prefixMatches(complete, preview, partial.totalPointCount)
+  const values = compatible
+    ? [preview.values, complete.values.slice(preview.values.length)]
+    : preview ? [preview.values] : complete ? [complete.values] : []
+  return values.filter((segment) => segment.length > 0).map((segment) => (
+    segment.map(([real, imaginary]) => ({ real, imaginary }))
+  ))
 }
 
 export function selectDiagramCurve(
@@ -121,15 +142,9 @@ export function selectDiagramCurve(
   if (trace.format === 'smith') {
     const smithComplete = complete?.format === 'smith' ? complete : undefined
     const smithPreview = preview?.format === 'smith' ? preview : undefined
-    const compatible = smithComplete && smithPreview && partial?.generation === smithComplete.generation
-      && prefixMatches(smithComplete, smithPreview, partial.totalPointCount)
-    const series = compatible ? [smithComplete, smithPreview]
-      : smithPreview ? [smithPreview] : smithComplete ? [smithComplete] : []
-    if (series.length === 0) return null
+    const segments = smithSegments(smithComplete, smithPreview, partial)
+    if (segments.length === 0) return null
     // Pair-to-point conversion changes representation only; no RF-domain math lives here.
-    const segments = series.map(({ values }) => (
-      values.map(([real, imaginary]) => ({ real, imaginary }))
-    ))
     return { kind: 'smith', traceId: trace.id, segments }
   }
   return null

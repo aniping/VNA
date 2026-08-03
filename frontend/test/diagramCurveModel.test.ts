@@ -135,27 +135,28 @@ test('rejects a frame whose full Trace and Measurement identity is stale', () =>
   ), null)
 })
 
-test('layers a compatible cumulative Cartesian partial over retained complete samples', () => {
+test('replaces the acquired Cartesian prefix and retains only the old suffix', () => {
   const snapshot = state('logMagnitude')
   const curve = selectDiagramCurve(snapshot.instrument.traces[0],
     snapshot.instrument.measurements[0], frame('logMagnitude'), partial('logMagnitude'))
   assert.equal(curve?.kind, 'cartesian')
   if (curve?.kind !== 'cartesian') return
   assert.equal(curve.samples.segments.length, 2)
-  assert.deepEqual(curve.samples.segments[0].values, [-80, -30, 20])
-  assert.deepEqual(curve.samples.segments[1].values, [-60, -55])
+  assert.deepEqual(curve.samples.segments[0].values, [-60, -55])
+  assert.deepEqual(curve.samples.segments[1].values, [20])
   assert.deepEqual([curve.samples.frequencyMinimumHz, curve.samples.frequencyMaximumHz],
     [1e6, 3e6])
 })
 
-test('layers compatible Smith complex prefixes without Cartesian or RF conversion', () => {
+test('replaces the acquired Smith prefix and retains only the old suffix', () => {
   const snapshot = state('smith')
   const curve = selectDiagramCurve(snapshot.instrument.traces[0],
     snapshot.instrument.measurements[0], frame('smith'), partial('smith'))
   assert.equal(curve?.kind, 'smith')
   if (curve?.kind !== 'smith') return
   assert.equal(curve.segments.length, 2)
-  assert.deepEqual(curve.segments[1], [
+  assert.deepEqual(curve.segments[0], [
     { real: 0.1, imaginary: 0.2 }, { real: 0.2, imaginary: 0.3 },
   ])
+  assert.deepEqual(curve.segments[1], [{ real: 1.2, imaginary: 0.2 }])
 })
